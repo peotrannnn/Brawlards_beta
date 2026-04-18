@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Export GLB</title>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.128.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.128.0/examples/jsm/"
+            }
+        }
+    </script>
+</head>
+<body>
+    <h1>Export GLB Files</h1>
+    <button id="exportBtn">Export All</button>
+    <div id="log"></div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
+        
+        // Import các factory từ file
+        import { getBallAssets } from './src/assets/BallFactory.js';
+        import { getBilliardTableAsset } from './src/assets/BilliardTable.js';
+        import { getPlayerAsset } from './src/assets/Player.js';
+
+        const log = document.getElementById('log');
+        
+        function addLog(msg) {
+            log.innerHTML += msg + '<br>';
+            console.log(msg);
+        }
+
+        async function exportToGLB(mesh, filename) {
+            return new Promise((resolve, reject) => {
+                const exporter = new GLTFExporter();
+                
+                exporter.parse(
+                    mesh,
+                    (result) => {
+                        // Tạo blob và download
+                        const blob = new Blob([result], { type: 'application/octet-stream' });
+                        const link = document.createElement('a');
+                        link.href = URL.createObjectURL(blob);
+                        link.download = filename;
+                        link.click();
+                        addLog(`Đã xuất: ${filename}`);
+                        resolve();
+                    },
+                    (error) => {
+                        addLog(`Lỗi: ${error}`);
+                        reject(error);
+                    },
+                    { binary: true }
+                );
+            });
+        }
+
+        document.getElementById('exportBtn').addEventListener('click', async () => {
+            addLog('Bắt đầu xuất assets...');
+            
+            // Xuất bóng billiard
+            const ballAssets = getBallAssets();
+            for (const asset of ballAssets) {
+                try {
+                    addLog(`Đang xử lý: ${asset.name}`);
+                    const mesh = asset.factory();
+                    
+                    let filename;
+                    if (asset.name === 'Cue Ball') filename = 'cue_ball.glb';
+                    else if (asset.name === 'Bowling Ball') filename = 'bowling_ball.glb';
+                    else if (asset.name.startsWith('Ball ')) {
+                        const number = asset.name.split(' ')[1];
+                        filename = `ball_${number}.glb`;
+                    }
+                    
+                    await exportToGLB(mesh, filename);
+                    
+                    // Đợi một chút giữa các lần download
+                    await new Promise(r => setTimeout(r, 500));
+                } catch (error) {
+                    addLog(`Lỗi với ${asset.name}: ${error.message}`);
+                }
+            }
+            
+            // Xuất bàn
+            try {
+                addLog('Đang xử lý: Billiard Table');
+                const tableMesh = getBilliardTableAsset().factory();
+                await exportToGLB(tableMesh, 'billiard_table.glb');
+                await new Promise(r => setTimeout(r, 500));
+            } catch (error) {
+                addLog(`Lỗi bàn: ${error.message}`);
+            }
+            
+            // Xuất người chơi
+            try {
+                addLog('Đang xử lý: Player');
+                const playerMesh = getPlayerAsset().factory();
+                await exportToGLB(playerMesh, 'player.glb');
+            } catch (error) {
+                addLog(`Lỗi player: ${error.message}`);
+            }
+            
+            addLog('Hoàn tất!');
+        });
+    </script>
+</body>
+</html>

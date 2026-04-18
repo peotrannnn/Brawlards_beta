@@ -1,0 +1,20 @@
+{
+  "name": "brawlards",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "terser": "^5.46.0",
+    "vite": "^7.3.1"
+  },
+  "dependencies": {
+    "canvas": "^3.2.1",
+    "three": "^0.183.2",
+    "three-csg-ts": "^3.2.0"
+  }
+}
