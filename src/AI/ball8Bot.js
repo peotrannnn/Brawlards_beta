@@ -671,7 +671,6 @@ export class Ball8AI {
     } else if (!this.canMove && this.timeAlive >= this.startupDelayDuration) {
       // Startup delay finished - now ball 8 can move
       this.canMove = true
-      console.log(`%c[Ball8AI] ✨ Startup delay finished! Ball 8 can now move!`, 'color: #ffff00; font-weight: bold')
     }
 
     // ===== FATIGUE & JUMP UPDATES =====

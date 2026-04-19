@@ -188,7 +188,7 @@ export class CollisionManager {
         syncList = config.syncList || [];
         sceneObjects = config.sceneObjects || [];
 
-        console.log('CollisionManager initialized with state:', visibilityState);
+
     }
 
     static setSceneObjects(objects) {
@@ -202,7 +202,7 @@ export class CollisionManager {
         visibilityState = (visibilityState + 1) % 3;
         this.applyVisibilityState();
         
-        console.log(`Visibility mode changed to: ${this.getVisibilityStateString()}`);
+
     }
 
     static applyVisibilityState() {
@@ -276,6 +276,11 @@ export class CollisionManager {
         }
         
         return helper;
+    }
+
+    static hasHitboxForBody(body) {
+        if (!body) return false;
+        return hitboxes.some(h => h.body === body);
     }
     
     static removeHitboxForObject(entry) {
@@ -397,6 +402,6 @@ export class CollisionManager {
         visibilityState = 0;
         visualsVisible = false;
         
-        console.log('CollisionManager disposed');
+
     }
 }

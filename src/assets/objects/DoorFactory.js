@@ -228,7 +228,7 @@ function createDoor0() {
   
   return {
     name: 'Door 0',
-    description: 'Cửa!',
+    description: 'A boring door.',
     mesh: mesh,
     physics: doorPhysicsDef,
   }
@@ -253,7 +253,7 @@ function createDoor1() {
   
   return {
     name: 'Door 1',
-    description: 'Tiền môn!',
+    description: 'Not sure where this goes, but it looks important.',
     mesh: mesh,
     physics: doorPhysicsDef,
   }
@@ -278,7 +278,7 @@ function createDoor2() {
   
   return {
     name: 'Door 2',
-    description: 'Hậu... cửa sau!',
+    description: 'Not sure where this goes, but it looks important.',
     mesh: mesh,
     physics: doorPhysicsDef,
   }

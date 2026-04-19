@@ -1,5 +1,3 @@
-// main.js
-
 import * as THREE from "three"
 import { startSimulationTest } from "./core/SimulationTest.js"
 import { createInspector } from "./core/Inspector.js"
@@ -9,17 +7,15 @@ import { preloadCoreAssets } from "./assets/preloadAssets.js"
 import { runWithLoadingOverlay } from "./utils/loadingOverlay.js"
 
 // ==================== IT-STYLE UI THEME ====================
-// Unified tech/hacker aesthetic for all UI elements
 export const IT_STYLE = {
   colors: {
-    darkBg: '#0a1a3d',      // Dark blue background
-    accentBlue: '#0066FF',   // Bright blue accent
-    neonGreen: '#00FF00',    // Neon green text
-    darkAccent: '#001a4d',   // Darker blue
-    borderBlue: '#004399'    // Border color
+    darkBg: '#0a1a3d',
+    accentBlue: '#0066FF',
+    neonGreen: '#00FF00',
+    darkAccent: '#001a4d',
+    borderBlue: '#004399'
   },
   
-  // Apply IT style to any element
   applyToElement: (element, type = 'box') => {
     if (type === 'box') {
       element.style.cssText = `
@@ -49,7 +45,6 @@ export const IT_STYLE = {
         box-shadow: 0 0 15px rgba(0, 102, 255, 0.5), inset 0 0 8px rgba(0, 255, 0, 0.2);
         transition: all 0.3s ease;
       `
-      // Hover effect
       element.onmouseover = () => {
         element.style.boxShadow = `0 0 25px rgba(0, 102, 255, 0.8), inset 0 0 12px rgba(0, 255, 0, 0.4)`
         element.style.transform = 'scale(1.05)'
@@ -85,7 +80,6 @@ export const IT_STYLE = {
         box-shadow: 0 0 12px rgba(255, 0, 0, 0.4), inset 0 0 6px rgba(255, 0, 0, 0.2);
         transition: all 0.3s ease;
       `
-      // Hover effect
       element.onmouseover = () => {
         element.style.boxShadow = `0 0 20px rgba(255, 0, 0, 0.6), inset 0 0 10px rgba(255, 0, 0, 0.3)`
         element.style.transform = 'scale(1.05)'
@@ -108,10 +102,8 @@ document.body.appendChild(renderer.domElement)
 
 let currentCleanup = null
 
-// Music player setup
 const musicPlayer = new MusicPlayer()
 
-// Start playing music on first interaction
 document.addEventListener('click', async () => {
   if (!musicPlayer.isPlaying) {
     await musicPlayer.start()
@@ -120,78 +112,211 @@ document.addEventListener('click', async () => {
 
 showHomePage()
 
+// ==================== MAIN MENU ====================
 function showHomePage() {
-  clearEntireUI()
+  clearEntireUI();
 
-  const page = document.createElement("div")
-  page.id = "homePage"
-  page.style.position = "absolute"
-  page.style.top = "0"
-  page.style.left = "0"
-  page.style.width = "100%"
-  page.style.height = "100%"
-  page.style.display = "flex"
-  page.style.flexDirection = "column"
-  page.style.justifyContent = "center"
-  page.style.alignItems = "center"
-  page.style.gap = "20px"
-  page.style.background = "#111"
 
-  const title = document.createElement("h1")
-  title.innerText = "MAIN MENU"
-  title.style.color = "white"
-  title.style.fontSize = "42px"
-  title.style.marginBottom = "30px"
-  title.style.fontFamily = "'Consolas', 'Monaco', 'Courier New', monospace"
-  title.style.textShadow = `0 0 20px ${IT_STYLE.colors.accentBlue}`
+  // Clear renderer and set transparent so menu background image is visible
+  renderer.setClearColor(0x000000, 0);
+  renderer.clear();
 
-  // Main buttons container for equal sizing
-  const buttonContainer = document.createElement("div")
-  buttonContainer.style.display = "flex"
-  buttonContainer.style.flexDirection = "column"
-  buttonContainer.style.gap = "15px"
-  buttonContainer.style.width = "220px"
+  const menuOverlay = document.createElement('div');
+  menuOverlay.id = 'mainMenuOverlay';
+  menuOverlay.style.position = 'fixed';
+  menuOverlay.style.top = '0';
+  menuOverlay.style.left = '0';
+  menuOverlay.style.width = '100vw';
+  menuOverlay.style.height = '100vh';
+  menuOverlay.style.display = 'flex';
+  menuOverlay.style.flexDirection = 'column';
+  menuOverlay.style.justifyContent = 'center';
+  menuOverlay.style.alignItems = 'center';
+  menuOverlay.style.zIndex = '20003';
+  menuOverlay.style.background = "url('./src/pictures/jd_thick.png') center center / cover no-repeat";
+  menuOverlay.style.pointerEvents = 'auto';
+  menuOverlay.style.transition = 'opacity 1s';
 
-  const simBtn = document.createElement("button")
-  simBtn.innerText = "Simulation"
-  simBtn.style.width = "220px"
-  simBtn.style.height = "50px"
-  IT_STYLE.applyToElement(simBtn, 'button')
+  const menuBox = document.createElement('div');
+  menuBox.style.background = IT_STYLE.colors.darkBg;
+  menuBox.style.border = `2px solid ${IT_STYLE.colors.accentBlue}`;
+  menuBox.style.borderRadius = '0';
+  menuBox.style.width = '280px';
+  menuBox.style.maxWidth = '92vw';
+  menuBox.style.boxShadow = '0 2px 16px #0008';
+  menuBox.style.overflow = 'hidden';
+  menuBox.style.display = 'flex';
+  menuBox.style.flexDirection = 'column';
+  menuBox.style.alignItems = 'stretch';
+  menuBox.style.pointerEvents = 'auto';
 
-  const playBtn = document.createElement("button")
-  playBtn.innerText = "Play"
-  playBtn.style.width = "220px"
-  playBtn.style.height = "50px"
-  IT_STYLE.applyToElement(playBtn, 'button')
+  const titleBar = document.createElement('div');
+  titleBar.textContent = 'BRAWLARDS';
+  titleBar.style.background = IT_STYLE.colors.accentBlue;
+  titleBar.style.color = '#000';
+  titleBar.style.padding = '12px 20px';
+  titleBar.style.fontWeight = 'bold';
+  titleBar.style.borderBottom = `2px solid ${IT_STYLE.colors.borderBlue}`;
+  titleBar.style.fontSize = '14px';
+  titleBar.style.letterSpacing = '1px';
+  titleBar.style.textTransform = 'uppercase';
+  titleBar.style.fontFamily = "'Consolas', 'Monaco', 'Courier New', monospace";
+  titleBar.style.textAlign = 'center';
 
-  const inspectorBtn = document.createElement("button")
-  inspectorBtn.innerText = "Inspector"
-  inspectorBtn.style.width = "220px"
-  inspectorBtn.style.height = "50px"
-  IT_STYLE.applyToElement(inspectorBtn, 'button')
+  const menuListArea = document.createElement('div');
+  menuListArea.style.display = 'flex';
+  menuListArea.style.flexDirection = 'column';
+  menuListArea.style.gap = '0';
+  menuListArea.style.background = 'transparent';
+  menuListArea.style.padding = '0';
 
-  simBtn.onclick = () => {
-    navigateToSimulation()
+  const menuItems = [
+    { label: 'PLAY', action: (afterFade) => navigateToPlay(afterFade) },
+    { label: 'DEBUG', action: (afterFade) => navigateToSimulation(afterFade) },
+    { label: 'INSPECT', action: (afterFade) => navigateToInspector(afterFade) },
+  ];
+
+  // --- PATCH: Ensure music always starts on any menu action ---
+  function ensureMusicPlaying() {
+    if (musicPlayer && !musicPlayer.isPlaying) {
+      musicPlayer.start();
+    }
   }
 
-  playBtn.onclick = () => {
-    navigateToPlay()
-  }
+  const createMenuItem = (label, action, index) => {
+    const item = document.createElement('div');
+    item.textContent = label;
+    item.style.padding = '14px 20px';
+    item.style.textAlign = 'left';
+    item.style.fontSize = '14px';
+    item.style.fontFamily = "'Consolas', 'Monaco', 'Courier New', monospace";
+    item.style.fontWeight = 'normal';
+    item.style.cursor = 'pointer';
+    item.style.userSelect = 'none';
+    item.style.borderBottom = index < menuItems.length - 1 ? `1px solid ${IT_STYLE.colors.borderBlue}` : 'none';
+    item.style.transition = 'all 0.2s ease';
+    item.style.backgroundColor = 'transparent';
+    item.style.color = IT_STYLE.colors.neonGreen;
+    item.style.letterSpacing = '0.5px';
+    
+    item.onmouseenter = () => {
+      item.style.backgroundColor = `rgba(0, 102, 255, 0.2)`;
+      item.style.paddingLeft = '28px';
+      item.style.color = '#fff';
+      item.style.textShadow = `0 0 8px ${IT_STYLE.colors.accentBlue}`;
+    };
+    
+    item.onmouseleave = () => {
+      item.style.backgroundColor = 'transparent';
+      item.style.paddingLeft = '20px';
+      item.style.color = IT_STYLE.colors.neonGreen;
+      item.style.textShadow = 'none';
+    };
+    
+    item.onclick = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      ensureMusicPlaying();
+      if (typeof action === 'function') {
+        action(() => {
+          if (menuOverlay && menuOverlay.parentNode) {
+            menuOverlay.style.opacity = '0';
+            setTimeout(() => {
+              menuOverlay.remove();
+            }, 1000);
+          }
+        });
+      }
+    };
+    return item;
+  };
+  
+  menuItems.forEach((item, idx) => {
+    const menuItem = createMenuItem(item.label, item.action, idx);
+    menuListArea.appendChild(menuItem);
+  });
 
-  inspectorBtn.onclick = () => {
-    navigateToInspector()
-  }
-
-  buttonContainer.appendChild(playBtn)
-  buttonContainer.appendChild(simBtn)
-  buttonContainer.appendChild(inspectorBtn)
-
-  page.appendChild(title)
-  page.appendChild(buttonContainer)
-
-  document.body.appendChild(page)
+  let currentIndex = 0;
+  const menuItemElements = menuListArea.children;
+  
+  const updateSelection = () => {
+    Array.from(menuItemElements).forEach((item, idx) => {
+      if (idx === currentIndex) {
+        item.style.backgroundColor = IT_STYLE.colors.accentBlue;
+        item.style.color = '#000';
+        item.style.fontWeight = 'bold';
+        item.style.paddingLeft = '28px';
+        item.style.boxShadow = `inset 0 0 10px rgba(0,0,0,0.3)`;
+      } else {
+        item.style.backgroundColor = 'transparent';
+        item.style.color = IT_STYLE.colors.neonGreen;
+        item.style.fontWeight = 'normal';
+        item.style.paddingLeft = '20px';
+        item.style.boxShadow = 'none';
+      }
+    });
+    if (menuItemElements[currentIndex]) {
+      menuItemElements[currentIndex].scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
+  };
+  
+  const handleKeyDown = (e) => {
+    if (e.code === 'ArrowDown') {
+      currentIndex = (currentIndex + 1) % menuItems.length;
+      updateSelection();
+      e.preventDefault();
+    } else if (e.code === 'ArrowUp') {
+      currentIndex = (currentIndex - 1 + menuItems.length) % menuItems.length;
+      updateSelection();
+      e.preventDefault();
+    } else if (e.code === 'Enter' || e.code === 'NumpadEnter') {
+      e.preventDefault();
+      ensureMusicPlaying();
+      const selectedItem = menuItems[currentIndex];
+      if (selectedItem && typeof selectedItem.action === 'function') {
+        selectedItem.action(() => {
+          if (menuOverlay && menuOverlay.parentNode) {
+            menuOverlay.style.opacity = '0';
+            setTimeout(() => {
+              menuOverlay.remove();
+            }, 1000);
+          }
+        });
+      }
+    }
+  };
+  
+  window.addEventListener('keydown', handleKeyDown);
+  
+  const observer = new MutationObserver((mutations) => {
+    mutations.forEach((mutation) => {
+      if (mutation.type === 'childList' && mutation.removedNodes.length > 0) {
+        mutation.removedNodes.forEach((node) => {
+          if (node === menuOverlay || node.contains?.(menuOverlay)) {
+            window.removeEventListener('keydown', handleKeyDown);
+            observer.disconnect();
+          }
+        });
+      }
+    });
+  });
+  observer.observe(document.body, { childList: true });
+  
+  menuOverlay.onclick = (e) => {
+    if (e.target === menuOverlay) {
+      e.preventDefault();
+    }
+  };
+  
+  menuBox.appendChild(titleBar);
+  menuBox.appendChild(menuListArea);
+  menuOverlay.appendChild(menuBox);
+  document.body.appendChild(menuOverlay);
+  
+  updateSelection();
 }
 
+// ==================== NAVIGATION ====================
 async function navigateToSimulation() {
   try {
     await runWithLoadingOverlay(
@@ -224,14 +349,25 @@ async function navigateToInspector() {
 
     clearEntireUI()
     currentCleanup = createInspector(renderer, () => {
-      showHomePage()
-    })
+      clearEntireUI(); // cleanup inspector UI and logic
+      showHomePage();
+    });
   } catch (error) {
     console.error('Failed to preload inspector assets:', error)
   }
 }
 
+// ==================== CLEANUP ====================
 function clearEntireUI() {
+  // Always cleanup previous screen if any
+  if (typeof currentCleanup === "function") {
+    currentCleanup();
+    currentCleanup = null;
+  }
+
+  const menuOverlay = document.getElementById("mainMenuOverlay")
+  if (menuOverlay) menuOverlay.remove()
+  
   const home = document.getElementById("homePage")
   if (home) home.remove()
 

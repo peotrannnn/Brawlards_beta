@@ -164,8 +164,8 @@ export class DestroySystem {
     if (this.hbManager && this.hbManager.removeHitboxForObject) {
       this.hbManager.removeHitboxForObject(entry);
     }
-    const idx = this.syncList.indexOf(entry);
-    if (idx !== -1) this.syncList.splice(idx, 1);
+    const idx2 = this.syncList.indexOf(entry);
+    if (idx2 !== -1) this.syncList.splice(idx2, 1);
     if (this.guyTimers.has(entry)) this.guyTimers.delete(entry); // Cleanup timer
     if (this.destroyedCharacters.has(entry)) this.destroyedCharacters.delete(entry);
     if (entry && entry.name === 'Player') {
@@ -173,9 +173,17 @@ export class DestroySystem {
       this.playerFallState.delete(entry);
       this.playerFallSpawnCooldownUntil.delete(entry);
     }
-    this.pending.delete(entry);
+    // Remove all timers and pending timeouts for this entry
+    if (this.compuneTimers.has(entry)) this.compuneTimers.delete(entry);
+    if (this.pending.has(entry)) {
+      clearTimeout(this.pending.get(entry));
+      this.pending.delete(entry);
+    }
+    // Remove from syncList if present
+    const idx = this.syncList.indexOf(entry);
+    if (idx !== -1) this.syncList.splice(idx, 1);
     if (this.onDestroyCallback) {
-      try { this.onDestroyCallback(entry); } catch (e) { console.error('[destroy] onDestroy callback error', e); }
+      try { this.onDestroyCallback(entry); } catch (e) { }
     }
   }
 
@@ -206,7 +214,7 @@ export class DestroySystem {
 
     if (this.planeY == null || isNaN(this.planeY)) {
       if (isNaN(this.planeY)) {
-        console.warn('[destroy] planeY is NaN, disabling destruction');
+
         this.planeY = null;
       }
       return;
@@ -264,7 +272,7 @@ export class DestroySystem {
           try {
             this.spawnCallback(player);
           } catch (e) {
-            console.error('[destroy] spawnCallback error', e);
+
           }
         }
       }
@@ -485,6 +493,35 @@ export class DestroySystem {
       this.playerFallTracking.delete(character);
     }
     
+    // Clean up all AI controller references if present on this system
+    if (this.guyAIControllers && this.guyAIControllers.has(character)) {
+      this.guyAIControllers.delete(character);
+    }
+    if (this.dudeAIControllers && this.dudeAIControllers.has(character)) {
+      this.dudeAIControllers.delete(character);
+    }
+    if (this.guideAIControllers && this.guideAIControllers.has(character)) {
+      const guideAI = this.guideAIControllers.get(character);
+      if (guideAI && typeof guideAI.dispose === 'function') guideAI.dispose();
+      this.guideAIControllers.delete(character);
+    }
+    if (this.dummyAIControllers && this.dummyAIControllers.has(character)) {
+      this.dummyAIControllers.delete(character);
+    }
+    if (this.ball8AIControllers && this.ball8AIControllers.has(character)) {
+      this.ball8AIControllers.delete(character);
+    }
+    if (this.bowlingAIControllers && this.bowlingAIControllers.has(character)) {
+      const bowlingAI = this.bowlingAIControllers.get(character);
+      if (bowlingAI && typeof bowlingAI.dispose === 'function') bowlingAI.dispose();
+      this.bowlingAIControllers.delete(character);
+    }
+    if (this.compuneAIControllers && this.compuneAIControllers.has(character)) {
+      const compuneAI = this.compuneAIControllers.get(character);
+      if (compuneAI && typeof compuneAI.cleanup === 'function') compuneAI.cleanup();
+      this.compuneAIControllers.delete(character);
+    }
+
     // Cleanup CompuneAI if it exists
     if (characterName === 'Compune') {
       const compuneAI = character.body?.userData?.compuneAI;
@@ -504,7 +541,7 @@ export class DestroySystem {
     // Queue destroy to spread expensive cleanup over frames.
     this._queueDestroy(character);
     
-    console.log(`[DestroySystem] ${characterName} destroyed!`);
+
   }
 
   /**

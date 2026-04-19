@@ -171,7 +171,7 @@ function createVendingMachine() {
 export function getVendingMachineAsset() {
   return {
     name: 'Vending Machine',
-    description: 'Máy bán hàng bí ẩn!',
+    description: 'A vending machine stocked with exotic items.',
     factory: () => createVendingMachine(),
     physics: vendingMachinePhysicsDef
   }

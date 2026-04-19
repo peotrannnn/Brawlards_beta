@@ -183,7 +183,7 @@ function createSilverCoin() {
 export function getSilverCoinAsset() {
   return {
     name: 'Silver Coin',
-    description: 'Dùng để mua đồ!',
+    description: 'A type of currency used for vending machines.',
     factory: () => createSilverCoin(),
     physics: silverCoinPhysicsDef
   }

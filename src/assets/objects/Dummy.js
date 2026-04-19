@@ -351,7 +351,7 @@ function createDummy() {
 export function getDummyAsset() {
   return {
     name: "Dummy",
-    description: "Khá nặng!",
+    description: "Pretty heavy!",
     factory: () => createDummy(),
     physics: dummyPhysicsDef
   }

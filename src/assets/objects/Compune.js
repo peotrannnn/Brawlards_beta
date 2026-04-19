@@ -217,7 +217,7 @@ function createCompune() {
 export function getCompuneAsset() {
   return {
     name: "Compune",
-    description: "Trò chuyện với tui!",
+    description: "Trust me bro. Like you’ve got any other choice.",
     factory: () => createCompune(),
     physics: compunePhysicsDef
   }

@@ -350,7 +350,7 @@ function createChest() {
 export function getChestAsset() {
   return {
     name: 'Chest',
-    description: 'Hộp chứa Guide!',
+    description: 'Guide container!',
     factory: createChest,
     physics: chestPhysicsDef
   }

@@ -207,7 +207,6 @@ function createElevatorDoor() {
 
     // ✨ Update texture
     displayTexture.needsUpdate = true
-    console.log(`[ElevatorDoor] Display updated: ${displayText}${isCountdownActive ? ' (Countdown)' : ''}`)
   }
 
   const displayMaterial = new THREE.MeshStandardMaterial({
@@ -344,7 +343,7 @@ function createElevatorDoor() {
 export function getElevatorDoorAsset() {
   return {
     name: 'Elevator Door',
-    description: 'Làm sao để mở nó?',
+    description: 'You’re almost there!',
     factory: () => createElevatorDoor(),
     physics: {
       type: 'static',

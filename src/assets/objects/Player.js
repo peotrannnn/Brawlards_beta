@@ -301,7 +301,7 @@ function createPlayer() {
 export function getPlayerAsset() {
   return {
     name: "Player",
-    description: "Sẽ có cue dài (cây CƠ dài) khi bạn điều khiển...",
+    description: "Sẽ có cue dài (cây CƠ dài), only when you take control... (Bro tui muốn chèn joke tiếng việt mà giờ phải dịch tiếng Anh.",
     factory: () => createPlayer(),
     physics: playerPhysicsDef
   }

@@ -69,7 +69,7 @@ function createLightStickOff() {
 export function getLightStickOffAsset() {
   return {
     name: 'Light Stick Off',
-    description: 'Hàng không nóng, cần hâm để thành hàng nóng!',
+    description: 'A glow stick, but it seems to have run out of energy.',
     factory: () => createLightStickOff(),
     physics: lightStickOffPhysicsDef
   }

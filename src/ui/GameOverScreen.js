@@ -4,19 +4,19 @@ export class GameOverScreen {
     this.completionTime = completionTime
     this.onReturn = onReturn || (() => {})
     this.cameraController = cameraController
-    this.reason = null  // 'elevator' = success, 'death' = failure
+    this.reason = null
     
     this.container = null
     this.isVisible = false
     this.autoReturnTimer = 0
-    this.autoReturnDelay = 20  // 20 seconds before auto-return
+    this.autoReturnDelay = 20
     this.progressFill = null
     
     this._init()
   }
 
+  // ==================== UI CONSTRUCTION ====================
   _init() {
-    // Create overlay with dark background (matching Compune - NO glow)
     this.container = document.createElement('div')
     this.container.id = 'gameOverScreen'
     this.container.style.cssText = `
@@ -37,120 +37,122 @@ export class GameOverScreen {
       pointer-events: none;
     `
 
-    // Create window-like content box (matching Compune style)
-    const windowBox = document.createElement('div')
-    windowBox.style.cssText = `
-      background: #0a1a3d;
-      border: 2px solid #0066FF;
-      border-radius: 0;
-      width: min(400px, 92vw);
-      padding: 0;
-      overflow: hidden;
-      box-shadow: none;
-    `
+    const menuBox = document.createElement('div')
+    menuBox.style.background = '#0a1a3d'
+    menuBox.style.border = '2px solid #0066FF'
+    menuBox.style.borderRadius = '0'
+    menuBox.style.width = '480px'
+    menuBox.style.maxWidth = '92vw'
+    menuBox.style.boxShadow = '0 2px 16px #0008'
+    menuBox.style.overflow = 'hidden'
+    menuBox.style.display = 'flex'
+    menuBox.style.flexDirection = 'column'
+    menuBox.style.alignItems = 'stretch'
 
     const titleBar = document.createElement('div')
-    titleBar.style.cssText = `
-      background: #0066FF;
-      color: #000;
-      padding: 6px 12px;
-      font-weight: bold;
-      border-bottom: 2px solid #004399;
-      font-size: 11px;
-      letter-spacing: 1px;
-      text-transform: uppercase;
-    `
-    titleBar.textContent = '> Dream_Results.exe'
-    windowBox.appendChild(titleBar)
+    titleBar.textContent = '> DREAM_RESULTS.exe'
+    titleBar.style.background = '#0066FF'
+    titleBar.style.color = '#000'
+    titleBar.style.padding = '12px 20px'
+    titleBar.style.fontWeight = 'bold'
+    titleBar.style.borderBottom = '2px solid #004399'
+    titleBar.style.fontSize = '14px'
+    titleBar.style.letterSpacing = '1px'
+    titleBar.style.textTransform = 'uppercase'
+    titleBar.style.fontFamily = "'Consolas', 'Monaco', 'Courier New', monospace"
+    titleBar.style.textAlign = 'center'
 
-    // Content area
     const contentArea = document.createElement('div')
-    contentArea.style.cssText = `
-      padding: 24px 22px;
-      text-align: center;
-    `
+    contentArea.style.padding = '24px 20px 20px 20px'
+    contentArea.style.display = 'flex'
+    contentArea.style.flexDirection = 'column'
+    contentArea.style.gap = '16px'
 
-    // Level name
-    const levelNameEl = document.createElement('h2')
-    levelNameEl.textContent = this.sceneName
-    levelNameEl.style.cssText = `
-      margin: 0 0 20px 0;
-      font-size: 17px;
-      font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-      color: #FFFFFF;
-      letter-spacing: 1px;
-      font-weight: bold;
-    `
-    contentArea.appendChild(levelNameEl)
+    const levelItem = document.createElement('div')
+    levelItem.textContent = this.sceneName
+    levelItem.style.padding = '0'
+    levelItem.style.textAlign = 'center'
+    levelItem.style.fontSize = '11px'
+    levelItem.style.fontFamily = "'Consolas', 'Monaco', 'Courier New', monospace"
+    levelItem.style.fontWeight = 'normal'
+    levelItem.style.backgroundColor = 'transparent'
+    levelItem.style.color = '#888888'
+    levelItem.style.letterSpacing = '0.5px'
+    levelItem.style.whiteSpace = 'nowrap'
+    levelItem.style.overflowX = 'auto'
+    contentArea.appendChild(levelItem)
 
-    // Status message
     this.statusElement = document.createElement('div')
-    this.statusElement.style.cssText = `
-      margin: 0 0 15px 0;
-      font-size: 16px;
-      font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-      font-weight: bold;
-      letter-spacing: 1px;
-      color: #00FF00;
-    `
+    this.statusElement.style.padding = '8px 0'
+    this.statusElement.style.textAlign = 'center'
+    this.statusElement.style.fontSize = '16px'
+    this.statusElement.style.fontFamily = "'Consolas', 'Monaco', 'Courier New', monospace"
+    this.statusElement.style.fontWeight = 'bold'
+    this.statusElement.style.backgroundColor = 'transparent'
+    this.statusElement.style.letterSpacing = '1px'
+    this.statusElement.style.whiteSpace = 'nowrap'
+    this.statusElement.style.lineHeight = '1.4'
     contentArea.appendChild(this.statusElement)
 
-    // Time display
     this.timeElement = document.createElement('div')
-    this.timeElement.style.cssText = `
-      margin: 0 0 20px 0;
-      font-size: 12px;
-      font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-      color: #00FF00;
-      line-height: 1.6;
-    `
+    this.timeElement.style.padding = '4px 0'
+    this.timeElement.style.textAlign = 'center'
+    this.timeElement.style.fontSize = '12px'
+    this.timeElement.style.fontFamily = "'Consolas', 'Monaco', 'Courier New', monospace"
+    this.timeElement.style.backgroundColor = 'transparent'
+    this.timeElement.style.color = '#00FF00'
+    this.timeElement.style.letterSpacing = '0.5px'
+    this.timeElement.style.whiteSpace = 'nowrap'
     contentArea.appendChild(this.timeElement)
 
-    // Return button (subtle, secondary)
-    const backButton = document.createElement('button')
-    backButton.textContent = 'Back to Menu'
-    backButton.style.cssText = `
-      padding: 8px 20px;
-      font-size: 11px;
-      font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-      background: #0066FF;
-      color: #000;
-      border: 2px solid #004399;
-      border-radius: 0;
-      cursor: pointer;
-      transition: all 0.3s ease;
-      letter-spacing: 1px;
-      font-weight: bold;
-      text-transform: uppercase;
-    `
+    menuBox.appendChild(titleBar)
+    menuBox.appendChild(contentArea)
+
+    const backItem = document.createElement('div')
+    backItem.textContent = 'BACK TO MENU'
+    backItem.style.padding = '14px 20px'
+    backItem.style.textAlign = 'center'
+    backItem.style.fontSize = '14px'
+    backItem.style.fontFamily = "'Consolas', 'Monaco', 'Courier New', monospace"
+    backItem.style.fontWeight = 'normal'
+    backItem.style.cursor = 'pointer'
+    backItem.style.userSelect = 'none'
+    backItem.style.borderTop = '1px solid #004399'
+    backItem.style.transition = 'all 0.2s ease'
+    backItem.style.backgroundColor = 'transparent'
+    backItem.style.color = '#ff4444'
+    backItem.style.letterSpacing = '0.5px'
+    backItem.style.whiteSpace = 'nowrap'
     
-    backButton.addEventListener('mouseenter', () => {
-      backButton.style.background = '#0088FF'
-      backButton.style.textShadow = '0 0 10px rgba(0, 255, 0, 0.5)'
-    })
+    backItem.onmouseenter = () => {
+      backItem.style.backgroundColor = '#0066FF'
+      backItem.style.color = '#000'
+      backItem.style.fontWeight = 'bold'
+      backItem.style.paddingLeft = '28px'
+      backItem.style.paddingRight = '28px'
+      backItem.style.boxShadow = 'inset 0 0 10px rgba(0,0,0,0.3)'
+    }
     
-    backButton.addEventListener('mouseleave', () => {
-      backButton.style.background = '#0066FF'
-      backButton.style.textShadow = 'none'
-    })
+    backItem.onmouseleave = () => {
+      backItem.style.backgroundColor = 'transparent'
+      backItem.style.color = '#ff4444'
+      backItem.style.fontWeight = 'normal'
+      backItem.style.paddingLeft = '20px'
+      backItem.style.paddingRight = '20px'
+      backItem.style.boxShadow = 'none'
+    }
     
-    // Store references
-    backButton.gameOverScreen = this
-    backButton.onReturn = this.onReturn
-    backButton.onclick = () => {
-      if (backButton.gameOverScreen && backButton.gameOverScreen.destroy) {
-        backButton.gameOverScreen.destroy()
-      }
-      if (backButton.onReturn) {
-        backButton.onReturn()
+    backItem.onclick = () => {
+      this.destroy()
+      if (this.onReturn) {
+        this.onReturn()
       }
     }
-    contentArea.appendChild(backButton)
-    windowBox.appendChild(contentArea)
+    
+    menuBox.appendChild(backItem)
 
-    // Progress bar (auto-return timer, matching Compune style)
-    this.progressBar = document.createElement('div')
-    this.progressBar.style.cssText = `
+    const progressBar = document.createElement('div')
+    progressBar.style.cssText = `
       width: 100%;
       height: 6px;
       background: #001a4d;
@@ -167,44 +169,42 @@ export class GameOverScreen {
       box-shadow: 0 0 15px rgba(0, 255, 0, 0.8);
       transition: width 0.1s linear;
     `
-    this.progressBar.appendChild(this.progressFill)
-    windowBox.appendChild(this.progressBar)
+    progressBar.appendChild(this.progressFill)
+    menuBox.appendChild(progressBar)
 
-    this.container.appendChild(windowBox)
+    this.container.appendChild(menuBox)
     document.body.appendChild(this.container)
   }
 
+  // ==================== PUBLIC METHODS ====================
   show() {
     if (!this.container) return
     
-    // ✨ Unlock camera when game over screen appears
     if (this.cameraController && this.cameraController.disableControl) {
       this.cameraController.disableControl()
-      console.log('[GameOverScreen] Camera unlocked, pointer lock disabled')
     }
     
-    // Update status message based on reason
     if (this.statusElement) {
       if (this.reason === 'elevator') {
-        this.statusElement.textContent = 'LEVEL COMPLETED'
+        this.statusElement.textContent = 'YOU ESCAPED THE SIMULATION, AS IT MAY SEEM.'
         this.statusElement.style.color = '#00FF00'
       } else if (this.reason === 'death') {
-        this.statusElement.textContent = 'LEVEL FAILED'
+        this.statusElement.textContent = 'YOU GOT STUCK IN THE SIMULATION.'
         this.statusElement.style.color = '#FF4444'
       } else {
-        this.statusElement.textContent = 'GAME OVER'
+        this.statusElement.textContent = 'BAD ENDING.'
         this.statusElement.style.color = '#00FF00'
       }
     }
     
-    // Update time display with current completionTime
     if (this.timeElement) {
       const minutes = Math.floor(this.completionTime / 60)
       const seconds = Math.floor(this.completionTime % 60)
-      this.timeElement.textContent = `Time: ${minutes}m ${seconds}s`
+      const minutesStr = minutes.toString().padStart(2, '0')
+      const secondsStr = seconds.toString().padStart(2, '0')
+      this.timeElement.textContent = `${minutesStr}:${secondsStr}`
     }
     
-    // ✨ NEW: Reset auto-return timer when showing
     this.autoReturnTimer = 0
     
     this.container.style.opacity = '1'
@@ -212,22 +212,14 @@ export class GameOverScreen {
     this.isVisible = true
   }
 
-  /**
-   * ✨ NEW: Update auto-return timer (call every frame from SimulationTest)
-   */
   update(delta) {
     if (!this.isVisible || !this.progressFill) return
     
-    // Increment timer
     this.autoReturnTimer += delta
-    
-    // Update progress bar (from 100% to 0% as time passes)
     const progress = Math.max(0, 1 - (this.autoReturnTimer / this.autoReturnDelay))
     this.progressFill.style.width = (progress * 100) + '%'
     
-    // Auto-return when timer expires
     if (this.autoReturnTimer >= this.autoReturnDelay) {
-      console.log('[GameOverScreen] Auto-return timer expired, returning to menu')
       this.destroy()
       if (this.onReturn) {
         this.onReturn()

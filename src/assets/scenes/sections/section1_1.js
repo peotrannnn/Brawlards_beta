@@ -715,7 +715,7 @@ export function createSection1(rootGroup, lightingOverrides = {}) {
     }
     
     root.add(elevatorDoor)
-    console.log('[Scene1] Elevator door created and added to scene')
+    // console.log('[Scene1] Elevator door created and added to scene')
   } catch (error) {
     console.error('[Scene1] Failed to load elevator door:', error)
   }
@@ -833,8 +833,8 @@ export function createSection1(rootGroup, lightingOverrides = {}) {
     totalArea: ROOM_CONFIG.width * ROOM_CONFIG.depth
   }
   
-  console.log(`Room dimensions: ${ROOM_CONFIG.width} x ${ROOM_CONFIG.depth} = ${ROOM_CONFIG.width * ROOM_CONFIG.depth} units`)
-  console.log(`Tiles: ${ROOM_CONFIG.tilesX * ROOM_CONFIG.tilesZ} tiles of ${ROOM_CONFIG.tileSize}x${ROOM_CONFIG.tileSize}`)
+  // console.log(`Room dimensions: ${ROOM_CONFIG.width} x ${ROOM_CONFIG.depth} = ${ROOM_CONFIG.width * ROOM_CONFIG.depth} units`)
+  // console.log(`Tiles: ${ROOM_CONFIG.tilesX * ROOM_CONFIG.tilesZ} tiles of ${ROOM_CONFIG.tileSize}x${ROOM_CONFIG.tileSize}`)
 
   // Lighting methods
   root.userData.applyLighting = function(scene, renderer) {
@@ -843,7 +843,7 @@ export function createSection1(rootGroup, lightingOverrides = {}) {
       return null
     }
     
-    console.log('Applying lighting for scene1:', root.userData.lightingConfig)
+    // console.log('Applying lighting for scene1:', root.userData.lightingConfig)
     const lightingController = setupSceneLighting(scene, renderer, root.userData.lightingConfig)
     root.userData.lightingController = lightingController
     return lightingController
@@ -864,7 +864,7 @@ export function createSection1(rootGroup, lightingOverrides = {}) {
       directionalLight: { ...root.userData.lightingConfig.directionalLight, ...(newConfig.directionalLight || {}) }
     }
     
-    console.log('Lighting config updated:', root.userData.lightingConfig)
+    // console.log('Lighting config updated:', root.userData.lightingConfig)
   }
 
   // Note: Dynamic logic (flickering, person animation, water splash)

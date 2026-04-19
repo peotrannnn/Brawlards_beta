@@ -90,7 +90,7 @@ function createLightStick() {
 export function getLightStickAsset() {
   return {
     name: "Light Stick",
-    description: "Hàng nóng!",
+    description: "Light, freely given, with enough power to override even locked doors.",
     factory: () => createLightStick(),
     physics: lightStickPhysicsDef
   }

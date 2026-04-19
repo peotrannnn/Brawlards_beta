@@ -112,7 +112,7 @@ function createBabyOil() {
 export function getBabyOilAsset() {
   return {
     name: "Baby Oil",
-    description: "Chai dầu em bé!",
+    description: "Baby oil bottle! Used for lubrication!",
     factory: createBabyOil,
     physics: babyOilPhysicsDef
   }

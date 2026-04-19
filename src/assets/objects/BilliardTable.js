@@ -780,7 +780,7 @@ export function getBilliardTableAsset() {
 
   return {
     name: "Billiard Table",
-    description: "Đừng té xuống lỗ, hoặc... thử xem...?",
+    description: "Stay out of the hole… or find out for yourself.",
     factory: () => createBilliardTable()
   }
 

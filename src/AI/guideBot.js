@@ -26,6 +26,7 @@ const GUIDE_AI_CONFIG = {
   followTeleportPadding: 0.2,
   protectSpeedMultiplier: 1.25,
   collectScanIntervalSec: 1 / 18,
+  glowUpdateIntervalSec: 1 / 30,
 }
 
 const LIGHT_STICK_OFF_NAMES = new Set(['Light Stick Off'])
@@ -75,12 +76,21 @@ export class GuideAI {
     this.protectTargetGuyEntry = null
 
     this._collectScanAccumulator = 0
+    this._glowUpdateAccumulator = 0
     this._tmpTriggerCenter = new THREE.Vector3()
     this._tmpMoveDir = new THREE.Vector3()
     this._tmpCollectPos = new THREE.Vector3()
     this._tmpQuat = new THREE.Quaternion()
 
     this._smallTriggerRef = null
+    this._anchorRef = null
+
+    this._tmpAnchorWorldPos = new THREE.Vector3()
+    this._tmpAnchorWorldQuat = new THREE.Quaternion()
+    this._tmpFallbackAnchorQuat = new THREE.Quaternion()
+    this._tmpLerpColor = new THREE.Color()
+    this._tmpOffsetDir = new THREE.Vector3()
+    this._tmpFollowPos = new THREE.Vector3()
 
     this._setGuideMood('sad')
   }
@@ -241,21 +251,29 @@ export class GuideAI {
   }
 
   _getAnchorWorldTransform() {
-    this.mesh.updateMatrixWorld(true)
+    // Force full matrix update to ensure latest position is reflected
+    // (mesh.position should already be synced from physics body)
+    if (this.mesh.parent) {
+      this.mesh.parent.updateMatrixWorld(false)
+    }
+    this.mesh.updateMatrixWorld(false)
 
     const anchorName = this.mesh.userData?.lightStickAnchorName || 'GuideLightStickAnchor'
-    const anchor = this.mesh.getObjectByName(anchorName)
-    if (anchor) {
-      const worldPos = new THREE.Vector3()
-      const worldQuat = new THREE.Quaternion()
-      anchor.getWorldPosition(worldPos)
-      anchor.getWorldQuaternion(worldQuat)
-      return { position: worldPos, quaternion: worldQuat }
+    if (!this._anchorRef || this._anchorRef.parent == null || this._anchorRef.name !== anchorName) {
+      this._anchorRef = this.mesh.getObjectByName(anchorName) || null
     }
 
-    const fallbackPos = this.mesh.position.clone()
-    const fallbackQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, this.bodyYaw, 0))
-    return { position: fallbackPos, quaternion: fallbackQuat }
+    const anchor = this._anchorRef
+    if (anchor) {
+      anchor.getWorldPosition(this._tmpAnchorWorldPos)
+      anchor.getWorldQuaternion(this._tmpAnchorWorldQuat)
+      return { position: this._tmpAnchorWorldPos, quaternion: this._tmpAnchorWorldQuat }
+    }
+
+    // Fallback: use absolute mesh position to ensure no frame lag
+    this._tmpAnchorWorldPos.copy(this.mesh.position)
+    this._tmpFallbackAnchorQuat.setFromEuler(new THREE.Euler(0, this.bodyYaw, 0))
+    return { position: this._tmpAnchorWorldPos, quaternion: this._tmpFallbackAnchorQuat }
   }
 
   _syncBodyAndMeshToTransform(entry, position, quaternion) {
@@ -274,11 +292,26 @@ export class GuideAI {
 
     mesh.position.copy(position)
     mesh.quaternion.copy(quaternion)
-    mesh.traverse(child => {
-      if (child.isMesh) child.userData.isCarriedItem = true
-    })
 
     return true
+  }
+
+  _setEntryCarriedFlag(entry, isCarried) {
+    const meshRoot = entry?.mesh
+    if (!meshRoot) return
+    if (meshRoot.userData?._cachedCarriedFlag === isCarried) return
+
+    meshRoot.userData = meshRoot.userData || {}
+    meshRoot.userData._cachedCarriedFlag = isCarried
+
+    meshRoot.traverse(child => {
+      if (!child.isMesh) return
+      child.userData.isCarriedItem = isCarried
+      child.userData.carriedByGuide = isCarried
+      if (isCarried) {
+        child.userData.carriedByPlayer = false
+      }
+    })
   }
 
   _lockItemToAnchor(entry) {
@@ -289,6 +322,17 @@ export class GuideAI {
   _ensureGlowComponents(entry) {
     const meshRoot = entry?.mesh
     if (!meshRoot) return { stickMeshes: [], pointLight: null }
+
+    const cache = entry.userData?.guideGlowCache
+    if (cache?.stickMeshes?.length) {
+      const existingLight = meshRoot.getObjectByName('StickPointLight')
+      if (existingLight) {
+        cache.pointLight = existingLight
+      }
+      return cache
+    }
+
+    entry.userData = entry.userData || {}
 
     const stickMeshes = []
     meshRoot.traverse(child => {
@@ -313,7 +357,9 @@ export class GuideAI {
       meshRoot.add(pointLight)
     }
 
-    return { stickMeshes, pointLight }
+    const glowCache = { stickMeshes, pointLight }
+    entry.userData.guideGlowCache = glowCache
+    return glowCache
   }
 
   _setGlowProgress(entry, progress) {
@@ -325,8 +371,8 @@ export class GuideAI {
       mats.forEach(mat => {
         if (!mat) return
         if (mat.color) {
-          const c = GUIDE_AI_CONFIG.offColor.clone().lerp(GUIDE_AI_CONFIG.onColor, t)
-          mat.color.copy(c)
+          this._tmpLerpColor.copy(GUIDE_AI_CONFIG.offColor).lerp(GUIDE_AI_CONFIG.onColor, t)
+          mat.color.copy(this._tmpLerpColor)
         }
         if (mat.emissive) {
           mat.emissive.copy(GUIDE_AI_CONFIG.onEmissive)
@@ -334,7 +380,6 @@ export class GuideAI {
         mat.emissiveIntensity = GUIDE_AI_CONFIG.onEmissiveIntensity * t
         mat.transparent = true
         mat.opacity = THREE.MathUtils.lerp(GUIDE_AI_CONFIG.offOpacity, GUIDE_AI_CONFIG.onOpacity, t)
-        mat.needsUpdate = true
       })
     })
 
@@ -373,6 +418,7 @@ export class GuideAI {
     }
 
     body.userData.isCollectedItem = true
+    this._setEntryCarriedFlag(entry, true)
     this._setGuideMood('happy')
     this.loyalPlayerEntry = this._acquireNearestPlayer(syncList)
     this.protectTargetGuyEntry = null
@@ -414,9 +460,7 @@ export class GuideAI {
 
     if (mesh) {
       mesh.name = isFullyGlowing ? 'Light Stick' : 'Light Stick Off'
-      mesh.traverse(child => {
-        if (child.isMesh) child.userData.isCarriedItem = false
-      })
+      this._setEntryCarriedFlag(carried.entry, false)
     }
 
     carried.entry.name = isFullyGlowing ? 'Light Stick' : 'Light Stick Off'
@@ -499,8 +543,12 @@ export class GuideAI {
     }
 
     carried.glowTime += delta
+    this._glowUpdateAccumulator += delta
     const glowT = Math.min(1, carried.glowTime / GUIDE_AI_CONFIG.glowTransitionDuration)
-    this._setGlowProgress(entry, glowT)
+    if (glowT >= 1 || this._glowUpdateAccumulator >= GUIDE_AI_CONFIG.glowUpdateIntervalSec) {
+      this._setGlowProgress(entry, glowT)
+      this._glowUpdateAccumulator = 0
+    }
   }
 
   _moveTowardTarget() {
@@ -573,7 +621,7 @@ export class GuideAI {
   _teleportNearLoyalPlayer(playerEntry, smallRadius) {
     if (!playerEntry?.mesh || !playerEntry?.body || !this.mesh || !this.body) return false
 
-    const toGuide = new THREE.Vector3().subVectors(this.mesh.position, playerEntry.mesh.position)
+    const toGuide = this._tmpOffsetDir.subVectors(this.mesh.position, playerEntry.mesh.position)
     toGuide.y = 0
     if (toGuide.lengthSq() < 0.0001) {
       toGuide.set(Math.sin(this.bodyYaw), 0, Math.cos(this.bodyYaw))
@@ -585,7 +633,7 @@ export class GuideAI {
       smallRadius + GUIDE_AI_CONFIG.followTeleportPadding
     )
 
-    const targetPos = playerEntry.mesh.position.clone().addScaledVector(toGuide, teleportDistance)
+    const targetPos = this._tmpFollowPos.copy(playerEntry.mesh.position).addScaledVector(toGuide, teleportDistance)
     targetPos.y = playerEntry.body.position.y
 
     this.body.position.set(targetPos.x, targetPos.y, targetPos.z)
@@ -647,14 +695,14 @@ export class GuideAI {
     }
 
     if (this.loyalPlayerEntry?.mesh) {
-      const offsetDir = new THREE.Vector3().subVectors(this.mesh.position, this.loyalPlayerEntry.mesh.position)
+      const offsetDir = this._tmpOffsetDir.subVectors(this.mesh.position, this.loyalPlayerEntry.mesh.position)
       offsetDir.y = 0
       if (offsetDir.lengthSq() < 0.0001) {
         offsetDir.set(Math.sin(this.bodyYaw), 0, Math.cos(this.bodyYaw))
       }
       offsetDir.normalize()
 
-      const followTargetPos = this.loyalPlayerEntry.mesh.position.clone().addScaledVector(offsetDir, GUIDE_AI_CONFIG.followPreferredDistance)
+      const followTargetPos = this._tmpFollowPos.copy(this.loyalPlayerEntry.mesh.position).addScaledVector(offsetDir, GUIDE_AI_CONFIG.followPreferredDistance)
       const targetYaw = this._moveTowardPosition(followTargetPos, 1.0, GUIDE_AI_CONFIG.followStopDistance)
       return { targetYaw, touchedGuy: null }
     }

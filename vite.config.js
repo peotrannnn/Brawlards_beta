@@ -2,8 +2,8 @@ import { defineConfig } from 'vite'
 
 export default defineConfig(({ mode }) => ({
   // Use root path in local dev to avoid blank page from subpath-only URLs.
-  // Use relative path in production so dist/index.html can run directly.
-  base: mode === 'production' ? './' : '/',
+  // Use absolute path for GitHub Pages deployment.
+  base: mode === 'production' ? '/Brawlards_beta/' : '/',
   server: {
     port: 5173,
     open: true

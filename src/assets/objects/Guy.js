@@ -178,7 +178,7 @@ function createGuy() {
   root.userData.update = function(delta, particleManager) {
     particleTimer += delta
     if (particleTimer > GUY_CONFIG.PARTICLE_SPAWN_INTERVAL) {
-      if (particleManager) {
+      if (particleManager && typeof particleManager.spawn === 'function') {
         const spawnPos = root.position.clone()
         spawnPos.y -= 0.35 
         particleManager.spawn('ghostSmoke', spawnPos)
@@ -228,7 +228,7 @@ function createGuy() {
 export function getGuyAsset() {
   return {
     name: "Guy",
-    description: "Bạn còn lại 1 phút...",
+    description: "You have one minute.",
     factory: () => createGuy(),
     physics: guyPhysicsDef
   }

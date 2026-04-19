@@ -180,7 +180,7 @@ function createDude() {
   root.userData.update = function(delta, particleManager) {
     particleTimer += delta
     if (particleTimer > DUDE_CONFIG.PARTICLE_SPAWN_INTERVAL) {
-      if (particleManager) {
+      if (particleManager && typeof particleManager.spawn === 'function') {
         const spawnPos = root.position.clone()
         spawnPos.y -= 0.35
         particleManager.spawn('whiteMistFall', spawnPos)
@@ -230,7 +230,7 @@ function createDude() {
 export function getDudeAsset() {
   return {
     name: 'Dude',
-    description: 'Cẩn thận xung quanh...',
+    description: 'Look around.',
     factory: () => createDude(),
     physics: dudePhysicsDef
   }

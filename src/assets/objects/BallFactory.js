@@ -310,7 +310,7 @@ export function getBallAssets(renderer) {
 
   assets.push({
     name: "Cue Ball",
-    description: "Bi bí ẩn???",
+    description: "Mysterious cue ball???",
     factory: () => createBilliardBall(0, renderer),
     physics: getBallPhysicsDef(0)
   })
@@ -318,11 +318,11 @@ export function getBallAssets(renderer) {
   for (let i = 1; i <= 15; i++) {
     let desc = ""
     if (i === 8) {
-      desc = "Tao yếu, nhưng anh em tao đông!"
+      desc = "I’m weak, but my gang is plenty!"
     } else if (i <= 7) {
-      desc = `Bi trơn số ${i}!`
+      desc = `Solid ball number ${i}!`
     } else {
-      desc = `Bi sọc số ${i - 7}!`
+      desc = `Striped ball number ${i - 7}!`
     }
     
     assets.push({
@@ -335,7 +335,7 @@ export function getBallAssets(renderer) {
 
   assets.push({
     name: "Bowling Ball",
-    description: "Có thể là thù, có thể là bạn!",
+    description: "Friend or foe, you’re dealing with trouble either way.",
     factory: () => createBowlingBall(renderer),
     physics: getBowlingBallPhysicsDef()
   })

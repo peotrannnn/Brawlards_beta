@@ -284,7 +284,7 @@ function createGuide() {
 export function getGuideAsset() {
   return {
     name: "Guide",
-    description: "Người soi sáng!",
+    description: "The most loyal one, even after death.",
     factory: () => createGuide(),
     physics: guidePhysicsDef
   }

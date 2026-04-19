@@ -153,13 +153,29 @@ export class MusicPlayer {
     this.isPlaying = false
   }
   
+  // --- PATCH: Prevent overlapping music (robust) ---
   async start() {
-    if (this.audioContext.state === 'suspended') {
-      await this.audioContext.resume()
+    if (this._isStarting) return;
+    this._isStarting = true;
+    try {
+      if (this.audioContext.state === 'suspended') {
+        await this.audioContext.resume();
+      }
+      // Stop any current song and clear all sources
+      await this.stopCurrentSong();
+      // Defensive: forcibly disconnect all sources from context
+      if (this.audioContext) {
+        try {
+          this.audioContext.close();
+        } catch (e) {}
+        this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      await this.playNextSong(true);
+    } finally {
+      this._isStarting = false;
     }
-    
-    await this.playNextSong(true)
   }
+  // --- END PATCH ---
   
   pause() {
     if (this.nextSongTimeout) {

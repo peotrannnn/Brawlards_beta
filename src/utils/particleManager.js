@@ -91,6 +91,7 @@ export class ParticleManager {
 
   update(delta) {
     this.effects = this.effects.filter(e => {
+      // Remove all debug logs from effect update
       e.update(delta)
       return !e.finished
     })

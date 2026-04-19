@@ -65,13 +65,14 @@ const PLAYER_CONFIG = {
 }
 
 export class PlayerMovementController {
-    constructor(camera, scene, physicsMaterials, canvas = null, syncList = null, destroySystem = null) {
+    constructor(camera, scene, physicsMaterials, canvas = null, syncList = null, destroySystem = null, cameraController = null) {
         this.camera = camera
         this.scene = scene
         this.physicsMaterials = physicsMaterials
         this.canvas = canvas
         this.syncList = syncList
         this.destroySystem = destroySystem
+        this.cameraController = cameraController
         this.particleManager = null  // Will be set later
 
         this.keys = {
@@ -804,13 +805,11 @@ export class PlayerMovementController {
     }
 
     _getStackTargetForIndex(index, mesh, playerBody = null) {
+        // Use mesh position directly to avoid 1-frame carry item delay
+        // Items follow the visual position (already synced), not predicted physics position
         const anchorBody = playerBody || this.currentBody
-        const anchorX = anchorBody
-            ? anchorBody.position.x + ((anchorBody.velocity?.x || 0) * PLAYER_CONFIG.fixedTimeStep)
-            : mesh.position.x
-        const anchorZ = anchorBody
-            ? anchorBody.position.z + ((anchorBody.velocity?.z || 0) * PLAYER_CONFIG.fixedTimeStep)
-            : mesh.position.z
+        const anchorX = mesh.position.x
+        const anchorZ = mesh.position.z
         const baseY = this._getPlayerBodyTop(mesh, anchorBody) + PLAYER_CONFIG.stackBaseGap
         let accumulatedHeight = 0
 
@@ -847,15 +846,25 @@ export class PlayerMovementController {
     }
 
     _setMeshCarriedFlag(itemMesh, isCarried) {
-        if (!itemMesh) return
-        if (itemMesh.userData?._cachedCarriedFlag === isCarried) return
+    if (!itemMesh) return
+    if (itemMesh.userData?._cachedCarriedFlag === isCarried) return
 
-        itemMesh.userData = itemMesh.userData || {}
-        itemMesh.userData._cachedCarriedFlag = isCarried
-        itemMesh.traverse(child => {
-            if (child.isMesh) child.userData.isCarriedItem = isCarried
-        })
+    itemMesh.userData = itemMesh.userData || {}
+    itemMesh.userData._cachedCarriedFlag = isCarried
+    itemMesh.traverse(child => {
+        if (!child.isMesh) return
+        child.userData.isCarriedItem = isCarried
+        child.userData.carriedByPlayer = isCarried
+        child.userData.ignoreRaycast = isCarried
+        if (isCarried) {
+            child.userData.carriedByGuide = false
+        }
+    })
+    
+    if (isCarried && this.cameraController) {
+        this.cameraController.forceRefreshCollisionCache();
     }
+}
 
     _setCarriedBodyLocked(carried, targetPos) {
         const body = carried?.entry?.body
@@ -1427,8 +1436,6 @@ export class PlayerMovementController {
             this.throwItemQueued = false
         }
 
-        this._updateCarriedItems(frameDelta, mesh)
-
         this._markerUpdateAccumulator += frameDelta
         if (this._markerUpdateAccumulator >= PLAYER_CONFIG.markerUpdateIntervalSec) {
             this._markerUpdateAccumulator = 0
@@ -1486,6 +1493,10 @@ export class PlayerMovementController {
     cancelCharge() {
         this._isCharging = false;
         this.currentCharge = 0;
+    }
+    syncCarriedItemsPosition(frameDelta, playerMesh) {
+        if (!playerMesh) return
+        this._updateCarriedItems(frameDelta, playerMesh)
     }
     getConfig() { return PLAYER_CONFIG; }
 

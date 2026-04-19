@@ -256,7 +256,7 @@ function createCartonBox() {
 export function getCartonBoxAsset() {
   return {
     name: 'Carton Box',
-    description: 'Hộp chứa Dummy!',
+    description: 'Dummy container!',
     factory: createCartonBox,
     physics: cartonBoxPhysicsDef
   }
