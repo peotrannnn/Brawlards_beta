@@ -133,7 +133,7 @@ function showHomePage() {
   menuOverlay.style.justifyContent = 'center';
   menuOverlay.style.alignItems = 'center';
   menuOverlay.style.zIndex = '20003';
-  menuOverlay.style.background = "url('./src/pictures/jd_thick.png') center center / cover no-repeat";
+  menuOverlay.style.background = `url('${import.meta.env.BASE_URL}pictures/jd_thick.png') center center / cover no-repeat`;
   menuOverlay.style.pointerEvents = 'auto';
   menuOverlay.style.transition = 'opacity 1s';
 
