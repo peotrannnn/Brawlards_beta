@@ -207,6 +207,7 @@ function createElevatorDoor() {
 
     // ✨ Update texture
     displayTexture.needsUpdate = true
+    console.log(`[ElevatorDoor] Display updated: ${displayText}${isCountdownActive ? ' (Countdown)' : ''}`)
   }
 
   const displayMaterial = new THREE.MeshStandardMaterial({

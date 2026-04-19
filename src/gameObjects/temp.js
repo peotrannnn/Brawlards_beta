@@ -7,7 +7,6 @@ import { getGuyAsset } from "../assets/objects/Guy.js";
 import { getDudeAsset } from "../assets/objects/Dude.js";
 import { getDummyAsset } from "../assets/objects/Dummy.js";
 import { getCompuneAsset } from "../assets/objects/Compune.js";
-import { getEyeAsset } from "../assets/objects/eye.js";
 import { getDoor0Asset, getDoor1Asset, getDoor2Asset } from "../assets/objects/DoorFactory.js";
 import { getElevatorDoorAsset } from "../assets/objects/ElevatorDoor.js";
 import { getLightStickAsset } from "../assets/items/lightStick.js";
@@ -82,7 +81,6 @@ export function createAllGameObjects(renderer) {
     const dudeAsset = getDudeAsset();
     const dummyAsset = getDummyAsset();
     const compuneAsset = getCompuneAsset();
-    const eyeAsset = getEyeAsset();
     const lightStickAsset = getLightStickAsset();
     const lightStickOffAsset = getLightStickOffAsset();
     const babyOilAsset = getBabyOilAsset();
@@ -155,13 +153,6 @@ export function createAllGameObjects(renderer) {
         createBody: (mats) => createBody(compuneAsset.physics, mats)
     };
 
-    const dynamicEyeAsset = {
-        ...eyeAsset,
-        type: 'dynamic',
-        createMesh: eyeAsset.factory,
-        createBody: (mats) => createBody(eyeAsset.physics, mats)
-    };
-
     const dynamicLightStickAsset = {
         ...lightStickAsset,
         type: 'dynamic',
@@ -190,7 +181,7 @@ export function createAllGameObjects(renderer) {
         createBody: (mats) => createBody(silverCoinAsset.physics, mats)
     };
 
-    return [...dynamicBallAssets, dynamicPlayerAsset, dynamicGuideAsset, dynamicGuyAsset, dynamicDudeAsset, dynamicDummyAsset, dynamicCompuneAsset, dynamicEyeAsset, dynamicLightStickAsset, dynamicLightStickOffAsset, dynamicBabyOilAsset, dynamicSilverCoinAsset];
+    return [...dynamicBallAssets, dynamicPlayerAsset, dynamicGuideAsset, dynamicGuyAsset, dynamicDudeAsset, dynamicDummyAsset, dynamicCompuneAsset, dynamicLightStickAsset, dynamicLightStickOffAsset, dynamicBabyOilAsset, dynamicSilverCoinAsset];
 }
 
 /**

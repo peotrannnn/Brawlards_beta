@@ -180,7 +180,7 @@ function createDude() {
   root.userData.update = function(delta, particleManager) {
     particleTimer += delta
     if (particleTimer > DUDE_CONFIG.PARTICLE_SPAWN_INTERVAL) {
-      if (particleManager && typeof particleManager.spawn === 'function') {
+      if (particleManager) {
         const spawnPos = root.position.clone()
         spawnPos.y -= 0.35
         particleManager.spawn('whiteMistFall', spawnPos)

@@ -1,77 +1,25 @@
 import * as THREE from 'three'
-import { createEyeSun } from '../../objects/eye.js'
-import { getHouseAsset } from '../../objects/House.js'
-import { createTreeBillboard, updateBillboards, setTreeOpacity } from '../../objects/TreeBillboard.js'
 
-// ======================================================
-// SECTION 3 MASTER CONFIG - Dễ dàng chỉnh tất cả các tham số
-// ======================================================
-
-const SECTION3_MASTER_CONFIG = {
-  // Platform geometry
-  center: { x: 0, y: 140, z: 0 },
-  radius: 96,
-  thickness: 1.2,
-  segments: 96,
-
-  // Lighting
-  overheadLightHeight: 26,
-  overheadLightIntensity: 860,
-  overheadLightDistance: 88,
-  overheadLightDecay: 1.35,
-  overheadLightAngle: 1.52,
-  overheadLightPenumbra: 0.72,
-
-  // Fog & atmosphere (NORMAL state)
-  fog: { near: 30, far: 100 },
-  background: '#41a5e7',
-  ambientIntensity: 1.2,
-
-  // ======================================================
-  // COLOR TRANSITIONS - Chỉnh màu bắt đầu + kết thúc
-  // ======================================================
-  colors: {
-    // Normal state (BEFORE eye transition)
-    grassBaseNormal: '#67b935',
-    grassVividNormal: '#89ff39',
-    grassSoilNormal: '#3d1a05',
-    grassDeepSoilNormal: '#240d02',
-    fogNormal: '#cfedff',
-    backgroundNormal: '#41a5e7',
-
-    // Transition state (AFTER 60s transition completes)
-    grassBaseTransitioned: '#ff3c3c',    // Crimson base
-    grassVividTransitioned: '#ff8585',   // Bright crimson
-    grassSoilTransitioned: '#110035',    // Dark crimson soil
-    grassDeepSoilTransitioned: '#110034', // Very dark crimson
-    fogTransitioned: '#4a3d6d',          // Purple-blue fog
-    backgroundTransitioned: '#000000'    // Black sky
-  }
-}
-
-// Colors (extracted from SECTION3_MASTER_CONFIG)
-const SECTION3_GRASS_BASE_COLOR = new THREE.Color(SECTION3_MASTER_CONFIG.colors.grassBaseNormal)
-const SECTION3_GRASS_SOIL_COLOR = new THREE.Color(SECTION3_MASTER_CONFIG.colors.grassSoilNormal)
-const SECTION3_GRASS_VIVID_COLOR = new THREE.Color(SECTION3_MASTER_CONFIG.colors.grassVividNormal)
-const SECTION3_GRASS_DEEP_SOIL_COLOR = new THREE.Color(SECTION3_MASTER_CONFIG.colors.grassDeepSoilNormal)
-
-// Grass rendering
+const SECTION3_GRASS_BASE_COLOR = new THREE.Color('#67b935')
+const SECTION3_GRASS_SOIL_COLOR = new THREE.Color('#090542')
+const SECTION3_GRASS_VIVID_COLOR = new THREE.Color('#89ff39')
+const SECTION3_GRASS_DEEP_SOIL_COLOR = new THREE.Color('#13006a')
 const SECTION3_GRASS_SETTINGS = {
   textureSize: 768,
   textureRepeat: 4096,
   bladeTextureSize: 128,
-  patchCount: 2000,
-  bladesPerPatchMin: 80,
-  bladesPerPatchMax: 140,
+  patchCount: 4200,
+  bladesPerPatchMin: 50,
+  bladesPerPatchMax: 100,
   patchRadiusMin: 1.5,
   patchRadiusMax: 3,
   edgePadding: 2.8,
   hoverOffset: 0.035,
-  jitter: 0.6,
-  lodNearDistance: 7,
-  lodCullDistance: 18,
-  lodRefreshInterval: 0.2,
-  lodRefreshMoveDistance: 0.8,
+  jitter: 1.0,
+  lodNearDistance: 10,
+  lodCullDistance: 30,
+  lodRefreshInterval: 0.5,
+  lodRefreshMoveDistance: 1.5,
   nearScaleFactor: 0.3,
   minScaleFactor: 0.05,
   bladeWidthMin: 0.05,
@@ -80,260 +28,6 @@ const SECTION3_GRASS_SETTINGS = {
   bladeHeightMax: 0.5,
   bladeMaxTiltX: 0.5,
   bladeMaxTiltZ: 0.5
-}
-
-const SECTION3_GRASS_LOW_QUALITY_OVERRIDES = {
-  patchCount: 1700,
-  textureSize: 512,
-  bladeTextureSize: 96,
-  bladesPerPatchMin: 16,
-  bladesPerPatchMax: 34,
-  lodNearDistance: 6,
-  lodCullDistance: 14,
-  lodRefreshInterval: 0.3,
-  lodRefreshMoveDistance: 1.0,
-  nearScaleFactor: 0.26,
-  minScaleFactor: 0.03,
-  bladeHeightMax: 0.4
-}
-
-// House placement
-const SECTION3_HOUSE_SETTINGS = {
-  count: 60,
-  minRadius: 28,
-  maxRadiusPadding: 8,
-  minSpacing: 13,
-  noiseScale: 0.055,
-  noiseThreshold: 0.5,
-  maxAttempts: 3200,
-  seed: 119.37
-}
-
-const SECTION3_HOUSE_LOW_QUALITY_OVERRIDES = {
-  count: 60
-}
-
-// Tree placement
-const SECTION3_TREE_SETTINGS = {
-  count: 300,
-  minRadius: 15,
-  maxRadiusPadding: 6,
-  minSpacing: 5.5,
-  noiseScale: 0.12,
-  noiseThreshold: 0.45,
-  maxAttempts: 20000,
-  seed: 247.19
-}
-
-const SECTION3_TREE_LOW_QUALITY_OVERRIDES = {
-  count: 300,
-  minSpacing: 5.2,
-  maxAttempts: 14000
-}
-
-const SECTION3_TREE_LOD_SETTINGS = {
-  cullDistance: 200,
-  refreshInterval: 0.2,
-  refreshMoveDistance: 1.6,
-  cellSize: 24
-}
-
-const SECTION3_TREE_LOD_LOW_QUALITY_OVERRIDES = {
-  cullDistance: 200,
-  refreshInterval: 0.3,
-  refreshMoveDistance: 2.2,
-  cellSize: 28
-}
-
-const cachedSection3GrassNoiseTextures = new Map()
-const cachedSection3GrassBladeMaskTextures = new Map()
-
-function isSection3HighQualityMode() {
-  if (typeof window === 'undefined') return true
-
-  const dpr = window.devicePixelRatio || 1
-  const pixelLoad = window.innerWidth * window.innerHeight * dpr
-  // Fullscreen/high-DPI screens should switch Section 3 to low-cost profile.
-  return pixelLoad <= 2800000
-}
-
-function section3Fract(v) {
-  return v - Math.floor(v)
-}
-
-function section3Hash2(x, y, seed = 0) {
-  const n = x * 127.1 + y * 311.7 + seed * 74.7
-  return section3Fract(Math.sin(n) * 43758.5453123)
-}
-
-function section3Smooth01(t) {
-  return t * t * (3 - 2 * t)
-}
-
-function section3ValueNoise2D(x, y, seed = 0) {
-  const x0 = Math.floor(x)
-  const y0 = Math.floor(y)
-  const x1 = x0 + 1
-  const y1 = y0 + 1
-  const tx = section3Smooth01(x - x0)
-  const ty = section3Smooth01(y - y0)
-
-  const n00 = section3Hash2(x0, y0, seed)
-  const n10 = section3Hash2(x1, y0, seed)
-  const n01 = section3Hash2(x0, y1, seed)
-  const n11 = section3Hash2(x1, y1, seed)
-
-  const nx0 = n00 + (n10 - n00) * tx
-  const nx1 = n01 + (n11 - n01) * tx
-  return nx0 + (nx1 - nx0) * ty
-}
-
-function section3Fbm2D(x, y, seed = 0, octaves = 4, lacunarity = 2.08, gain = 0.53) {
-  let value = 0
-  let amplitude = 0.58
-  let frequency = 1
-  for (let i = 0; i < octaves; i++) {
-    value += section3ValueNoise2D(x * frequency, y * frequency, seed + i * 17.19) * amplitude
-    frequency *= lacunarity
-    amplitude *= gain
-  }
-  return value
-}
-
-function generateSection3HousePlacements(centerX, centerZ, platformRadius, settings = SECTION3_HOUSE_SETTINGS) {
-  const placements = []
-  const maxRadius = Math.max(settings.minRadius + 1, platformRadius - settings.maxRadiusPadding)
-  const minSpacingSq = settings.minSpacing * settings.minSpacing
-
-  for (let attempt = 0; attempt < settings.maxAttempts; attempt++) {
-    if (placements.length >= settings.count) break
-
-    const a = section3Hash2(attempt, 3.11, settings.seed) * Math.PI * 2
-    const rMix = section3Hash2(attempt, 9.73, settings.seed + 11.5)
-    const r = THREE.MathUtils.lerp(settings.minRadius, maxRadius, Math.sqrt(rMix))
-    const x = centerX + Math.cos(a) * r
-    const z = centerZ + Math.sin(a) * r
-
-    const noise = section3Fbm2D(x * settings.noiseScale, z * settings.noiseScale, settings.seed + 29.4)
-    if (noise < settings.noiseThreshold) continue
-
-    let tooClose = false
-    for (let i = 0; i < placements.length; i++) {
-      const dx = placements[i].x - x
-      const dz = placements[i].z - z
-      if ((dx * dx + dz * dz) < minSpacingSq) {
-        tooClose = true
-        break
-      }
-    }
-    if (tooClose) continue
-
-    const yawNoise = section3Fbm2D(x * 0.08 + 17.1, z * 0.08 - 8.6, settings.seed + 71.2)
-    const yaw = yawNoise * Math.PI * 2
-
-    placements.push({ x, z, yaw })
-  }
-
-  return placements
-}
-
-function generateSection3TreePlacements(centerX, centerZ, platformRadius, settings = SECTION3_TREE_SETTINGS) {
-  const placements = []
-  const maxRadius = Math.max(settings.minRadius + 1, platformRadius - settings.maxRadiusPadding)
-
-  function canPlaceAt(x, z, minSpacingSq) {
-    for (let i = 0; i < placements.length; i++) {
-      const dx = placements[i].x - x
-      const dz = placements[i].z - z
-      if ((dx * dx + dz * dz) < minSpacingSq) {
-        return false
-      }
-    }
-    return true
-  }
-
-  function tryPlacementPass(passConfig) {
-    const minSpacingSq = passConfig.minSpacing * passConfig.minSpacing
-    const attemptCount = passConfig.attemptCount
-    const angleSeed = passConfig.angleSeed
-    const radiusSeed = passConfig.radiusSeed
-    const treeSeed = passConfig.treeSeed
-    const noiseSeed = passConfig.noiseSeed
-    const noiseThreshold = passConfig.noiseThreshold
-
-    for (let attempt = 0; attempt < attemptCount; attempt++) {
-      if (placements.length >= settings.count) break
-
-      const passAttempt = attempt + passConfig.attemptOffset
-      const a = section3Hash2(passAttempt, angleSeed, settings.seed) * Math.PI * 2
-      const rMix = section3Hash2(passAttempt, radiusSeed, settings.seed + 19.2)
-      const r = THREE.MathUtils.lerp(settings.minRadius, maxRadius, Math.sqrt(rMix))
-      const x = centerX + Math.cos(a) * r
-      const z = centerZ + Math.sin(a) * r
-
-      if (noiseThreshold > 0) {
-        const noise = section3Fbm2D(x * settings.noiseScale, z * settings.noiseScale, noiseSeed)
-        if (noise < noiseThreshold) continue
-      }
-
-      if (!canPlaceAt(x, z, minSpacingSq)) continue
-
-      const treeIndexNoise = section3Hash2(x * 0.13, z * 0.13, treeSeed)
-      const treeIndex = Math.floor(treeIndexNoise * 9) + 1
-      placements.push({ x, z, treeIndex })
-    }
-  }
-
-  const baseAttemptCount = Math.max(settings.maxAttempts, settings.count * 24)
-  const fallbackPasses = [
-    {
-      attemptOffset: 0,
-      attemptCount: baseAttemptCount,
-      minSpacing: settings.minSpacing,
-      noiseThreshold: settings.noiseThreshold,
-      angleSeed: 7.23,
-      radiusSeed: 11.94,
-      noiseSeed: settings.seed + 37.6,
-      treeSeed: settings.seed + 83.4
-    },
-    {
-      attemptOffset: baseAttemptCount,
-      attemptCount: Math.ceil(settings.count * 16),
-      minSpacing: settings.minSpacing * 0.94,
-      noiseThreshold: Math.max(0, settings.noiseThreshold - 0.05),
-      angleSeed: 17.23,
-      radiusSeed: 21.94,
-      noiseSeed: settings.seed + 137.6,
-      treeSeed: settings.seed + 183.4
-    },
-    {
-      attemptOffset: baseAttemptCount + Math.ceil(settings.count * 16),
-      attemptCount: Math.ceil(settings.count * 20),
-      minSpacing: settings.minSpacing * 0.88,
-      noiseThreshold: Math.max(0, settings.noiseThreshold - 0.12),
-      angleSeed: 27.23,
-      radiusSeed: 31.94,
-      noiseSeed: settings.seed + 237.6,
-      treeSeed: settings.seed + 283.4
-    },
-    {
-      attemptOffset: baseAttemptCount + Math.ceil(settings.count * 36),
-      attemptCount: Math.ceil(settings.count * 24),
-      minSpacing: settings.minSpacing * 0.8,
-      noiseThreshold: 0,
-      angleSeed: 37.23,
-      radiusSeed: 41.94,
-      noiseSeed: settings.seed + 337.6,
-      treeSeed: settings.seed + 383.4
-    }
-  ]
-
-  for (let i = 0; i < fallbackPasses.length; i++) {
-    if (placements.length >= settings.count) break
-    tryPlacementPass(fallbackPasses[i])
-  }
-
-  return placements
 }
 
 function toRgbaString(color, alpha = 1) {
@@ -349,10 +43,6 @@ function mixGrassColorStyle(t, alpha = 1) {
 }
 
 function createGrassNoiseTexture(size = SECTION3_GRASS_SETTINGS.textureSize) {
-  if (cachedSection3GrassNoiseTextures.has(size)) {
-    return cachedSection3GrassNoiseTextures.get(size)
-  }
-
   const canvas = document.createElement('canvas')
   canvas.width = size
   canvas.height = size
@@ -475,6 +165,7 @@ function createGrassNoiseTexture(size = SECTION3_GRASS_SETTINGS.textureSize) {
       const blockPunch = 1 + (blockNoise2 - 0.5) * 0.1 + (blockNoise3 - 0.5) * 0.08
       const staticPulse = staticNoise > 0.985 ? 1.38 : (staticNoise < 0.015 ? 0.62 : 1)
       const finalPunch = noisePunch * microSpeck * fiberPunch * fractalPunch * grainPunch * blockPunch * staticPulse
+
       const vividTarget = zone ? SECTION3_GRASS_VIVID_COLOR : SECTION3_GRASS_DEEP_SOIL_COLOR
       const vividLerp = zone
         ? THREE.MathUtils.clamp(0.2 + microFractal * 0.22, 0, 0.48)
@@ -548,15 +239,10 @@ function createGrassNoiseTexture(size = SECTION3_GRASS_SETTINGS.textureSize) {
   texture.minFilter = THREE.LinearMipmapLinearFilter
   texture.colorSpace = THREE.SRGBColorSpace
   texture.needsUpdate = true
-  cachedSection3GrassNoiseTextures.set(size, texture)
   return texture
 }
 
 function createGrassBladeMaskTexture(size = SECTION3_GRASS_SETTINGS.bladeTextureSize) {
-  if (cachedSection3GrassBladeMaskTextures.has(size)) {
-    return cachedSection3GrassBladeMaskTextures.get(size)
-  }
-
   const canvas = document.createElement('canvas')
   canvas.width = size
   canvas.height = size
@@ -599,12 +285,11 @@ function createGrassBladeMaskTexture(size = SECTION3_GRASS_SETTINGS.bladeTexture
   texture.minFilter = THREE.LinearMipmapLinearFilter
   texture.colorSpace = THREE.NoColorSpace
   texture.needsUpdate = true
-  cachedSection3GrassBladeMaskTextures.set(size, texture)
   return texture
 }
 
-function createSection3GrassLayer(rootGroup, centerX, centerY, centerZ, radius, settings = SECTION3_GRASS_SETTINGS) {
-  const bladeMaskTexture = createGrassBladeMaskTexture(settings.bladeTextureSize)
+function createSection3GrassLayer(rootGroup, centerX, centerY, centerZ, radius) {
+  const bladeMaskTexture = createGrassBladeMaskTexture()
   const tuftGeometry = new THREE.PlaneGeometry(1, 1)
   tuftGeometry.translate(0, 0.5, 0)
 
@@ -615,33 +300,32 @@ function createSection3GrassLayer(rootGroup, centerX, centerY, centerZ, radius, 
     transparent: false,
     side: THREE.DoubleSide,
     depthWrite: true,
-    roughness: 1.0,
+    roughness: 0.96,
     metalness: 0.0,
-    envMapIntensity: 0.0,
     emissive: 0x000000,
     emissiveIntensity: 0.0
   })
 
   const tuftData = []
   const goldenAngle = Math.PI * (3 - Math.sqrt(5))
-  const spreadRadius = radius - settings.edgePadding
-  for (let patchIndex = 0; patchIndex < settings.patchCount; patchIndex++) {
-    const normalizedIndex = (patchIndex + 0.5) / settings.patchCount
+  const spreadRadius = radius - SECTION3_GRASS_SETTINGS.edgePadding
+  for (let patchIndex = 0; patchIndex < SECTION3_GRASS_SETTINGS.patchCount; patchIndex++) {
+    const normalizedIndex = (patchIndex + 0.5) / SECTION3_GRASS_SETTINGS.patchCount
     const angle = patchIndex * goldenAngle
     const distance = Math.sqrt(normalizedIndex) * spreadRadius
-    const jitterStrength = (1 - normalizedIndex * 0.3) * settings.jitter
+    const jitterStrength = (1 - normalizedIndex * 0.3) * SECTION3_GRASS_SETTINGS.jitter
     const patchX = centerX + Math.cos(angle) * distance + (Math.random() - 0.5) * jitterStrength
     const patchZ = centerZ + Math.sin(angle) * distance + (Math.random() - 0.5) * jitterStrength
     const patchRadius = THREE.MathUtils.lerp(
-      settings.patchRadiusMin,
-      settings.patchRadiusMax,
+      SECTION3_GRASS_SETTINGS.patchRadiusMin,
+      SECTION3_GRASS_SETTINGS.patchRadiusMax,
       Math.random()
     )
 
     const bladesInPatch = Math.floor(
       THREE.MathUtils.lerp(
-        settings.bladesPerPatchMin,
-        settings.bladesPerPatchMax,
+        SECTION3_GRASS_SETTINGS.bladesPerPatchMin,
+        SECTION3_GRASS_SETTINGS.bladesPerPatchMax,
         Math.random()
       )
     )
@@ -649,10 +333,10 @@ function createSection3GrassLayer(rootGroup, centerX, centerY, centerZ, radius, 
     for (let bladeIndex = 0; bladeIndex < bladesInPatch; bladeIndex++) {
       const bladeAngle = Math.random() * Math.PI * 2
       const bladeDistance = Math.sqrt(Math.random()) * patchRadius
-      const width = THREE.MathUtils.lerp(settings.bladeWidthMin, settings.bladeWidthMax, Math.random())
-      const height = THREE.MathUtils.lerp(settings.bladeHeightMin, settings.bladeHeightMax, Math.random())
-      const tiltX = (Math.random() - 0.5) * settings.bladeMaxTiltX
-      const tiltZ = (Math.random() - 0.5) * settings.bladeMaxTiltZ
+      const width = THREE.MathUtils.lerp(SECTION3_GRASS_SETTINGS.bladeWidthMin, SECTION3_GRASS_SETTINGS.bladeWidthMax, Math.random())
+      const height = THREE.MathUtils.lerp(SECTION3_GRASS_SETTINGS.bladeHeightMin, SECTION3_GRASS_SETTINGS.bladeHeightMax, Math.random())
+      const tiltX = (Math.random() - 0.5) * SECTION3_GRASS_SETTINGS.bladeMaxTiltX
+      const tiltZ = (Math.random() - 0.5) * SECTION3_GRASS_SETTINGS.bladeMaxTiltZ
       const baseRotation = Math.random() * Math.PI
       tuftData.push({
         x: patchX + Math.cos(bladeAngle) * bladeDistance,
@@ -669,35 +353,14 @@ function createSection3GrassLayer(rootGroup, centerX, centerY, centerZ, radius, 
   const grassMesh = new THREE.InstancedMesh(tuftGeometry, grassMaterial, tuftData.length)
   grassMesh.name = 'Section3 Grass Patches'
   grassMesh.castShadow = false
-  grassMesh.receiveShadow = false
+  grassMesh.receiveShadow = true
   grassMesh.frustumCulled = false
   grassMesh.count = 0
   rootGroup.add(grassMesh)
 
-  const lodNearDistanceSq = settings.lodNearDistance * settings.lodNearDistance
-  const lodCullDistanceSq = settings.lodCullDistance * settings.lodCullDistance
-  const lodSpan = Math.max(0.0001, settings.lodCullDistance - settings.lodNearDistance)
-  const lodCellSize = Math.max(6, settings.lodCullDistance * 0.5)
-  const lodCellRadius = Math.ceil(settings.lodCullDistance / lodCellSize)
-  const lodBuckets = new Map()
-
-  function getLodCellKey(cellX, cellZ) {
-    return `${cellX},${cellZ}`
-  }
-
-  for (let i = 0; i < tuftData.length; i++) {
-    const tuft = tuftData[i]
-    const cellX = Math.floor(tuft.x / lodCellSize)
-    const cellZ = Math.floor(tuft.z / lodCellSize)
-    const key = getLodCellKey(cellX, cellZ)
-    let bucket = lodBuckets.get(key)
-    if (!bucket) {
-      bucket = []
-      lodBuckets.set(key, bucket)
-    }
-    bucket.push(i)
-  }
-
+  const lodNearDistanceSq = SECTION3_GRASS_SETTINGS.lodNearDistance * SECTION3_GRASS_SETTINGS.lodNearDistance
+  const lodCullDistanceSq = SECTION3_GRASS_SETTINGS.lodCullDistance * SECTION3_GRASS_SETTINGS.lodCullDistance
+  const lodSpan = Math.max(0.0001, SECTION3_GRASS_SETTINGS.lodCullDistance - SECTION3_GRASS_SETTINGS.lodNearDistance)
   const dummy = new THREE.Object3D()
   const lastFocus = new THREE.Vector3(Infinity, Infinity, Infinity)
   let lodTimer = 0
@@ -705,43 +368,36 @@ function createSection3GrassLayer(rootGroup, centerX, centerY, centerZ, radius, 
   function applyGrassLod(focusPosition, force = false) {
     if (!focusPosition) return
 
-    const movedEnough = lastFocus.distanceToSquared(focusPosition) >= (settings.lodRefreshMoveDistance * settings.lodRefreshMoveDistance)
-    if (!force && !movedEnough && lodTimer < settings.lodRefreshInterval) {
+    const movedEnough = lastFocus.distanceToSquared(focusPosition) >= (SECTION3_GRASS_SETTINGS.lodRefreshMoveDistance * SECTION3_GRASS_SETTINGS.lodRefreshMoveDistance)
+    if (!force && !movedEnough && lodTimer < SECTION3_GRASS_SETTINGS.lodRefreshInterval) {
       return
     }
 
     let writeIndex = 0
-    const focusCellX = Math.floor(focusPosition.x / lodCellSize)
-    const focusCellZ = Math.floor(focusPosition.z / lodCellSize)
 
-    for (let cellZ = focusCellZ - lodCellRadius; cellZ <= focusCellZ + lodCellRadius; cellZ++) {
-      for (let cellX = focusCellX - lodCellRadius; cellX <= focusCellX + lodCellRadius; cellX++) {
-        const bucket = lodBuckets.get(getLodCellKey(cellX, cellZ))
-        if (!bucket) continue
+    for (let i = 0; i < tuftData.length; i++) {
+      const tuft = tuftData[i]
+      const dx = tuft.x - focusPosition.x
+      const dz = tuft.z - focusPosition.z
+      const distSq = dx * dx + dz * dz
 
-        for (let j = 0; j < bucket.length; j++) {
-          const tuft = tuftData[bucket[j]]
-          const dx = tuft.x - focusPosition.x
-          const dz = tuft.z - focusPosition.z
-          const distSq = dx * dx + dz * dz
+      if (distSq > lodCullDistanceSq) continue
 
-          if (distSq > lodCullDistanceSq) continue
-
-          let scaleFactor = settings.nearScaleFactor
-          if (distSq > lodNearDistanceSq) {
-            const distance = Math.sqrt(distSq)
-            const t = THREE.MathUtils.clamp((distance - settings.lodNearDistance) / lodSpan, 0, 1)
-            scaleFactor = THREE.MathUtils.lerp(settings.nearScaleFactor, settings.minScaleFactor, t)
-          }
-
-          dummy.position.set(tuft.x, centerY + settings.hoverOffset, tuft.z)
-          dummy.rotation.set(tuft.tiltX, tuft.baseRotation, tuft.tiltZ)
-          dummy.scale.set(tuft.width * scaleFactor, tuft.height * scaleFactor, 1)
-          dummy.updateMatrix()
-          grassMesh.setMatrixAt(writeIndex, dummy.matrix)
-          writeIndex += 1
-        }
+      let scaleFactor = 1
+      if (distSq > lodNearDistanceSq) {
+        const distance = Math.sqrt(distSq)
+        const t = THREE.MathUtils.clamp((distance - SECTION3_GRASS_SETTINGS.lodNearDistance) / lodSpan, 0, 1)
+        scaleFactor = THREE.MathUtils.lerp(SECTION3_GRASS_SETTINGS.nearScaleFactor, SECTION3_GRASS_SETTINGS.minScaleFactor, t)
+      } else {
+        scaleFactor = SECTION3_GRASS_SETTINGS.nearScaleFactor
       }
+
+      dummy.position.set(tuft.x, centerY + SECTION3_GRASS_SETTINGS.hoverOffset, tuft.z)
+      dummy.rotation.set(tuft.tiltX, tuft.baseRotation, tuft.tiltZ)
+      dummy.scale.set(tuft.width * scaleFactor, tuft.height * scaleFactor, 1)
+      dummy.updateMatrix()
+      grassMesh.setMatrixAt(writeIndex, dummy.matrix)
+      writeIndex += 1
     }
 
     grassMesh.count = writeIndex
@@ -763,93 +419,8 @@ function createSection3GrassLayer(rootGroup, centerX, centerY, centerZ, radius, 
   }
 }
 
-function createSection3TreeLod(trees, settings = SECTION3_TREE_LOD_SETTINGS) {
-  const cellSize = Math.max(8, settings.cellSize || (settings.cullDistance * 0.3))
-  const cullDistance = Math.max(8, settings.cullDistance || 56)
-  const cullDistanceSq = cullDistance * cullDistance
-  const cellRadius = Math.ceil(cullDistance / cellSize)
-  const buckets = new Map()
-  const lastFocus = new THREE.Vector3(Infinity, Infinity, Infinity)
-  const activeFlags = new Uint8Array(trees.length)
-  const nextFlags = new Uint8Array(trees.length)
-  let lodTimer = 0
-
-  function getCellKey(cellX, cellZ) {
-    return `${cellX},${cellZ}`
-  }
-
-  for (let i = 0; i < trees.length; i++) {
-    const tree = trees[i]
-    const cellX = Math.floor(tree.position.x / cellSize)
-    const cellZ = Math.floor(tree.position.z / cellSize)
-    const key = getCellKey(cellX, cellZ)
-    let bucket = buckets.get(key)
-    if (!bucket) {
-      bucket = []
-      buckets.set(key, bucket)
-    }
-    bucket.push(i)
-    tree.userData.section3LodVisible = false
-    tree.visible = false
-  }
-
-  function applyTreeLod(focusPosition, force = false) {
-    if (!focusPosition) return
-
-    const movedEnough = lastFocus.distanceToSquared(focusPosition) >= (settings.refreshMoveDistance * settings.refreshMoveDistance)
-    if (!force && !movedEnough && lodTimer < settings.refreshInterval) {
-      return
-    }
-
-    nextFlags.fill(0)
-    const focusCellX = Math.floor(focusPosition.x / cellSize)
-    const focusCellZ = Math.floor(focusPosition.z / cellSize)
-
-    for (let cellZ = focusCellZ - cellRadius; cellZ <= focusCellZ + cellRadius; cellZ++) {
-      for (let cellX = focusCellX - cellRadius; cellX <= focusCellX + cellRadius; cellX++) {
-        const bucket = buckets.get(getCellKey(cellX, cellZ))
-        if (!bucket) continue
-
-        for (let i = 0; i < bucket.length; i++) {
-          const treeIndex = bucket[i]
-          const tree = trees[treeIndex]
-          const dx = tree.position.x - focusPosition.x
-          const dz = tree.position.z - focusPosition.z
-          const distSq = dx * dx + dz * dz
-          if (distSq <= cullDistanceSq) {
-            nextFlags[treeIndex] = 1
-          }
-        }
-      }
-    }
-
-    for (let i = 0; i < trees.length; i++) {
-      if (activeFlags[i] === nextFlags[i]) continue
-
-      activeFlags[i] = nextFlags[i]
-      const tree = trees[i]
-      const lodVisible = nextFlags[i] === 1
-      tree.userData.section3LodVisible = lodVisible
-      tree.visible = lodVisible && ((tree.userData.opacity ?? 1) > 0.001)
-    }
-
-    lastFocus.copy(focusPosition)
-    lodTimer = 0
-  }
-
-  return {
-    updateFromFocus(focusPosition, delta = 0) {
-      lodTimer += delta
-      applyTreeLod(focusPosition, false)
-    },
-    forceRefresh(focusPosition) {
-      applyTreeLod(focusPosition, true)
-    }
-  }
-}
-
 function applySection3StochasticTexture(material) {
-  material.customProgramCacheKey = () => 'section3_stochastic_texture_v4_optimized'
+  material.customProgramCacheKey = () => 'section3_stochastic_texture_v3'
   material.onBeforeCompile = (shader) => {
 
     shader.fragmentShader = shader.fragmentShader.replace(
@@ -871,10 +442,9 @@ float s3VNoise(vec2 p) {
              mix(s3Hash(i+vec2(0,1)),  s3Hash(i+vec2(1,1)), u.x), u.y);
 }
 
-/* 🎯 Optimized: Reduced from 6 to 3 octaves */
 float s3Fbm(vec2 p) {
-  float v=0.0,a=0.67,f=1.0;
-  for(int i=0;i<3;i++){ v+=s3VNoise(p*f)*a; f*=2.0; a*=0.5; }
+  float v=0.0,a=0.55,f=1.0;
+  for(int i=0;i<6;i++){ v+=s3VNoise(p*f)*a; f*=2.07; a*=0.50; }
   return v;
 }
 
@@ -910,28 +480,37 @@ vec4 s3SampleStochastic(sampler2D tex, vec2 uv) {
   vec2 worldUv = vMapUv / 720.0;
 
   // ---- STEP 2: MICRO distortion (small ripples inside each tile) ----
-  vec2 tiledUv = worldUv * 720.0;
+  vec2 tiledUv = worldUv * 720.0;   // back to tile-space
   float mdA = s3Fbm(tiledUv * 0.09 + vec2(5.3,  1.9));
   float mdB = s3Fbm(tiledUv * 0.09 + vec2(-2.1,  4.6));
-  vec2 microDistort = vec2(mdA - 0.5, mdB - 0.5) * 0.35;
-  vec2 microUv = tiledUv + microDistort;
+  vec2 microDistort = vec2(mdA - 0.5, mdB - 0.5) * 0.42;
+  vec2 microUv = tiledUv + microDistort;   // distorted tile UV → sample from this
 
   vec4 sampledDiffuseColor = s3SampleStochastic(map, microUv);
   diffuseColor *= sampledDiffuseColor;
 
-  // ---- STEP 3: Simplified MACRO distortion (single warp) ----
-  float mwA = s3Fbm(worldUv * 2.0 + vec2(1.7, -2.1));
-  float mwB = s3Fbm(worldUv * 2.0 + vec2(-3.8, 2.9));
-  vec2 warpedW = worldUv + vec2(mwA-0.5, mwB-0.5) * 0.5;
+  // ---- STEP 3: MACRO distortion overlay (large gradient across whole platform) ----
+  float mwA = s3Fbm(worldUv * 2.2 + vec2(1.7, -2.1));
+  float mwB = s3Fbm(worldUv * 2.2 + vec2(-3.8, 2.9));
+  float mwC = s3Fbm(worldUv * 2.2 + vec2(4.4, -4.7));
+  // double domain-warp for strongly distorted shape
+  vec2 warpedW = worldUv + vec2(mwA-0.5, mwB-0.5) * 0.65;
+  float ww2A = s3Fbm(warpedW * 3.6 + vec2(2.3, 6.7));
+  float ww2B = s3Fbm(warpedW * 3.6 + vec2(-5.1, 1.2));
+  vec2 warpedW2 = warpedW + vec2(ww2A-0.5, ww2B-0.5) * 0.4;
 
-  /* 🎯 Optimized: Single macro instead of 3 separate FBM calls */
-  float macro = s3Fbm(warpedW * 5.0 + vec2(5.3, 1.9));
-  macro = clamp((macro - 0.36) * 2.0, 0.0, 1.0);
+  float macroLow  = s3Fbm(warpedW2 * 2.8 + vec2(5.3, 1.9));
+  float macroMid  = s3Fbm(warpedW2 * 6.1 + vec2(-2.1, 4.6));
+  float macroFine = s3Fbm(warpedW2 * 13.5 + vec2(3.8, -1.2) + vec2(mwC-0.5)*0.3);
+
+  float macro = macroLow*0.50 + macroMid*0.32 + macroFine*0.18;
+  macro = clamp((macro - 0.36) * 2.2, 0.0, 1.0);
+  macro = macro*macro*(3.0-2.0*macro);
 
   vec3 grassTint = vec3(0.537, 1.0,  0.224);
   vec3 soilTint  = vec3(0.075, 0.0,  0.416);
   vec3 macroColor = mix(soilTint, grassTint, macro);
-  diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * macroColor, 0.3);
+  diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * macroColor, 0.34);
 
 #endif`
     )
@@ -945,50 +524,28 @@ export function createSection3(rootGroup) {
   // Nền tròn rất rộng với texture đất cỏ xanh
   // ======================================================
 
-  // Extract config from master config
-  const cfg = SECTION3_MASTER_CONFIG
-  const SECTION3_CENTER_X = cfg.center.x
-  const SECTION3_CENTER_Y = cfg.center.y
-  const SECTION3_CENTER_Z = cfg.center.z
-  const SECTION3_RADIUS = cfg.radius
-  const SECTION3_THICKNESS = cfg.thickness
-  const SECTION3_SEGMENTS = cfg.segments
-  const SECTION3_OVERHEAD_LIGHT_HEIGHT = cfg.overheadLightHeight
-  const SECTION3_EYE_HEIGHT = SECTION3_OVERHEAD_LIGHT_HEIGHT * 2
-  const SECTION3_OVERHEAD_LIGHT_INTENSITY = cfg.overheadLightIntensity
-  const SECTION3_OVERHEAD_LIGHT_DISTANCE = cfg.overheadLightDistance
-  const SECTION3_OVERHEAD_LIGHT_DECAY = cfg.overheadLightDecay
-  const SECTION3_OVERHEAD_LIGHT_ANGLE = cfg.overheadLightAngle
-  const SECTION3_OVERHEAD_LIGHT_PENUMBRA = cfg.overheadLightPenumbra
+  const SECTION3_CENTER_X = 0
+  const SECTION3_CENTER_Y = 140
+  const SECTION3_CENTER_Z = 0
+  const SECTION3_RADIUS = 96
+  const SECTION3_THICKNESS = 1.2
+  const SECTION3_SEGMENTS = 96
+  const SECTION3_OVERHEAD_LIGHT_HEIGHT = 18
+  const SECTION3_OVERHEAD_LIGHT_INTENSITY = 860
+  const SECTION3_OVERHEAD_LIGHT_DISTANCE = 88
+  const SECTION3_OVERHEAD_LIGHT_DECAY = 1.35
+  const SECTION3_OVERHEAD_LIGHT_ANGLE = 1.52
+  const SECTION3_OVERHEAD_LIGHT_PENUMBRA = 0.72
 
-  const useHighQuality = isSection3HighQualityMode()
-  const grassSettings = useHighQuality
-    ? SECTION3_GRASS_SETTINGS
-    : { ...SECTION3_GRASS_SETTINGS, ...SECTION3_GRASS_LOW_QUALITY_OVERRIDES }
-  const houseSettings = useHighQuality
-    ? SECTION3_HOUSE_SETTINGS
-    : { ...SECTION3_HOUSE_SETTINGS, ...SECTION3_HOUSE_LOW_QUALITY_OVERRIDES }
-  const treeSettings = useHighQuality
-    ? SECTION3_TREE_SETTINGS
-    : { ...SECTION3_TREE_SETTINGS, ...SECTION3_TREE_LOW_QUALITY_OVERRIDES }
-  const treeLodSettings = useHighQuality
-    ? SECTION3_TREE_LOD_SETTINGS
-    : { ...SECTION3_TREE_LOD_SETTINGS, ...SECTION3_TREE_LOD_LOW_QUALITY_OVERRIDES }
-
-  const houseAsset = getHouseAsset()
-
-  const grassTexture = createGrassNoiseTexture(grassSettings.textureSize)
-  grassTexture.repeat.set(grassSettings.textureRepeat, grassSettings.textureRepeat)
+  const grassTexture = createGrassNoiseTexture()
+  grassTexture.repeat.set(SECTION3_GRASS_SETTINGS.textureRepeat, SECTION3_GRASS_SETTINGS.textureRepeat)
   const platformMaterial = new THREE.MeshStandardMaterial({
     color: mixGrassColor(0.82),
     map: grassTexture,
-    roughness: 1.0,
-    metalness: 0.0,
-    envMapIntensity: 0.0
+    roughness: 0.98,
+    metalness: 0.0
   })
-  if (useHighQuality) {
-    applySection3StochasticTexture(platformMaterial)
-  }
+  applySection3StochasticTexture(platformMaterial)
 
   const platform = new THREE.Mesh(
     new THREE.CircleGeometry(SECTION3_RADIUS, SECTION3_SEGMENTS),
@@ -1006,104 +563,43 @@ export function createSection3(rootGroup) {
     SECTION3_CENTER_X,
     SECTION3_CENTER_Y,
     SECTION3_CENTER_Z,
-    SECTION3_RADIUS,
-    grassSettings
+    SECTION3_RADIUS
   )
   if (!rootGroup.userData) rootGroup.userData = {}
   rootGroup.userData.section3GrassLod = section3GrassLod
 
-  const eyeSun = createEyeSun({
-    lightColor: '#fff4d6',
-    lightIntensity: 0,
-    lightDistance: SECTION3_OVERHEAD_LIGHT_DISTANCE,
-    lightAngle: SECTION3_OVERHEAD_LIGHT_ANGLE,
-    lightPenumbra: SECTION3_OVERHEAD_LIGHT_PENUMBRA,
-    lightDecay: SECTION3_OVERHEAD_LIGHT_DECAY,
-    targetOffset: new THREE.Vector3(0, -SECTION3_EYE_HEIGHT, 0),
-    scale: 0.92
-  })
-  eyeSun.position.set(
+  const overheadTarget = new THREE.Object3D()
+  overheadTarget.position.set(
     SECTION3_CENTER_X,
-    SECTION3_CENTER_Y + SECTION3_EYE_HEIGHT,
+    SECTION3_CENTER_Y,
     SECTION3_CENTER_Z
   )
-  if (eyeSun.userData?.mainLight) {
-    eyeSun.userData.mainLight.intensity = 0
-    eyeSun.userData.mainLight.visible = false
-  }
-  rootGroup.add(eyeSun)
+  rootGroup.add(overheadTarget)
 
-  rootGroup.userData.section3EyeSun = eyeSun
-
-  const housePlacements = generateSection3HousePlacements(
-    SECTION3_CENTER_X,
-    SECTION3_CENTER_Z,
-    SECTION3_RADIUS,
-    houseSettings
+  const overheadLight = new THREE.SpotLight(
+    '#fff4d6',
+    SECTION3_OVERHEAD_LIGHT_INTENSITY,
+    SECTION3_OVERHEAD_LIGHT_DISTANCE,
+    SECTION3_OVERHEAD_LIGHT_ANGLE,
+    SECTION3_OVERHEAD_LIGHT_PENUMBRA,
+    SECTION3_OVERHEAD_LIGHT_DECAY
   )
-
-  housePlacements.forEach((placement, index) => {
-    const house = houseAsset.factory({
-      lowCost: true,
-      physicsMode: 'simple'
-    })
-    house.position.set(placement.x, SECTION3_CENTER_Y, placement.z)
-    house.rotation.y = placement.yaw
-    house.name = `Section3 House ${index + 1}`
-    house.userData = house.userData || {}
-    house.userData.isSection3House = true
-    house.traverse((child) => {
-      if (child.isMesh) {
-        child.castShadow = false
-      }
-    })
-    
-    rootGroup.add(house)
-  })
-
-  // ======================================================
-  // TREES - Billboard trees with Y-locked billboarding
-  // ======================================================
-  const treePlacements = generateSection3TreePlacements(
+  overheadLight.position.set(
     SECTION3_CENTER_X,
-    SECTION3_CENTER_Z,
-    SECTION3_RADIUS,
-    treeSettings
+    SECTION3_CENTER_Y + SECTION3_OVERHEAD_LIGHT_HEIGHT,
+    SECTION3_CENTER_Z
   )
-
-  const trees = []
-  const treeMaterialControllers = new Set()
-  treePlacements.forEach((placement, index) => {
-    const tree = createTreeBillboard(
-      new THREE.Vector3(placement.x, SECTION3_CENTER_Y + 0.2, placement.z),
-      placement.treeIndex
-    )
-    tree.name = `Section3 Tree ${index + 1}`
-    tree.userData.isSection3Tree = true
-    tree.userData.initialOpacity = 0 // Start invisible, fade in during transition
-    setTreeOpacity(tree, 0)
-    if (tree.userData?.treeMaterialController) {
-      treeMaterialControllers.add(tree.userData.treeMaterialController)
-    }
-    rootGroup.add(tree)
-    trees.push(tree)
-  })
-
-  if (!rootGroup.userData) rootGroup.userData = {}
-  rootGroup.userData.section3Trees = trees
-  rootGroup.userData.section3TreeCount = trees.length
-  rootGroup.userData.section3TreeMaterialControllers = Array.from(treeMaterialControllers)
-  rootGroup.userData.section3TreesVisible = false
-  rootGroup.userData.section3TreeLod = createSection3TreeLod(trees, treeLodSettings)
+  overheadLight.target = overheadTarget
+  overheadLight.castShadow = false
+  overheadLight.name = 'Section3 Overhead Light'
+  rootGroup.add(overheadLight)
 
   // Lighting descriptor — placed after overheadLight is initialized
   rootGroup.userData.sectionLighting = {
-    mainLight: null,
-    baseMainIntensity: 0,
-    ambientIntensity: cfg.ambientIntensity,
-    fog: cfg.fog,
-    background: cfg.background,
-    colors: cfg.colors
+    mainLight: overheadLight,
+    baseMainIntensity: SECTION3_OVERHEAD_LIGHT_INTENSITY,
+    ambientIntensity: 1.2,
+    fog: { near: 1, far: 400 }
   }
 
   const rim = new THREE.Mesh(

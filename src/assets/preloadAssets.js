@@ -3,9 +3,9 @@ import { getPreloadManifest } from './AssetRegistry.js'
 
 let preloadPromise = null
 let optionalWarmupStarted = false
-let optionalWarmupIndex = 0
 
 const CRITICAL_PRELOAD_CONCURRENCY = 4
+const OPTIONAL_PRELOAD_CONCURRENCY = 2
 
 function loadAsset(asset) {
   if (asset.type === 'model') {
@@ -65,24 +65,9 @@ function startOptionalWarmup(optionalAssets) {
   if (optionalWarmupStarted || !optionalAssets.length) return
   optionalWarmupStarted = true
 
-  const runNextOptionalAsset = async () => {
-    if (optionalWarmupIndex >= optionalAssets.length) return
-
-    const asset = optionalAssets[optionalWarmupIndex]
-    optionalWarmupIndex += 1
-
-    try {
-      await loadAsset(asset)
-    } catch (error) {
-      console.error(`[preloadAssets] Optional warmup failed for ${asset.name}:`, error)
-    }
-
-    if (optionalWarmupIndex < optionalAssets.length) {
-      scheduleIdleTask(runNextOptionalAsset)
-    }
-  }
-
-  scheduleIdleTask(runNextOptionalAsset)
+  scheduleIdleTask(async () => {
+    await preloadWithConcurrency(optionalAssets, OPTIONAL_PRELOAD_CONCURRENCY)
+  })
 }
 
 /**

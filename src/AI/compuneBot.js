@@ -264,6 +264,7 @@ export class CompuneAI {
         
         if (this.lastInputTime > 0 && timeSinceLastInput < this.inputSpeedThreshold) {
           // Fast input detected!
+          console.log(`%c[CompuneAI] ⚡ Fast input detected (${timeSinceLastInput}ms)! Trigger sweat effect!`, 'color: #ffaa00; font-weight: bold')
           
           // ✨ IMPORTANT: CompuneAI directly spawns sweat particle effect
           // This ensures effect appears regardless of scene type (gameplay, simulator, etc)
@@ -271,8 +272,9 @@ export class CompuneAI {
             const sweatEffect = createSweatEffect(this.scene, this.mesh.position.clone())
             // ✨ NEW: Store effect to be updated every frame
             this.activeSweatEffects.push(sweatEffect)
+            console.log(`[CompuneAI] Sweat effect created! Active: ${this.activeSweatEffects.length}`)
           } catch (err) {
-            // ignore sweat spawn failures to avoid runtime console spam
+            console.warn('[CompuneAI] Failed to create sweat effect:', err)
           }
           
           // ✨ Also call callback if set (for backward compatibility)
@@ -372,6 +374,7 @@ export class CompuneAI {
           this.disconnectTimer = 0
           this.closeDialog()
           this.showDisconnectScreen()
+          console.debug('[CompuneAI] Player left → disconnecting state')
         }
         break
 
@@ -386,9 +389,11 @@ export class CompuneAI {
           this.disconnectTimer = 0
           this.showDefaultScreen()
           this.startDialog()
+          console.debug('[CompuneAI] Player returned → talking state')
         } else if (this.disconnectTimer >= this.disconnectDelay) {
           // Timeout reached - despawn
           this.shouldDespawn = true
+          console.debug('[CompuneAI] Disconnect timeout reached → DESPAWN')
         }
         break
 
@@ -399,6 +404,7 @@ export class CompuneAI {
         if (this.disconnectTimer >= this.finishReadDelay) {
           // Timeout reached - despawn
           this.shouldDespawn = true
+          console.debug('[CompuneAI] Finished timeout reached → DESPAWN')
         }
         break
     }

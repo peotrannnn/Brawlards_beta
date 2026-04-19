@@ -277,11 +277,6 @@ export class CollisionManager {
         
         return helper;
     }
-
-    static hasHitboxForBody(body) {
-        if (!body) return false;
-        return hitboxes.some(h => h.body === body);
-    }
     
     static removeHitboxForObject(entry) {
         if (!entry || !entry.body) return false;

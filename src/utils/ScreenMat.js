@@ -47,20 +47,6 @@ function ensureStyles() {
       animation: pulse var(--pulse-duration, 4s) ease-in-out infinite;
     }
 
-    .screen-mat.low-cost,
-    .screen-mat.low-cost .screen-mat-ghost,
-    .screen-mat.low-cost.active {
-      animation: none !important;
-      backdrop-filter: none !important;
-      -webkit-backdrop-filter: none !important;
-      filter: none !important;
-    }
-
-    .screen-mat.low-cost .screen-mat-ghost {
-      mix-blend-mode: normal;
-      background: rgba(180, 200, 255, 0.05);
-    }
-
     .screen-mat-ghost {
       position: absolute;
       inset: 0;
@@ -151,7 +137,6 @@ export class ScreenMat {
     this.elapsedMs = 0
     this.isFlash = false
     this.flashRemainingMs = 0
-    this.lowCost = false
 
     if (typeof document !== 'undefined') {
       ensureStyles()
@@ -171,18 +156,8 @@ export class ScreenMat {
     }
   }
 
-  _setPerformanceMode(lowCost) {
-    this.lowCost = !!lowCost
-
-    if (this.overlay) {
-      this.overlay.classList.toggle('low-cost', this.lowCost)
-    }
-  }
-
-  start(durationMs = 8000, options = {}) {
+  start(durationMs = 8000) {
     if (!this.overlay) return
-
-    this._setPerformanceMode(options.lowCost)
 
     this.remainingMs = durationMs
     this.totalDurationMs = durationMs
@@ -206,10 +181,8 @@ export class ScreenMat {
     this.overlay.style.setProperty('--ghost-alpha', '0.03')
   }
 
-  flash(durationMs = 5000, options = {}) {
+  flash(durationMs = 5000) {
     if (!this.overlay) return
-
-    this._setPerformanceMode(options.lowCost)
 
     this.remainingMs = durationMs
     this.totalDurationMs = durationMs
@@ -298,13 +271,10 @@ export class ScreenMat {
     dvx = Math.sin(this.elapsedMs * 0.0023) * drift
     dvy = Math.cos(this.elapsedMs * 0.0017) * drift * 0.6
 
-    if (!this.lowCost) {
-      this.overlay.style.setProperty('--blur', blur.toFixed(2) + 'px')
-      this.overlay.style.setProperty('--desat', desat.toFixed(2))
-      this.overlay.style.setProperty('--brightness', brightness.toFixed(2))
-      this.overlay.style.setProperty('--contrast', contrast.toFixed(2))
-    }
-
+    this.overlay.style.setProperty('--blur', blur.toFixed(2) + 'px')
+    this.overlay.style.setProperty('--desat', desat.toFixed(2))
+    this.overlay.style.setProperty('--brightness', brightness.toFixed(2))
+    this.overlay.style.setProperty('--contrast', contrast.toFixed(2))
     this.overlay.style.setProperty('--veil', veil.toFixed(2))
     this.overlay.style.setProperty('--dvx', dvx.toFixed(2) + 'px')
     this.overlay.style.setProperty('--dvy', dvy.toFixed(2) + 'px')

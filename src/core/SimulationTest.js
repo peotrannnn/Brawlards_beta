@@ -33,25 +33,6 @@ const SIMULATION_CONFIG = {
   bowlingLifetimeMaxMs: 90000,
 };
 
-const RENDER_PERF_CONFIG = {
-  maxDevicePixelRatio: 1.0, // Giảm DPI để giảm tải GPU
-  minScale: 0.5,
-  maxScale: 0.7, // Giảm internal render scale tối đa
-
-  downshiftFps: 55,
-  upshiftFps: 60,
-
-  sampleWindowSec: 0.5, // Tăng thời gian lấy mẫu FPS để ổn định hơn
-  adjustCooldownSec: 0.1, // Tăng cooldown để tránh nhấp nháy scale
-
-  scaleStepDown: 0.15, // Giảm scale mạnh hơn khi tụt FPS
-  scaleStepUp: 0.01, // Tăng scale chậm hơn khi FPS ổn
-
-  startupDurationSec: 4.0, // Kéo dài thời gian khởi động để scale ổn định
-  startupScale: 0.6,
-  startupMaxScale: 0.7
-}
-
 export function startSimulationTest(renderer, onBack, gameplayMode = false, sceneIndex = 0) {
   document.body.style.margin = "0"
   document.body.style.overflow = "hidden"
@@ -451,46 +432,13 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
     updateUIText();
   }
 
-  const basePixelRatio = Math.min(window.devicePixelRatio || 1, RENDER_PERF_CONFIG.maxDevicePixelRatio)
-  let renderScale = Math.max(
-    RENDER_PERF_CONFIG.minScale,
-    Math.min(RENDER_PERF_CONFIG.maxScale, RENDER_PERF_CONFIG.startupScale)
-  )
-  let currentPixelRatio = basePixelRatio
-  let fpsAccumSec = 0
-  let fpsFrameCount = 0
-  let perfAdjustCooldownSec = 0
-  let startupPerfTimer = 0
-
-  const applyRenderResolution = (force = false) => {
-    const nextPixelRatio = Math.max(
-      0.5,
-      Math.min(basePixelRatio, basePixelRatio * renderScale)
-    )
-
-    if (!force && Math.abs(nextPixelRatio - currentPixelRatio) < 0.01) {
-      return
-    }
-
-    currentPixelRatio = nextPixelRatio
-    renderer.setPixelRatio(currentPixelRatio)
-    // Keep CSS size fullscreen; only internal resolution changes for performance.
-    renderer.setSize(window.innerWidth, window.innerHeight, false)
-  }
-
-  renderer.domElement.style.width = '100vw'
-  renderer.domElement.style.height = '100vh'
-  renderer.domElement.style.display = 'block'
-
-  renderer.setSize(window.innerWidth, window.innerHeight, false)
+  renderer.setSize(window.innerWidth, window.innerHeight)
   renderer.shadowMap.enabled = true
   renderer.shadowMap.type = THREE.PCFShadowMap
-  applyRenderResolution(true)
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5))
 
   const cameraController = new ThirdPersonCameraController(renderer)
   const camera = cameraController.camera
-  camera.userData = camera.userData || {}
-  camera.userData.cameraController = cameraController
   const uiManager = new UIManager()
   uiManager.setCamera(camera)
   cameraController.setUIManager(uiManager)
@@ -776,7 +724,6 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
   }
 
   const dynamicPrefabs = objects.filter(o => o.type === "dynamic")
-  const spawnableDynamicPrefabs = dynamicPrefabs.filter(o => o.excludeFromSimulationSpawn !== true)
 
   // Auto-spawn player in gameplay mode
   if (gameplayMode && currentSceneGroup) {
@@ -813,7 +760,7 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
 
     spawnerSpawnRandom({
       scene,
-      dynamicPrefabs: spawnableDynamicPrefabs,
+      dynamicPrefabs,
       world,
       physicsMaterials,
       syncList,
@@ -849,7 +796,7 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
   defaultOption.value = ""
   select.appendChild(defaultOption)
 
-  spawnableDynamicPrefabs.forEach((asset, index) => {
+  dynamicPrefabs.forEach((asset, index) => {
     const option = document.createElement("option")
     option.value = index
     option.textContent = asset.name || `Object ${index}`
@@ -866,7 +813,7 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
   container.appendChild(select)
 
   function spawnSelected(index) {
-    const prefab = spawnableDynamicPrefabs[index]
+    const prefab = dynamicPrefabs[index]
     if (!prefab) return
     const pos = randomPositionAboveTable(8)
     spawnerSpawn({scene, prefab, position: pos, world, physicsMaterials, syncList, particleManager})
@@ -1065,50 +1012,9 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
   renderer.domElement.addEventListener("click", onClick)
 
   function onResize() {
-    applyRenderResolution(true)
+    renderer.setSize(window.innerWidth, window.innerHeight)
   }
   window.addEventListener("resize", onResize)
-
-  function updateAdaptiveRenderResolution(rawDelta) {
-    if (!Number.isFinite(rawDelta) || rawDelta <= 0) return
-
-    startupPerfTimer += rawDelta
-
-    fpsAccumSec += rawDelta
-    fpsFrameCount += 1
-    perfAdjustCooldownSec = Math.max(0, perfAdjustCooldownSec - rawDelta)
-
-    const inStartupWindow = startupPerfTimer < RENDER_PERF_CONFIG.startupDurationSec
-    const scaleCap = inStartupWindow
-      ? Math.min(RENDER_PERF_CONFIG.maxScale, RENDER_PERF_CONFIG.startupMaxScale)
-      : RENDER_PERF_CONFIG.maxScale
-
-    if (renderScale > scaleCap) {
-      renderScale = scaleCap
-      applyRenderResolution()
-    }
-
-    if (fpsAccumSec < RENDER_PERF_CONFIG.sampleWindowSec) return
-
-    const fps = fpsFrameCount / fpsAccumSec
-    fpsAccumSec = 0
-    fpsFrameCount = 0
-
-    if (perfAdjustCooldownSec > 0) return
-
-    if (fps < RENDER_PERF_CONFIG.downshiftFps && renderScale > RENDER_PERF_CONFIG.minScale) {
-      renderScale = Math.max(RENDER_PERF_CONFIG.minScale, renderScale - RENDER_PERF_CONFIG.scaleStepDown)
-      perfAdjustCooldownSec = RENDER_PERF_CONFIG.adjustCooldownSec
-      applyRenderResolution()
-      return
-    }
-
-    if (fps > RENDER_PERF_CONFIG.upshiftFps && renderScale < scaleCap) {
-      renderScale = Math.min(scaleCap, renderScale + RENDER_PERF_CONFIG.scaleStepUp)
-      perfAdjustCooldownSec = RENDER_PERF_CONFIG.adjustCooldownSec
-      applyRenderResolution()
-    }
-  }
 
   function hasPlayerCameraAttachment() {
     const cameraTarget = cameraController.getTarget ? cameraController.getTarget() : null
@@ -1161,10 +1067,8 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
   function animate() {
     animationId = requestAnimationFrame(animate)
     const currentTime = performance.now()
-    const rawDelta = (currentTime - lastTime) / 1000
-    const delta = Math.min(rawDelta, 0.1)
+    const delta = Math.min((currentTime - lastTime) / 1000, 0.1)
     lastTime = currentTime
-    updateAdaptiveRenderResolution(rawDelta)
 
     // ✨ Update GameOverScreen timer and auto-return (must be before early return)
     if (gameOverScreen && gameplayMode) {
@@ -1474,8 +1378,7 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
     })
 
     syncList.forEach(pair => {
-      const shouldSyncTransform = pair.type === 'dynamic' || pair.type === 'kinematic'
-      if (pair.body && pair.mesh && shouldSyncTransform) {
+      if (pair.body && pair.mesh) {
         pair.mesh.position.copy(pair.body.position)
         const isCharacter = ['Player', 'Guy', 'Dude', 'Guide', 'Dummy', 'Compune'].includes(pair.name)
         if (!isCharacter) {
@@ -1495,10 +1398,6 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
         }
       }
     })
-
-    if (possessed && possessed.name === 'Player') {
-      playerMovement.syncCarriedItemsPosition(delta, possessed.mesh)
-    }
 
     syncList.forEach(entry => {
       if (entry.type === 'dynamic' && entry.mesh && entry.mesh.userData.shadowConfig) {

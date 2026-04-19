@@ -8,13 +8,11 @@ import { getGuyAsset } from "../assets/objects/Guy.js"
 import { getDudeAsset } from "../assets/objects/Dude.js"
 import { getDummyAsset } from "../assets/objects/Dummy.js"
 import { getCompuneAsset } from "../assets/objects/Compune.js"
-import { getEyeAsset } from "../assets/objects/eye.js"
 import { getDoor0Asset, getDoor1Asset, getDoor2Asset } from "../assets/objects/DoorFactory.js"
 import { getElevatorDoorAsset } from "../assets/objects/ElevatorDoor.js"
 import { getVendingMachineAsset } from "../assets/objects/VendingMachine.js"
 import { getCartonBoxAsset } from "../assets/objects/CartonBox.js"
 import { getChestAsset } from "../assets/objects/Chest.js"
-import { getHouseAsset } from "../assets/objects/House.js"
 import { getBabyOilAsset } from "../assets/items/babyOil.js"
 import { getLightStickAsset } from "../assets/items/lightStick.js"
 import { getLightStickOffAsset } from "../assets/items/lightStickOff.js"
@@ -287,7 +285,6 @@ export function createInspector(renderer, onBack) {
   const dudeAsset = getDudeAsset()
   const dummyAsset = getDummyAsset()
   const compuneAsset = getCompuneAsset()
-  const eyeAsset = getEyeAsset()
   const door0Asset = getDoor0Asset()
   const door1Asset = getDoor1Asset()
   const door2Asset = getDoor2Asset()
@@ -295,7 +292,6 @@ export function createInspector(renderer, onBack) {
   const vendingMachineAsset = getVendingMachineAsset()
   const cartonBoxAsset = getCartonBoxAsset()
   const chestAsset = getChestAsset()
-  const houseAsset = getHouseAsset()
   const babyOilAsset = getBabyOilAsset()
   const lightStickAsset = getLightStickAsset()
   const lightStickOffAsset = getLightStickOffAsset()
@@ -310,7 +306,6 @@ export function createInspector(renderer, onBack) {
     dudeAsset,
     dummyAsset,
     compuneAsset,
-    eyeAsset,
     door0Asset,
     door1Asset,
     door2Asset,
@@ -318,7 +313,6 @@ export function createInspector(renderer, onBack) {
     vendingMachineAsset,
     cartonBoxAsset,
     chestAsset,
-    houseAsset,
     lightStickAsset,
     lightStickOffAsset,
     babyOilAsset,
@@ -489,10 +483,6 @@ export function createInspector(renderer, onBack) {
     if (currentObject?.userData?.__pendingInspectorReframe && hasRenderableMesh(currentObject)) {
       frameObject(currentObject)
       currentObject.userData.__pendingInspectorReframe = false
-    }
-
-    if (typeof currentObject?.userData?.update === 'function') {
-      currentObject.userData.update(delta, currentTime * 0.001)
     }
 
     // ✨ Auto-rotate camera around object

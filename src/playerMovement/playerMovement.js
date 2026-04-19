@@ -804,11 +804,13 @@ export class PlayerMovementController {
     }
 
     _getStackTargetForIndex(index, mesh, playerBody = null) {
-        // Use mesh position directly to avoid 1-frame carry item delay
-        // Items follow the visual position (already synced), not predicted physics position
         const anchorBody = playerBody || this.currentBody
-        const anchorX = mesh.position.x
-        const anchorZ = mesh.position.z
+        const anchorX = anchorBody
+            ? anchorBody.position.x + ((anchorBody.velocity?.x || 0) * PLAYER_CONFIG.fixedTimeStep)
+            : mesh.position.x
+        const anchorZ = anchorBody
+            ? anchorBody.position.z + ((anchorBody.velocity?.z || 0) * PLAYER_CONFIG.fixedTimeStep)
+            : mesh.position.z
         const baseY = this._getPlayerBodyTop(mesh, anchorBody) + PLAYER_CONFIG.stackBaseGap
         let accumulatedHeight = 0
 
@@ -851,12 +853,7 @@ export class PlayerMovementController {
         itemMesh.userData = itemMesh.userData || {}
         itemMesh.userData._cachedCarriedFlag = isCarried
         itemMesh.traverse(child => {
-            if (!child.isMesh) return
-            child.userData.isCarriedItem = isCarried
-            child.userData.carriedByPlayer = isCarried
-            if (isCarried) {
-                child.userData.carriedByGuide = false
-            }
+            if (child.isMesh) child.userData.isCarriedItem = isCarried
         })
     }
 
@@ -1430,6 +1427,8 @@ export class PlayerMovementController {
             this.throwItemQueued = false
         }
 
+        this._updateCarriedItems(frameDelta, mesh)
+
         this._markerUpdateAccumulator += frameDelta
         if (this._markerUpdateAccumulator >= PLAYER_CONFIG.markerUpdateIntervalSec) {
             this._markerUpdateAccumulator = 0
@@ -1487,10 +1486,6 @@ export class PlayerMovementController {
     cancelCharge() {
         this._isCharging = false;
         this.currentCharge = 0;
-    }
-    syncCarriedItemsPosition(frameDelta, playerMesh) {
-        if (!playerMesh) return
-        this._updateCarriedItems(frameDelta, playerMesh)
     }
     getConfig() { return PLAYER_CONFIG; }
 

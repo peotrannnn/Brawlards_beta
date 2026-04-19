@@ -4,7 +4,7 @@ const CAMERA_CONFIG = {
   FOV: 60,
   NEAR: 0.1,
   FAR: 500,
-  MOUSE_SENSITIVITY: 0.00167,
+  MOUSE_SENSITIVITY: 0.005,
   INVERT_MOUSE_X: true,
   INVERT_MOUSE_Y: true,
   ROTATION_SPEED_LIMIT: 0.1,
@@ -28,29 +28,6 @@ const CAMERA_CONFIG = {
   CROSSHAIR_TEXT: '+',
   CROSSHAIR_Z_INDEX: '9999',
   SPECTATOR_SPEED: 10,
-  COLLISION_CHECK_INTERVAL: 1 / 30,
-  COLLISION_CHECK_INTERVAL_FAST_ROTATION: 1 / 20,
-  COLLISION_FAST_ROTATION_DELTA_THRESHOLD: 0.01,
-  COLLISION_CACHE_REFRESH_INTERVAL: 1.5,
-  COLLISION_TARGET_EPSILON_SQ: 0.01,
-  COLLISION_DIRECTION_EPSILON: 0.0005,
-  COLLISION_DISTANCE_EPSILON: 0.05,
-  DITHER_UPDATE_INTERVAL: 1 / 20,
-  DITHERING_ALPHA_EPSILON: 0.03,
-  ADAPTIVE_PERF_SAMPLE_WINDOW_SEC: 0.5,
-  ADAPTIVE_PERF_COOLDOWN_SEC: 0.9,
-  ADAPTIVE_FPS_LEVEL1_ENTER: 52,
-  ADAPTIVE_FPS_LEVEL1_EXIT: 58,
-  ADAPTIVE_FPS_LEVEL2_ENTER: 40,
-  ADAPTIVE_FPS_LEVEL2_EXIT: 48,
-  ADAPTIVE_DITHER_UPDATE_INTERVAL_LEVEL1: 1 / 12,
-  ADAPTIVE_DITHER_UPDATE_INTERVAL_LEVEL2: 1 / 8,
-  ADAPTIVE_COLLISION_CHECK_INTERVAL_LEVEL1: 1 / 20,
-  ADAPTIVE_COLLISION_CHECK_INTERVAL_LEVEL2: 1 / 12,
-  ADAPTIVE_COLLISION_CHECK_FAST_INTERVAL_LEVEL1: 1 / 12,
-  ADAPTIVE_COLLISION_CHECK_FAST_INTERVAL_LEVEL2: 1 / 8,
-  ADAPTIVE_COLLISION_CACHE_REFRESH_INTERVAL_LEVEL1: 2.2,
-  ADAPTIVE_COLLISION_CACHE_REFRESH_INTERVAL_LEVEL2: 3.0,
   // ✨ Dithering effect when camera clips into object
   DITHERING_DISTANCE_THRESHOLD: 2.0,  // Apply dithering when closer than this
   DITHERING_ALPHA_START: 1.0,         // Initial alpha value
@@ -97,6 +74,7 @@ export class ThirdPersonCameraController {
    * - Movement is ignored when isControlEnabled = false
    */
   constructor(renderer) {
+    console.log('%c[Camera Controller] Initializing...', 'color: #00ff00; font-weight: bold')
     this.renderer = renderer
     this.camera = new THREE.PerspectiveCamera(
       CAMERA_CONFIG.FOV,
@@ -134,30 +112,6 @@ export class ThirdPersonCameraController {
     this.isDitheringActive = false      // Track if dithering is currently applied
     this.ditheredMeshes = new Map()     // key -> mesh, for reliable full restore
     this._ditherCleanupAccumulator = 0
-    this._ditherUpdateAccumulator = CAMERA_CONFIG.DITHER_UPDATE_INTERVAL
-    this._lastDitherAlpha = null
-    this._collisionCheckAccumulator = CAMERA_CONFIG.COLLISION_CHECK_INTERVAL
-    this._collisionCacheAccumulator = CAMERA_CONFIG.COLLISION_CACHE_REFRESH_INTERVAL
-    this._cachedCollidables = []
-    this._sectionCollidableCaches = new Map()
-    this._activeSectionKey = 'global'
-    this._effectiveDitherUpdateInterval = CAMERA_CONFIG.DITHER_UPDATE_INTERVAL
-    this._effectiveCollisionCheckInterval = CAMERA_CONFIG.COLLISION_CHECK_INTERVAL
-    this._effectiveCollisionCheckFastInterval = CAMERA_CONFIG.COLLISION_CHECK_INTERVAL_FAST_ROTATION
-    this._effectiveCollisionCacheRefreshInterval = CAMERA_CONFIG.COLLISION_CACHE_REFRESH_INTERVAL
-    this._adaptivePerfWindowSec = 0
-    this._adaptivePerfFrameCount = 0
-    this._adaptivePerfCooldownSec = 0
-    this._adaptiveQualityLevel = 0
-    this._adaptiveDitherEnabled = true
-    this._lastCollisionTargetPos = new THREE.Vector3()
-    this._lastCollisionDirection = new THREE.Vector3(0, 0, 1)
-    this._lastCollisionDistance = this.distance
-    this._lastCollisionResult = this.distance
-    this._tmpCueWorldPos = new THREE.Vector3()
-    this._tmpOffset = new THREE.Vector3()
-    this._tmpDirection = new THREE.Vector3()
-    this._tmpSpectatorMovement = new THREE.Vector3()
 
     // Keep stable listener references so dispose() can correctly remove them.
     this._boundOnPointerLockChange = this._onPointerLockChange.bind(this)
@@ -223,90 +177,6 @@ export class ThirdPersonCameraController {
    */
   setScene(scene) {
     this.scene = scene
-    this._sectionCollidableCaches.clear()
-    this._cachedCollidables = []
-    this._refreshCollisionCache(true)
-  }
-
-  setActiveSectionKey(sectionKey = 'global') {
-    const nextKey = sectionKey || 'global'
-    if (this._activeSectionKey === nextKey) return
-
-    this._activeSectionKey = nextKey
-    const cached = this._sectionCollidableCaches.get(nextKey)
-    if (cached?.collidables?.length) {
-      this._cachedCollidables = cached.collidables
-      this._collisionCacheAccumulator = 0
-      return
-    }
-
-    this._cachedCollidables = []
-    this._collisionCacheAccumulator = this._effectiveCollisionCacheRefreshInterval
-  }
-
-  _setAdaptiveQualityLevel(level) {
-    this._adaptiveQualityLevel = level
-
-    if (level <= 0) {
-      this._effectiveDitherUpdateInterval = CAMERA_CONFIG.DITHER_UPDATE_INTERVAL
-      this._effectiveCollisionCheckInterval = CAMERA_CONFIG.COLLISION_CHECK_INTERVAL
-      this._effectiveCollisionCheckFastInterval = CAMERA_CONFIG.COLLISION_CHECK_INTERVAL_FAST_ROTATION
-      this._effectiveCollisionCacheRefreshInterval = CAMERA_CONFIG.COLLISION_CACHE_REFRESH_INTERVAL
-      this._adaptiveDitherEnabled = true
-      return
-    }
-
-    if (level === 1) {
-      this._effectiveDitherUpdateInterval = CAMERA_CONFIG.ADAPTIVE_DITHER_UPDATE_INTERVAL_LEVEL1
-      this._effectiveCollisionCheckInterval = CAMERA_CONFIG.ADAPTIVE_COLLISION_CHECK_INTERVAL_LEVEL1
-      this._effectiveCollisionCheckFastInterval = CAMERA_CONFIG.ADAPTIVE_COLLISION_CHECK_FAST_INTERVAL_LEVEL1
-      this._effectiveCollisionCacheRefreshInterval = CAMERA_CONFIG.ADAPTIVE_COLLISION_CACHE_REFRESH_INTERVAL_LEVEL1
-      this._adaptiveDitherEnabled = true
-      return
-    }
-
-    this._effectiveDitherUpdateInterval = CAMERA_CONFIG.ADAPTIVE_DITHER_UPDATE_INTERVAL_LEVEL2
-    this._effectiveCollisionCheckInterval = CAMERA_CONFIG.ADAPTIVE_COLLISION_CHECK_INTERVAL_LEVEL2
-    this._effectiveCollisionCheckFastInterval = CAMERA_CONFIG.ADAPTIVE_COLLISION_CHECK_FAST_INTERVAL_LEVEL2
-    this._effectiveCollisionCacheRefreshInterval = CAMERA_CONFIG.ADAPTIVE_COLLISION_CACHE_REFRESH_INTERVAL_LEVEL2
-    this._adaptiveDitherEnabled = false
-    this._removeDithering()
-  }
-
-  _updateAdaptiveQuality(delta) {
-    if (!(delta > 0)) return
-
-    this._adaptivePerfWindowSec += delta
-    this._adaptivePerfFrameCount += 1
-    this._adaptivePerfCooldownSec = Math.max(0, this._adaptivePerfCooldownSec - delta)
-
-    if (this._adaptivePerfWindowSec < CAMERA_CONFIG.ADAPTIVE_PERF_SAMPLE_WINDOW_SEC) {
-      return
-    }
-
-    const fps = this._adaptivePerfFrameCount / Math.max(0.0001, this._adaptivePerfWindowSec)
-    this._adaptivePerfWindowSec = 0
-    this._adaptivePerfFrameCount = 0
-
-    if (this._adaptivePerfCooldownSec > 0) {
-      return
-    }
-
-    let targetLevel = this._adaptiveQualityLevel
-    if (this._adaptiveQualityLevel < 2 && fps < CAMERA_CONFIG.ADAPTIVE_FPS_LEVEL2_ENTER) {
-      targetLevel = 2
-    } else if (this._adaptiveQualityLevel === 2 && fps > CAMERA_CONFIG.ADAPTIVE_FPS_LEVEL2_EXIT) {
-      targetLevel = 1
-    } else if (this._adaptiveQualityLevel === 0 && fps < CAMERA_CONFIG.ADAPTIVE_FPS_LEVEL1_ENTER) {
-      targetLevel = 1
-    } else if (this._adaptiveQualityLevel >= 1 && fps > CAMERA_CONFIG.ADAPTIVE_FPS_LEVEL1_EXIT) {
-      targetLevel = 0
-    }
-
-    if (targetLevel !== this._adaptiveQualityLevel) {
-      this._setAdaptiveQualityLevel(targetLevel)
-      this._adaptivePerfCooldownSec = CAMERA_CONFIG.ADAPTIVE_PERF_COOLDOWN_SEC
-    }
   }
 
   _setupEventListeners() {
@@ -337,51 +207,65 @@ export class ThirdPersonCameraController {
     // ✨ In gameplay mode, allow pointer lock even if spectator is disabled
     // In simulator, require allowSpectator to use pointer lock
     if (!this.isGameplayMode && !this.allowSpectator) {
+      console.log('[Camera] enableControl blocked: spectator disabled')
       return
     }
     
     // ✨ Don't request if already locked
     if (document.pointerLockElement === this.renderer.domElement) {
+      console.log('[Camera] enableControl: already locked')
       return
     }
     
     try {
+      console.log('[Camera] Requesting pointer lock...')
       const promise = this.renderer.domElement.requestPointerLock()
       if (promise && typeof promise.catch === 'function') {
         promise.catch(err => {
           if (err && err.name === 'SecurityError') {
-            // user cancelled pointer lock — ignore
+            console.warn('[Camera] Pointer lock request cancelled by user')
           } else {
-            // pointer lock failed — ignore
+            console.warn('[Camera] Pointer lock request failed:', err)
           }
         })
       }
     } catch (err) {
-      // pointer lock not supported or blocked — ignore
+      console.warn('[Camera] Pointer lock API threw error:', err)
     }
   }
 
   disableControl() {
     if (document.pointerLockElement !== this.renderer.domElement) {
+      console.log('[Camera] disableControl: not locked')
       return
     }
     
     try {
+      console.log('[Camera] Exiting pointer lock...')
       document.exitPointerLock()
     } catch (err) {
-      // ignore
+      console.warn('[Camera] Error exiting pointer lock:', err)
     }
   }
 
   _onPointerLockChange() {
     const locked = document.pointerLockElement === this.renderer.domElement
     this.isControlEnabled = locked
+    
+    console.log(`[Camera] Pointer lock changed: ${locked ? 'LOCKED' : 'UNLOCKED'}`)
+    
+    // ✨ Update UI based on pointer lock state
     if (locked) {
+      // Pointer lock active: hide cursor, show crosshair
       this.crosshair.style.display = 'block'
       this.renderer.domElement.style.cursor = 'none'
+      console.log('[Camera] UI: Cursor hidden, crosshair shown')
     } else {
+      // Pointer lock inactive: show cursor, hide crosshair
       this.crosshair.style.display = 'none'
       this.renderer.domElement.style.cursor = 'default'
+      console.log('[Camera] UI: Cursor shown, crosshair hidden')
+      // ✨ CRITICAL: Reset camera movement state when exiting pointer lock (prevents ghost camera movement)
       this._resetMoveState()
     }
 
@@ -397,7 +281,7 @@ export class ThirdPersonCameraController {
   }
 
   _onPointerLockError(evt) {
-    // non-critical, ignore
+    console.log('[Camera] Pointer lock error event fired (non-critical)', evt)
   }
 
   _onKeyDown(e) {
@@ -547,16 +431,16 @@ export class ThirdPersonCameraController {
       if (this.isPlayerTarget && this.cachedCuePivot) {
         const cuePivot = this.cachedCuePivot
         if (cuePivot.parent) {
-          const cueWorldPos = this._tmpCueWorldPos
+          const cueWorldPos = new THREE.Vector3()
           cuePivot.getWorldPosition(cueWorldPos)
           
           cueWorldPos.y += CAMERA_CONFIG.CAMERA_HEIGHT_OFFSET
 
-          const offset = this._tmpOffset.set(0, 0, 1)
+          const offset = new THREE.Vector3(0, 0, 1)
           offset.applyQuaternion(this.rotation)
           
           // ✨ Check for collision and adjust distance
-          const direction = this._tmpDirection.copy(offset).normalize()
+          const direction = offset.clone().normalize()
           const adjustedDistance = this._adjustCameraDistanceForCollision(cueWorldPos, direction, this.distance)
           offset.multiplyScalar(adjustedDistance)
 
@@ -564,18 +448,18 @@ export class ThirdPersonCameraController {
           this.camera.lookAt(cueWorldPos)
           
           // ✨ Apply dithering effect if camera is very close to target
-          this._updateDithering(adjustedDistance, delta)
+          this._updateDithering(adjustedDistance)
           return
         }
       }
 
       this.targetObject.getWorldPosition(this.targetPosition)
       
-      const offset = this._tmpOffset.set(0, 0, 1)
+      const offset = new THREE.Vector3(0, 0, 1)
       offset.applyQuaternion(this.rotation)
       
       // ✨ Check for collision and adjust distance
-      const direction = this._tmpDirection.copy(offset).normalize()
+      const direction = offset.clone().normalize()
       const adjustedDistance = this._adjustCameraDistanceForCollision(this.targetPosition, direction, this.distance)
       offset.multiplyScalar(adjustedDistance)
 
@@ -583,7 +467,7 @@ export class ThirdPersonCameraController {
       this.camera.lookAt(this.targetPosition)
       
       // ✨ Apply dithering effect if camera is very close to target
-      this._updateDithering(adjustedDistance, delta)
+      this._updateDithering(adjustedDistance)
     } else if (this.isSpectator) {
       this.camera.quaternion.copy(this.rotation)
       
@@ -593,7 +477,7 @@ export class ThirdPersonCameraController {
       }
       
       if (delta > 0) {
-        const movement = this._tmpSpectatorMovement.set(0, 0, 0)
+        const movement = new THREE.Vector3()
         if (this.moveState.forward) movement.z -= 1
         if (this.moveState.backward) movement.z += 1
         if (this.moveState.left) movement.x -= 1
@@ -705,7 +589,12 @@ export class ThirdPersonCameraController {
     if (!this.targetObject) return
     
     // Find cue pivot in target object hierarchy
-    const cuePivot = this.cachedCuePivot
+    let cuePivot = null
+    this.targetObject.traverse(child => {
+      if (child.userData && child.userData.isCuePivot) {
+        cuePivot = child
+      }
+    })
     
     // Helper: check if object is part of cue hierarchy
     const isPartOfCue = (obj) => {
@@ -734,7 +623,7 @@ export class ThirdPersonCameraController {
 
       const shouldDither = 
         isPartOfTarget(child) || 
-        (this.targetObject.name === 'Player' && child.userData?.isCarriedItem && child.userData?.carriedByPlayer === true)
+        (this.targetObject.name === 'Player' && child.userData?.isCarriedItem)
 
       if (!shouldDither) {
         // Restore this mesh
@@ -774,9 +663,7 @@ export class ThirdPersonCameraController {
         if (!this.ditherMaterials.has(key)) {
           const ditherMat = mat.clone()
           ditherMat.transparent = true
-          // Keep alphaTest disabled for dithered carry-items to prevent hard cutout
-          // when opacity is reduced at close camera distance.
-          ditherMat.alphaTest = 0
+          ditherMat.alphaTest = 0.5  // Enable alpha testing for dithering effect
           this.ditherMaterials.set(key, ditherMat)
         }
 
@@ -809,7 +696,6 @@ export class ThirdPersonCameraController {
       this.scene.traverse(child => {
         if (!child.isMesh) return
         if (!child.userData?.isCarriedItem) return
-        if (child.userData?.carriedByPlayer !== true) return
         applyDitherToMesh(child)
       })
     }
@@ -841,8 +727,6 @@ export class ThirdPersonCameraController {
 
     this.ditheredMeshes.clear()
     this.isDitheringActive = false
-    this._lastDitherAlpha = null
-    this._ditherUpdateAccumulator = this._effectiveDitherUpdateInterval
   }
 
   _cleanupDitheringCaches(force = false) {
@@ -869,14 +753,8 @@ export class ThirdPersonCameraController {
   /**
    * ✨ Update dithering based on camera distance to target
    */
-  _updateDithering(cameraDistance, delta = 0) {
+  _updateDithering(cameraDistance) {
     if (!this.targetObject || this.isSpectator) return
-    if (!this._adaptiveDitherEnabled) {
-      if (this.isDitheringActive) this._removeDithering()
-      return
-    }
-
-    this._ditherUpdateAccumulator += delta
     
     const threshold = CAMERA_CONFIG.DITHERING_DISTANCE_THRESHOLD
     
@@ -884,17 +762,6 @@ export class ThirdPersonCameraController {
       // Calculate alpha based on distance (closer = more transparent)
       const alphaRange = CAMERA_CONFIG.DITHERING_ALPHA_START - CAMERA_CONFIG.DITHERING_ALPHA_END
       const alpha = CAMERA_CONFIG.DITHERING_ALPHA_END + (cameraDistance / threshold) * alphaRange
-      const canSkipUpdate = this.isDitheringActive &&
-        this._lastDitherAlpha !== null &&
-        Math.abs(alpha - this._lastDitherAlpha) < CAMERA_CONFIG.DITHERING_ALPHA_EPSILON &&
-        this._ditherUpdateAccumulator < this._effectiveDitherUpdateInterval
-
-      if (canSkipUpdate) {
-        return
-      }
-
-      this._ditherUpdateAccumulator = 0
-      this._lastDitherAlpha = alpha
       this._applyDithering(alpha)
     } else if (this.isDitheringActive) {
       // Remove dithering when far enough
@@ -906,114 +773,64 @@ export class ThirdPersonCameraController {
    * ✨ Check camera collision with visible meshes only
    * Returns adjusted distance to prevent clipping
    */
-  _isCollisionCandidate(obj) {
-    const isWaterSurface = obj.userData?.isSection2WaterSurface || obj.name === 'Section2 Water Surface'
-    if (!obj.isMesh || obj.isInstancedMesh || !obj.visible || obj.userData?.isTriggerBox || obj.userData?.isCarriedItem || isWaterSurface) {
-      return false
-    }
-
-    let current = obj
-    while (current) {
-      if (current.userData?.ignoreRaycast) {
-        return false
+  _adjustCameraDistanceForCollision(targetPos, direction, desiredDistance) {
+    if (!this.scene || desiredDistance < 0.1) return desiredDistance
+    
+    // Cast ray from target toward camera
+    this.raycaster.set(targetPos, direction.clone().normalize())
+    
+    // Helper function to check if object is child of target
+    const isChildOfTarget = (obj) => {
+      let parent = obj.parent
+      while (parent) {
+        if (parent === this.targetObject) return true
+        parent = parent.parent
       }
-      current = current.parent
-    }
-
-    const material = Array.isArray(obj.material) ? obj.material[0] : obj.material
-    if (!material || material.wireframe === true) {
       return false
     }
-
-    return true
-  }
-
-  _refreshCollisionCache(force = false) {
-    if (!this.scene) {
-      this._cachedCollidables = []
-      return
-    }
-
-    const sectionKey = this._activeSectionKey || 'global'
-    const sectionCache = this._sectionCollidableCaches.get(sectionKey)
-    if (!force && this._collisionCacheAccumulator < this._effectiveCollisionCacheRefreshInterval && sectionCache?.collidables?.length) {
-      this._cachedCollidables = sectionCache.collidables
-      return
-    }
-
-    if (!force && this._collisionCacheAccumulator < this._effectiveCollisionCacheRefreshInterval && this._cachedCollidables.length > 0) {
-      return
-    }
-
-    this._collisionCacheAccumulator = 0
+    
+    // ✨ Get only VISIBLE meshes (rendered), exclude hitboxes
     const collidables = []
     this.scene.traverse(obj => {
-      if (this._isCollisionCandidate(obj)) {
+      const isWaterSurface = obj.userData?.isSection2WaterSurface || obj.name === 'Section2 Water Surface'
+      if (obj.isMesh && 
+          obj.visible &&  // ✨ Only visible meshes
+          obj !== this.targetObject && 
+          !isChildOfTarget(obj) && 
+          !obj.userData?.isTriggerBox &&
+          !obj.userData?.isCarriedItem &&
+          !isWaterSurface) {
+        
+        // ✨ Skip wireframe meshes (hitbox helpers)
+        const material = Array.isArray(obj.material) ? obj.material[0] : obj.material
+        if (material && material.wireframe === true) {
+          return  // Skip wireframe/hitbox mesh
+        }
+        
+        // ✨ Skip mesh without material
+        if (!material) {
+          return
+        }
+        
         collidables.push(obj)
       }
     })
-    this._cachedCollidables = collidables
-    this._sectionCollidableCaches.set(sectionKey, {
-      collidables,
-      capturedAt: performance.now()
-    })
-  }
-
-  _isTargetHierarchyObject(obj) {
-    if (!this.targetObject || !obj) return false
-    let current = obj
-    while (current) {
-      if (current === this.targetObject) return true
-      current = current.parent
-    }
-    return false
-  }
-
-  _cacheCollisionResult(targetPos, direction, desiredDistance, adjustedDistance) {
-    this._lastCollisionTargetPos.copy(targetPos)
-    this._lastCollisionDirection.copy(direction)
-    this._lastCollisionDistance = desiredDistance
-    this._lastCollisionResult = adjustedDistance
-  }
-
-  _adjustCameraDistanceForCollision(targetPos, direction, desiredDistance) {
-    if (!this.scene || desiredDistance < 0.1) return desiredDistance
-
-    this._refreshCollisionCache()
-
-    const targetMoved = this._lastCollisionTargetPos.distanceToSquared(targetPos) > CAMERA_CONFIG.COLLISION_TARGET_EPSILON_SQ
-    const directionChanged = 1 - Math.abs(this._lastCollisionDirection.dot(direction)) > CAMERA_CONFIG.COLLISION_DIRECTION_EPSILON
-    const distanceChanged = Math.abs(this._lastCollisionDistance - desiredDistance) > CAMERA_CONFIG.COLLISION_DISTANCE_EPSILON
-    const rotationDeltaMagnitude = Math.abs(this.rotationDeltaX) + Math.abs(this.rotationDeltaY)
-    const isFastRotating = rotationDeltaMagnitude > CAMERA_CONFIG.COLLISION_FAST_ROTATION_DELTA_THRESHOLD
-    const minCollisionInterval = isFastRotating
-      ? this._effectiveCollisionCheckFastInterval
-      : this._effectiveCollisionCheckInterval
-    const hasPoseChange = targetMoved || directionChanged || distanceChanged
-
-    if (!hasPoseChange && this._collisionCheckAccumulator < this._effectiveCollisionCheckInterval) {
-      return this._lastCollisionResult
-    }
-
-    if (hasPoseChange && this._collisionCheckAccumulator < minCollisionInterval) {
-      return this._lastCollisionResult
-    }
-
-    this._collisionCheckAccumulator = 0
-    this.raycaster.set(targetPos, direction)
-    this.raycaster.far = desiredDistance + 0.3
-
-    const intersects = this.raycaster.intersectObjects(this._cachedCollidables, false)
-    const closestHit = intersects.find(hit => hit.object?.visible && !this._isTargetHierarchyObject(hit.object))
-
-    if (closestHit) {
+    
+    // Check for intersections
+    const intersects = this.raycaster.intersectObjects(collidables)
+    
+    if (intersects.length > 0) {
+      // Find closest intersection
+      const closestHit = intersects[0]
+      const hitDistance = closestHit.distance
+      
+      // Add small buffer to prevent camera on exact surface
       const buffer = 0.3
-      const adjustedDistance = Math.max(0.5, Math.min(desiredDistance, closestHit.distance - buffer))
-      this._cacheCollisionResult(targetPos, direction, desiredDistance, adjustedDistance)
-      return adjustedDistance
+      
+      // Return minimum of desired distance and distance to obstacle
+      return Math.max(0.5, Math.min(desiredDistance, hitDistance - buffer))
     }
-
-    this._cacheCollisionResult(targetPos, direction, desiredDistance, desiredDistance)
+    
     return desiredDistance
   }
 
@@ -1023,9 +840,6 @@ export class ThirdPersonCameraController {
   }
 
   update(delta) {
-    this._updateAdaptiveQuality(delta)
-    this._collisionCheckAccumulator += delta
-    this._collisionCacheAccumulator += delta
     this._updateCameraPosition(delta)
 
     this._ditherCleanupAccumulator += delta
@@ -1060,9 +874,6 @@ export class ThirdPersonCameraController {
     this.isSpectator = true
     this.targetObject = null
     this.isPlayerTarget = false
-    this._lastDitherAlpha = null
-    this._collisionCheckAccumulator = this._effectiveCollisionCheckInterval
-    this._collisionCacheAccumulator = this._effectiveCollisionCacheRefreshInterval
     
     // ✨ Initialize camera state to default (pointer lock DISABLED)
     this.isControlEnabled = false
@@ -1072,12 +883,14 @@ export class ThirdPersonCameraController {
     // ✨ Force exit pointer lock if somehow active (shouldn't happen at init)
     if (document.pointerLockElement === this.renderer.domElement) {
       try {
+        console.log('[Camera] Forcing pointer lock exit on reset')
         document.exitPointerLock()
       } catch (err) {
-        // ignore
+        console.warn('[Camera] Error exiting pointer lock on reset:', err)
       }
     }
     
+    console.log('%c[Camera Reset] ✓ Cursor visible, crosshair hidden, pointer lock DISABLED', 'color: #ff6600; font-weight: bold')
   }
 
   dispose() {
@@ -1106,8 +919,6 @@ export class ThirdPersonCameraController {
     this.ditheredMeshes.clear()
     this.originalMaterials.clear()
     this.ditherMaterials.clear()
-    this._sectionCollidableCaches.clear()
-    this._cachedCollidables = []
     
     // Note: UI cleanup is now handled by UIManager.dispose()
   }

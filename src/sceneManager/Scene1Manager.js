@@ -1,7 +1,6 @@
 import * as THREE from 'three'
 import * as CANNON from 'cannon-es'
 import { CompuneAI } from '../AI/compuneBot.js'
-import { EyeBot } from '../AI/eyeBot.js'
 import { SCENE1_COMPUNES } from '../assets/scenes/scene1Dialogs.js'
 import { COLLISION_GROUPS, COLLISION_MASKS } from '../physics/physicsHelper.js'
 import { createSweatEffect } from '../effects/particles/particle8.js'
@@ -14,12 +13,6 @@ import { getSilverCoinAsset } from '../assets/items/silverCoin.js'
 import { getDummyAsset } from '../assets/objects/Dummy.js'
 import { getGuideAsset } from '../assets/objects/Guide.js'
 import { getPlayerAsset } from '../assets/objects/Player.js'
-import {
-  setTreeMaterialControllerBrightness,
-  setTreeMaterialControllerOpacity,
-  setTreeOpacity,
-  updateBillboards
-} from '../assets/objects/TreeBillboard.js'
 
 const FLICKER_CONFIG = {
   offColor: "#666666",
@@ -76,48 +69,10 @@ const SCENE1_CONFIG = {
   chestOilApplyDuration: 1.5,
   chestLatchOpenDuration: 0.45,
   chestOpenDuration: 1.2,
-  chestCollectScanIntervalSec: 1 / 15,
-  vendingCollectScanIntervalSec: 1 / 18,
   sequenceSilverCoinSpawnHeight: 7,
   sequenceSilverCoinSpawnSpread: 0.7,
   sequenceSilverCoinMinSpinY: 6,
-  sequenceSilverCoinMaxSpinY: 10,
-  section3HouseScaleMinDistance: 8,
-  section3HouseScaleMaxDistance: 56,
-  section3HouseScaleNear: 2.4,
-  section3HouseScaleFar: 0.1,
-  section3HouseScaleSmoothSpeed: 6.0,
-  section3HouseScaleUpdateInterval: 1 / 15,
-  section3TreeScaleMinDistance: 7,
-  section3TreeScaleMaxDistance: 52,
-  section3TreeScaleNear: 1.7,
-  section3TreeScaleFar: 0.42,
-  section3TreeScaleSmoothSpeed: 6.0,
-  section3TreeScaleUpdateInterval: 1 / 15,
-  section3TreeBillboardUpdateInterval: 1 / 20,
-  section3EdgeDarkStartRatio: 0.0,
-  section3EdgeDarkMaxRatio: 0.5,
-  section3EdgeDarkSmoothSpeed: 3.0,
-  section3EdgeDarkMinMainLightFactor: 0.0,
-  section3EdgeDarkMinAmbientIntensity: 0.0,
-  section3EdgeDarkFogNearFactor: 0.35,
-  section3EdgeDarkFogFarFactor: 0.08,
-  section3EdgeTeleportCooldownSec: 0.85,
-  section3EdgeTeleportHoldSec: 3.0,
-  section3EdgePostTeleportDarkHoldSec: 3.0,
-  section3EdgeRecoveryDurationSec: 5.0,
-  section3EyeDescentDurationSec: 300.0
-}
-
-const SECTION_WARMUP_CONFIG = {
-  overlayFrameBudgetMs: 4.5,
-  backgroundFrameBudgetMs: 2.5,
-  overlayMinVisibleMs: 900
-}
-
-const SECTION_STREAMING_CONFIG = {
-  switchConfirmSec: 0.12,
-  pendingTeleportMaxWaitSec: 6.0
+  sequenceSilverCoinMaxSpinY: 10
 }
 
 export class Scene1Manager {
@@ -264,9 +219,6 @@ export class Scene1Manager {
     this.section2ReverseCurrentTimer = 0
     this.section2PipeWaterFxTimer = 0
     this.section3GrassLodUpdater = this.sceneGroup?.userData?.section3GrassLod || null
-    this.section3TreeLodUpdater = this.sectionGroups?.section3?.userData?.section3TreeLod || null
-    this.section3EyeSun = this.sectionGroups?.section3?.userData?.section3EyeSun || null
-    this.section3EyeBot = null
     this.debugSection3PlayerEntry = null
 
     // Scene1 proximity fog and screen overlay effects
@@ -285,7 +237,6 @@ export class Scene1Manager {
     this.vendingMachineEntry = null
     this.vendingCoinCollectState = null
     this.vendingBabyOilAsset = null
-    this._vendingCollectScanAccumulator = 0
 
     // Carton box interaction system
     this.cartonBoxEntry = null
@@ -303,14 +254,6 @@ export class Scene1Manager {
     this.chestGuideAsset = null
     this.chestGuideEntry = null
     this.chestOilApplyState = null
-    this._chestCollectScanAccumulator = 0
-
-    this._tmpOrientedBoxDiff = new THREE.Vector3()
-    this._tmpChestAnimPos = new THREE.Vector3()
-    this._tmpChestAnimUp = new THREE.Vector3(0, 1, 0)
-    this._tmpChestAnimQuat = new THREE.Quaternion()
-    this._tmpVendingAnimPos = new THREE.Vector3()
-    this._tmpVendingAnimQuat = new THREE.Quaternion()
 
     // Reward coin on ordered sequence system
     this.sequenceSilverCoinAsset = null
@@ -327,30 +270,7 @@ export class Scene1Manager {
     this.currentBallNamesBuffer = new Set()
     this.currentBallNumberBuffer = new Map()
     this._tmpSection3FocusPos = new THREE.Vector3()
-    this._tmpSection3EyeLookTarget = new THREE.Vector3()
-    this._tmpSection3EyePlayerPos = new THREE.Vector3()
-    this._tmpSection3HouseFocusPos = new THREE.Vector3()
-    this._tmpSection3TreeFocusPos = new THREE.Vector3()
-    this._tmpSection3PlatformCenter = new THREE.Vector3()
-    this._section3DefaultFocusPos = new THREE.Vector3(0, 140, 0)
-    this._section3HouseScaleRegistry = new Map()
-    this._section3HouseScaleUpdateAccumulator = 0
-    this._section3TreeScaleRegistry = new Map()
-    this._section3TreeScaleUpdateAccumulator = 0
-    this._section3TreeBillboardUpdateAccumulator = 0
-    this.section3EdgeDarkness = 0
-    this.section3EdgeTeleportCooldown = 0
-    this.section3EdgeOverMaxTimer = 0
-    this.section3EdgeDarkHoldTimer = 0
-    this.section3EdgeRecoveryTimer = 0
-    this.section3EdgeRecoveryStartDarkness = 0
-    // Eye descent transition state (30s delay + 60s color transition)
-    this.section3EyeDescentStartTime = -1 // Time when eye descent started
-    this.section3EyeTransitionStartTime = -1 // Time when 30s delay ended (60s transition starts)
-    this.section3EyeTransitionProgress = 0 // 0 to 1 for color transition
-    this._section3PlatformBoundsCache = null
     this.sectionGroups = this.sceneGroup?.userData?.sectionGroups || null
-    this.baseSceneBackground = null
     this.activeSectionId = null
     this.sectionWarmState = {
       section1: { ready: true, loading: false },
@@ -361,11 +281,6 @@ export class Scene1Manager {
     this.sectionWarmQueue = []
     this.activeSectionWarmJob = null
     this.sectionWarmOverlay = null
-    this.sectionWarmOverlayTimer = null
-    this._lastWarmupCamera = null
-    this.pendingTeleportRequest = null
-    this.pendingSectionId = null
-    this.pendingSectionTimer = 0
     this.section2DoorLoadTriggered = false
     this._setSectionActive('section1')
     
@@ -390,26 +305,13 @@ export class Scene1Manager {
     if (section3) section3.visible = sectionId === 'section3'
 
     // Force-refresh grass LOD immediately when entering section3 so blades appear right away.
-    // Defer grass/tree LOD forceRefresh to the next frame so the teleport frame itself
-    // doesn't carry both section visibility toggle + full LOD rebuild on the same tick.
-    if (sectionId === 'section3' && (this.section3GrassLodUpdater || this.section3TreeLodUpdater)) {
-      const grassUpdater = this.section3GrassLodUpdater
-      const treeUpdater = this.section3TreeLodUpdater
-      const defaultPos = this._section3DefaultFocusPos
-      requestAnimationFrame(() => {
-        const playerEntry = this.syncList?.find(e => e.name === 'Player' && e.mesh)
-        const focusPos = playerEntry?.mesh?.position || defaultPos
-        if (grassUpdater) grassUpdater.forceRefresh(focusPos)
-        if (treeUpdater) treeUpdater.forceRefresh(focusPos)
-      })
+    if (sectionId === 'section3' && this.section3GrassLodUpdater) {
+      const playerEntry = this.syncList?.find(e => e.name === 'Player' && e.mesh)
+      const focusPos = playerEntry?.mesh?.position || null
+      this.section3GrassLodUpdater.forceRefresh(focusPos || new THREE.Vector3(0, 140, 0))
     }
 
     this.activeSectionId = sectionId
-
-    const cameraController = this._lastWarmupCamera?.userData?.cameraController
-    if (cameraController && typeof cameraController.setActiveSectionKey === 'function') {
-      cameraController.setActiveSectionKey(sectionId)
-    }
 
     // Switch per-section lighting (intensity, ambient, fog)
     if (this.lightsInitialized) {
@@ -448,32 +350,8 @@ export class Scene1Manager {
 
     // Set fog for this section
     if (this.mainScene?.fog instanceof THREE.Fog && lighting?.fog) {
-      if (lighting.fog.color != null) {
-        this.mainScene.fog.color.set(lighting.fog.color)
-        this.baseFogColor = this.mainScene.fog.color.clone()
-      }
       if (lighting.fog.near != null) this.mainScene.fog.near = lighting.fog.near
       if (lighting.fog.far != null) this.mainScene.fog.far = lighting.fog.far
-    }
-
-    if (this.mainScene) {
-      if (this.baseSceneBackground == null && this.mainScene.background instanceof THREE.Color) {
-        this.baseSceneBackground = this.mainScene.background.clone()
-      }
-
-      if (lighting?.background != null) {
-        if (this.mainScene.background instanceof THREE.Color) {
-          this.mainScene.background.set(lighting.background)
-        } else {
-          this.mainScene.background = new THREE.Color(lighting.background)
-        }
-      } else if (this.baseSceneBackground) {
-        if (this.mainScene.background instanceof THREE.Color) {
-          this.mainScene.background.copy(this.baseSceneBackground)
-        } else {
-          this.mainScene.background = this.baseSceneBackground.clone()
-        }
-      }
     }
   }
 
@@ -495,31 +373,14 @@ export class Scene1Manager {
     return 'section1'
   }
 
-  _updateSectionStreaming(syncList, delta = 0) {
+  _updateSectionStreaming(syncList) {
     if (!Array.isArray(syncList) || !this.sectionGroups) return
 
     const playerEntry = syncList.find(e => e.name === 'Player' && (e.mesh || e.body))
     if (!playerEntry) return
 
     const sectionId = this._resolvePlayerSection(playerEntry)
-    if (sectionId === this.activeSectionId) {
-      this.pendingSectionId = null
-      this.pendingSectionTimer = 0
-      return
-    }
-
-    if (this.pendingSectionId !== sectionId) {
-      this.pendingSectionId = sectionId
-      this.pendingSectionTimer = 0
-      return
-    }
-
-    this.pendingSectionTimer += delta
-    if (this.pendingSectionTimer >= SECTION_STREAMING_CONFIG.switchConfirmSec) {
-      this.pendingSectionId = null
-      this.pendingSectionTimer = 0
-      this._setSectionActive(sectionId)
-    }
+    this._setSectionActive(sectionId)
   }
 
   _getSectionGroup(sectionId) {
@@ -531,118 +392,21 @@ export class Scene1Manager {
     if (!state) return false
 
     const forceReload = !!options.forceReload
-    const isHighPriority = options.priority === 'high'
-    if (!forceReload && state.ready) {
-      if (options.showReadyOverlay) {
-        this._showSectionReadyOverlay(options.title || `Loading ${sectionId}`, sectionId)
-      }
+    if (!forceReload && (state.ready || state.loading)) {
       return false
     }
 
-    if (!forceReload && state.loading) {
-      return false
-    }
-
-    const existingIndex = this.sectionWarmQueue.findIndex(job => job.sectionId === sectionId)
-    const existingQueued = existingIndex !== -1
+    const existingQueued = this.sectionWarmQueue.some(job => job.sectionId === sectionId)
     if (existingQueued && !forceReload) {
-      if (isHighPriority && existingIndex > 0) {
-        const [job] = this.sectionWarmQueue.splice(existingIndex, 1)
-        this.sectionWarmQueue.unshift(job)
-      }
       return false
     }
 
-    const warmJob = {
+    this.sectionWarmQueue.push({
       sectionId,
       title: options.title || `Loading ${sectionId}`,
-      forceReload,
-      silent: !!options.silent
-    }
-
-    if (isHighPriority) {
-      this.sectionWarmQueue.unshift(warmJob)
-    } else {
-      this.sectionWarmQueue.push(warmJob)
-    }
-
-    // Section 2 stream includes section4, so warm both to avoid first-frame hitches.
-    if (sectionId === 'section2') {
-      const section4State = this.sectionWarmState.section4
-      const section4Queued = this.sectionWarmQueue.some(job => job.sectionId === 'section4')
-      if (section4State && !section4State.ready && !section4State.loading && !section4Queued) {
-        this.sectionWarmQueue.push({
-          sectionId: 'section4',
-          title: 'Loading Section 4',
-          forceReload: false,
-          silent: true
-        })
-      }
-    }
-
+      forceReload
+    })
     return true
-  }
-
-  _processPendingTeleport() {
-    const request = this.pendingTeleportRequest
-    if (!request) return
-
-    const {
-      playerEntry,
-      targetPosition,
-      options,
-      destinationSection,
-      queuedAtMs
-    } = request
-
-    if (!playerEntry?.body || !targetPosition) {
-      this.pendingTeleportRequest = null
-      return
-    }
-
-    const state = this.sectionWarmState[destinationSection]
-    const elapsedSec = (performance.now() - queuedAtMs) / 1000
-    const timedOut = elapsedSec >= SECTION_STREAMING_CONFIG.pendingTeleportMaxWaitSec
-
-    if (state?.ready || timedOut) {
-      this.pendingTeleportRequest = null
-      this._teleportPlayerEntry(playerEntry, targetPosition, {
-        ...options,
-        skipSectionWarmupGate: true
-      })
-      return
-    }
-
-    if (!state?.loading) {
-      this._enqueueSectionWarmup(destinationSection, {
-        title: `Loading ${destinationSection}`,
-        showReadyOverlay: true,
-        priority: 'high'
-      })
-    }
-  }
-
-  _showSectionReadyOverlay(title, sectionId) {
-    if (this.sectionWarmOverlayTimer !== null) {
-      clearTimeout(this.sectionWarmOverlayTimer)
-      this.sectionWarmOverlayTimer = null
-    }
-
-    if (this.sectionWarmOverlay) {
-      this.sectionWarmOverlay.close()
-      this.sectionWarmOverlay = null
-    }
-
-    this.sectionWarmOverlay = createLoadingOverlay(title)
-    this.sectionWarmOverlay.update(1, sectionId)
-
-    this.sectionWarmOverlayTimer = setTimeout(() => {
-      if (this.sectionWarmOverlay) {
-        this.sectionWarmOverlay.close()
-        this.sectionWarmOverlay = null
-      }
-      this.sectionWarmOverlayTimer = null
-    }, 420)
   }
 
   _startNextSectionWarmup() {
@@ -672,18 +436,10 @@ export class Scene1Manager {
     const total = Math.max(1, meshes.length)
     let index = 0
     const warmStartTime = performance.now()
-    const showOverlay = !job.silent
-    const frameBudgetMs = showOverlay
-      ? SECTION_WARMUP_CONFIG.overlayFrameBudgetMs
-      : SECTION_WARMUP_CONFIG.backgroundFrameBudgetMs
-    const minVisibleMs = showOverlay ? SECTION_WARMUP_CONFIG.overlayMinVisibleMs : 0
+    const minVisibleMs = 900
 
-    if (showOverlay) {
-      this.sectionWarmOverlay = createLoadingOverlay(job.title)
-      this.sectionWarmOverlay.update(0, 'starting')
-    } else {
-      this.sectionWarmOverlay = null
-    }
+    this.sectionWarmOverlay = createLoadingOverlay(job.title)
+    this.sectionWarmOverlay.update(0, 'starting')
     this.activeSectionWarmJob = job
 
     const closeOverlayAndContinue = () => {
@@ -697,7 +453,7 @@ export class Scene1Manager {
 
     const step = () => {
       const startTime = performance.now()
-      while (index < meshes.length && (performance.now() - startTime) < frameBudgetMs) {
+      while (index < meshes.length && (performance.now() - startTime) < 4.5) {
         const mesh = meshes[index]
         index += 1
 
@@ -716,11 +472,11 @@ export class Scene1Manager {
         const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
         mats.forEach(mat => {
           if (!mat) return
-          // Touch maps without forcing material recompilation on every warmup pass.
-          if (mat.map) mat.map.needsUpdate = !!mat.map.needsUpdate
-          if (mat.normalMap) mat.normalMap.needsUpdate = !!mat.normalMap.needsUpdate
-          if (mat.bumpMap) mat.bumpMap.needsUpdate = !!mat.bumpMap.needsUpdate
-          if (mat.emissiveMap) mat.emissiveMap.needsUpdate = !!mat.emissiveMap.needsUpdate
+          mat.needsUpdate = true
+          if (mat.map) mat.map.needsUpdate = true
+          if (mat.normalMap) mat.normalMap.needsUpdate = true
+          if (mat.bumpMap) mat.bumpMap.needsUpdate = true
+          if (mat.emissiveMap) mat.emissiveMap.needsUpdate = true
         })
       }
 
@@ -738,55 +494,18 @@ export class Scene1Manager {
         return
       }
 
-      const compileAndFinalize = () => {
-        state.ready = true
-        state.loading = false
+      state.ready = true
+      state.loading = false
 
-        if (this.sectionWarmOverlay) {
-          const elapsedAfterCompile = performance.now() - warmStartTime
-          this.sectionWarmOverlay.update(1, 'complete')
-          const remainingVisibleMs = Math.max(0, minVisibleMs - elapsedAfterCompile)
-          setTimeout(closeOverlayAndContinue, remainingVisibleMs + 120)
-          return
-        }
-
-        this.activeSectionWarmJob = null
-        this._startNextSectionWarmup()
+      if (this.sectionWarmOverlay) {
+        this.sectionWarmOverlay.update(1, 'complete')
+        const remainingVisibleMs = Math.max(0, minVisibleMs - elapsedMs)
+        setTimeout(closeOverlayAndContinue, remainingVisibleMs + 120)
+        return
       }
 
-      const compileSceneForSection = async () => {
-        if (!this.renderer || !this.mainScene || !this._lastWarmupCamera) {
-          return
-        }
-
-        if (this.sectionWarmOverlay) {
-          this.sectionWarmOverlay.update(0.95, 'compiling shaders')
-        }
-
-        const previousVisible = group.visible
-        group.visible = true
-
-        try {
-          if (typeof this.renderer.compileAsync === 'function') {
-            await this.renderer.compileAsync(this.mainScene, this._lastWarmupCamera)
-          } else if (typeof this.renderer.compile === 'function') {
-            this.renderer.compile(this.mainScene, this._lastWarmupCamera)
-          }
-        } catch (err) {
-          console.warn(`[Scene1Manager] Section warmup compile failed for ${job.sectionId}:`, err)
-        } finally {
-          const activeSection = this.activeSectionId || 'section1'
-          const shouldRemainVisible =
-            job.sectionId === 'section1' ||
-            (job.sectionId === 'section2' && (activeSection === 'section2' || activeSection === 'section4')) ||
-            (job.sectionId === 'section4' && (activeSection === 'section2' || activeSection === 'section4')) ||
-            (job.sectionId === 'section3' && activeSection === 'section3')
-          group.visible = shouldRemainVisible
-        }
-      }
-
-      compileSceneForSection().finally(compileAndFinalize)
-      return
+      this.activeSectionWarmJob = null
+      this._startNextSectionWarmup()
     }
 
     requestAnimationFrame(step)
@@ -809,10 +528,6 @@ export class Scene1Manager {
     if (!this.screenMat) {
       this.screenMat = new ScreenMat(document.body)
     }
-
-    // Warm heavy streamed sections in background while player is in section1.
-    this._enqueueSectionWarmup('section2', { title: 'Preparing Section 2', silent: true })
-    this._enqueueSectionWarmup('section3', { title: 'Preparing Section 3', silent: true })
   }
 
   /**
@@ -830,7 +545,7 @@ export class Scene1Manager {
     if (this.elevatorCountdownActive || this.elevatorCountdownFinished) return false
     this.elevatorCountdownActive = true
     this.elevatorCountdownTimer = 0
-    this._enqueueSectionWarmup('section3', { title: 'Loading Section 3', showReadyOverlay: true })
+    this._enqueueSectionWarmup('section3', { title: 'Loading Section 3' })
     console.log('%c[Elevator] Debug: Countdown manually started via KeyL', 'color: #00ff88; font-weight: bold')
     return true
   }
@@ -1003,7 +718,7 @@ export class Scene1Manager {
     this.compuneMesh = null
     this.compuneAI = null
     
-    // compune despawned
+    console.log('[Scene1Manager] Compune despawned, ball spawning started')
   }
   
   /**
@@ -1074,6 +789,7 @@ export class Scene1Manager {
             syncList: this.syncList,
             particleManager: this.particleManager
           })
+          console.log('[Scene1Manager] Guy spawned at water leak position due to player fall')
         } catch (e) {
           console.error('[Scene1Manager] Error spawning guy', e)
         }
@@ -1088,12 +804,14 @@ export class Scene1Manager {
   _triggerCompuneSweatEffect() {
     // ✨ IMPORTANT: Only trigger if Compune still exists, is active, and is not marked for despawn
     if (!this.compuneMesh || !this.compuneAI || !this.mainScene || this.compuneAI.shouldDespawn) {
+      console.warn('[Scene1Manager] Cannot trigger sweat: compune despawned, not initialized, or marked for despawn')
       return
     }
 
     // Spawn sweat effect at Compune's position
     const sweatEffect = createSweatEffect(this.mainScene, this.compuneMesh.position.clone())
     this.activeSweatEffects.push(sweatEffect)
+    console.log(`[Compune] Sweat effect triggered! Active effects: ${this.activeSweatEffects.length}`)
   }
 
   /**
@@ -1187,14 +905,9 @@ export class Scene1Manager {
       this._initializeLightsLazy()
     }
 
-    if (camera) {
-      this._lastWarmupCamera = camera
-    }
-
     this._startNextSectionWarmup()
-    this._processPendingTeleport()
 
-    this._updateSectionStreaming(syncList, delta)
+    this._updateSectionStreaming(syncList)
     
     this._updateWaterSplash(delta, particleManager)
     this._updateBlackout(delta)
@@ -1245,16 +958,9 @@ export class Scene1Manager {
     this._updateTeleportCooldown(delta)
     this._handleDudeTouchTeleport(syncList)
     this._updateSection2ProximitySystems(syncList, delta, particleManager)
-    this._updateSection3HouseDistanceScaling(syncList, delta)
-    this._updateSection3TreeLod(syncList, delta, camera)
-    this._updateSection3TreeDistanceScaling(syncList, delta)
     this._updateSection3GrassLod(syncList, delta, camera)
-    this._updateSection3EyeBot(syncList, delta)
-    this._updateSection3EyeTransition(syncList, delta, camera)
-    this._updateSection3EyeTracking(syncList, camera)
     this._updateSection2ReturnElevator(syncList, delta)
     this._updateDudeFogAndPenaltyState(syncList, delta)
-    this._updateSection3EdgeAtmosphere(syncList, delta)
     this._updateVendingMachineCollector(syncList, delta)
     this._updateCartonBoxInteraction(syncList, delta)
     this._updateChestInteraction(syncList, delta)
@@ -1264,6 +970,7 @@ export class Scene1Manager {
     if (this.gameOver && this.gameOverCallback && !this.gameOverCallbackTriggered) {
       this.gameOverCallbackTriggered = true
       const completionTime = (Date.now() - this.gameStartTime) / 1000  // Convert to seconds
+      console.log('[Scene1Manager] Triggering callback - reason:', this.gameOverReason, 'time:', completionTime, 'callback:', !!this.gameOverCallback)
       this.gameOverCallback(this.gameOverReason, completionTime)
     }
   }
@@ -1301,16 +1008,6 @@ export class Scene1Manager {
       this.section3GrassLodUpdater = this.sceneGroup.userData.section3GrassLod
     }
 
-    if (!this.section3TreeLodUpdater && this.sectionGroups?.section3?.userData?.section3TreeLod) {
-      this.section3TreeLodUpdater = this.sectionGroups.section3.userData.section3TreeLod
-    }
-
-    if (!this.section3EyeSun && this.sectionGroups?.section3?.userData?.section3EyeSun) {
-      this.section3EyeSun = this.sectionGroups.section3.userData.section3EyeSun
-    }
-
-    this._ensureSection3EyeBot()
-
     this.lightsInitialized = true
   }
 
@@ -1329,615 +1026,6 @@ export class Scene1Manager {
     }
 
     this.section3GrassLodUpdater.updateFromFocus(this._tmpSection3FocusPos, delta)
-  }
-
-  _updateSection3TreeLod(syncList, delta, camera = null) {
-    if (this.activeSectionId !== 'section3') return
-    if (!this.section3TreeLodUpdater || !syncList) return
-
-    if (camera && camera.position) {
-      const p = camera.position
-      this._tmpSection3FocusPos.set(p.x, p.y, p.z)
-    } else {
-      const playerEntry = syncList.find(e => e.name === 'Player' && e.mesh)
-      if (!playerEntry?.mesh) return
-      const p = playerEntry.mesh.position
-      this._tmpSection3FocusPos.set(p.x, p.y, p.z)
-    }
-
-    this.section3TreeLodUpdater.updateFromFocus(this._tmpSection3FocusPos, delta)
-  }
-
-  _ensureSection3HouseScaleRegistry(syncList) {
-    if (!Array.isArray(syncList)) return
-
-    const staleEntries = []
-    this._section3HouseScaleRegistry.forEach((_, entry) => {
-      if (!entry || !syncList.includes(entry) || !entry.mesh || !entry.body || !entry.mesh.parent) {
-        staleEntries.push(entry)
-      }
-    })
-    staleEntries.forEach(entry => this._section3HouseScaleRegistry.delete(entry))
-
-    for (const entry of syncList) {
-      if (!entry?.mesh || !entry?.body) continue
-      if (!entry.mesh.userData?.isSection3House) continue
-      if (this._section3HouseScaleRegistry.has(entry)) continue
-
-      const baseMeshScale = entry.mesh.scale?.x || 1
-      const primaryShape = entry.body.shapes?.find(shape => shape?.halfExtents)
-      if (!primaryShape?.halfExtents) continue
-
-      const baseHalfExtents = primaryShape.halfExtents.clone()
-      const baseBodyOffset = new THREE.Vector3(
-        entry.body.position.x - entry.mesh.position.x,
-        entry.body.position.y - entry.mesh.position.y,
-        entry.body.position.z - entry.mesh.position.z
-      )
-
-      this._section3HouseScaleRegistry.set(entry, {
-        baseMeshScale,
-        currentScale: baseMeshScale,
-        targetScale: baseMeshScale,
-        primaryShape,
-        baseHalfExtents,
-        baseBodyOffset
-      })
-    }
-  }
-
-  _updateSection3HouseDistanceScaling(syncList, delta) {
-    if (this.activeSectionId !== 'section3') return
-
-    this._ensureSection3HouseScaleRegistry(syncList)
-    if (this._section3HouseScaleRegistry.size === 0) return
-
-    const playerEntry = syncList?.find(e => e.name === 'Player' && e.mesh)
-    if (!playerEntry?.mesh) return
-    const p = playerEntry.mesh.position
-    this._tmpSection3HouseFocusPos.set(p.x, p.y, p.z)
-
-    this._section3HouseScaleUpdateAccumulator += delta
-    const shouldRefreshTargets = this._section3HouseScaleUpdateAccumulator >= SCENE1_CONFIG.section3HouseScaleUpdateInterval
-    if (shouldRefreshTargets) {
-      this._section3HouseScaleUpdateAccumulator = 0
-    }
-
-    const nearDistance = SCENE1_CONFIG.section3HouseScaleMinDistance
-    const maxDistance = Math.max(nearDistance + 0.001, SCENE1_CONFIG.section3HouseScaleMaxDistance)
-    const span = maxDistance - nearDistance
-    const nearScale = SCENE1_CONFIG.section3HouseScaleNear
-    const farScale = SCENE1_CONFIG.section3HouseScaleFar
-    const smoothAlpha = Math.min(1, delta * SCENE1_CONFIG.section3HouseScaleSmoothSpeed)
-
-    this._section3HouseScaleRegistry.forEach((data, entry) => {
-      const mesh = entry.mesh
-      const body = entry.body
-      if (!mesh || !body || !data?.primaryShape) return
-
-      if (shouldRefreshTargets) {
-        const distance = mesh.position.distanceTo(this._tmpSection3HouseFocusPos)
-        const t = THREE.MathUtils.clamp((distance - nearDistance) / span, 0, 1)
-        data.targetScale = THREE.MathUtils.lerp(nearScale, farScale, t)
-      }
-
-      const nextScale = THREE.MathUtils.lerp(data.currentScale, data.targetScale, smoothAlpha)
-      if (Math.abs(nextScale - data.currentScale) < 0.001) return
-
-      data.currentScale = nextScale
-      mesh.scale.setScalar(nextScale)
-
-      data.primaryShape.halfExtents.set(
-        data.baseHalfExtents.x * nextScale,
-        data.baseHalfExtents.y * nextScale,
-        data.baseHalfExtents.z * nextScale
-      )
-
-      if (typeof data.primaryShape.updateConvexPolyhedronRepresentation === 'function') {
-        data.primaryShape.updateConvexPolyhedronRepresentation()
-      }
-      if (typeof data.primaryShape.updateBoundingSphereRadius === 'function') {
-        data.primaryShape.updateBoundingSphereRadius()
-      }
-
-      body.position.set(
-        mesh.position.x + (data.baseBodyOffset.x * nextScale),
-        mesh.position.y + (data.baseBodyOffset.y * nextScale),
-        mesh.position.z + (data.baseBodyOffset.z * nextScale)
-      )
-      if (typeof body.updateBoundingRadius === 'function') {
-        body.updateBoundingRadius()
-      }
-      body.aabbNeedsUpdate = true
-    })
-  }
-
-  _ensureSection3TreeScaleRegistry() {
-    const trees = this.sectionGroups?.section3?.userData?.section3Trees || []
-    const liveTrees = new Set(trees.filter((tree) => tree?.parent))
-    const staleTrees = []
-
-    this._section3TreeScaleRegistry.forEach((_, tree) => {
-      if (!liveTrees.has(tree)) staleTrees.push(tree)
-    })
-
-    staleTrees.forEach((tree) => this._section3TreeScaleRegistry.delete(tree))
-
-    for (const tree of trees) {
-      if (!tree?.parent || this._section3TreeScaleRegistry.has(tree)) continue
-
-      const baseScale = tree.scale?.x || 1
-      this._section3TreeScaleRegistry.set(tree, {
-        baseScale,
-        currentScale: baseScale,
-        targetScale: baseScale
-      })
-    }
-  }
-
-  _updateSection3TreeDistanceScaling(syncList, delta) {
-    if (this.activeSectionId !== 'section3') return
-
-    this._ensureSection3TreeScaleRegistry()
-    if (this._section3TreeScaleRegistry.size === 0) return
-
-    const playerEntry = syncList?.find((entry) => entry.name === 'Player' && entry.mesh)
-    if (!playerEntry?.mesh) return
-    const p = playerEntry.mesh.position
-    this._tmpSection3TreeFocusPos.set(p.x, p.y, p.z)
-
-    this._section3TreeScaleUpdateAccumulator += delta
-    const shouldRefreshTargets = this._section3TreeScaleUpdateAccumulator >= SCENE1_CONFIG.section3TreeScaleUpdateInterval
-    if (shouldRefreshTargets) {
-      this._section3TreeScaleUpdateAccumulator = 0
-    }
-
-    const nearDistance = SCENE1_CONFIG.section3TreeScaleMinDistance
-    const maxDistance = Math.max(nearDistance + 0.001, SCENE1_CONFIG.section3TreeScaleMaxDistance)
-    const span = maxDistance - nearDistance
-    const nearScale = SCENE1_CONFIG.section3TreeScaleNear
-    const farScale = SCENE1_CONFIG.section3TreeScaleFar
-    const smoothAlpha = Math.min(1, delta * SCENE1_CONFIG.section3TreeScaleSmoothSpeed)
-
-    this._section3TreeScaleRegistry.forEach((data, tree) => {
-      if (!tree?.parent || !tree.visible || !data) return
-
-      if (shouldRefreshTargets) {
-        const distance = tree.position.distanceTo(this._tmpSection3TreeFocusPos)
-        const t = THREE.MathUtils.clamp((distance - nearDistance) / span, 0, 1)
-        data.targetScale = data.baseScale * THREE.MathUtils.lerp(nearScale, farScale, t)
-      }
-
-      const nextScale = THREE.MathUtils.lerp(data.currentScale, data.targetScale, smoothAlpha)
-      if (Math.abs(nextScale - data.currentScale) < 0.001) return
-
-      data.currentScale = nextScale
-      tree.scale.setScalar(nextScale)
-    })
-  }
-
-  _findSyncEntryForMesh(syncList, mesh) {
-    if (!mesh || !Array.isArray(syncList)) return null
-    return syncList.find((entry) => entry?.mesh === mesh) || null
-  }
-
-  _ensureSection3EyeBot() {
-    if (!this.section3EyeSun && this.sectionGroups?.section3?.userData?.section3EyeSun) {
-      this.section3EyeSun = this.sectionGroups.section3.userData.section3EyeSun
-    }
-
-    if (!this.section3EyeSun?.parent) {
-      this.section3EyeBot = null
-      return null
-    }
-
-    if (this.section3EyeBot?.eyeMesh === this.section3EyeSun) {
-      return this.section3EyeBot
-    }
-
-    const triggerMesh = this.section3EyeSun.getObjectByName('Section3 Eye Trigger') || this.section3EyeSun.userData?.triggerMesh || null
-    this.section3EyeBot = new EyeBot(this.section3EyeSun, triggerMesh, {
-      descentDurationSec: SCENE1_CONFIG.section3EyeDescentDurationSec
-    })
-    return this.section3EyeBot
-  }
-
-  _updateSection3EyeBot(syncList, delta) {
-    const eyeBot = this._ensureSection3EyeBot()
-    if (!eyeBot || !Array.isArray(syncList)) return
-
-    const playerEntry = syncList.find((e) => e.name === 'Player' && e.mesh) || null
-    const eyeEntry = this._findSyncEntryForMesh(syncList, eyeBot.eyeMesh)
-    const triggerEntry = this._findSyncEntryForMesh(syncList, eyeBot.triggerMesh)
-
-    const result = eyeBot.update(delta, {
-      playerEntry,
-      playerInSection3: this.activeSectionId === 'section3',
-      eyeEntry,
-      triggerEntry
-    })
-
-    if (result?.touchedPlayer && playerEntry && this.destroySystem?.destroyCharacter) {
-      this.destroySystem.destroyCharacter(playerEntry)
-    }
-  }
-
-  _updateSection3EyeTransition(syncList, delta, camera = null) {
-    if (this.activeSectionId !== 'section3') {
-      this.section3EyeDescentStartTime = -1
-      this.section3EyeTransitionStartTime = -1
-      this.section3EyeTransitionProgress = 0
-      // Reset trees to invisible when leaving section
-      const trees = this.sectionGroups?.section3?.userData?.section3Trees || []
-      trees.forEach((tree) => {
-        if (tree && tree.userData) {
-          setTreeOpacity(tree, 0)
-        }
-      })
-      // Reset house portal effects
-      const section3 = this.sectionGroups?.section3
-      if (section3) {
-        // Reset grass platform and fog colors
-        const platform = section3.getObjectByName('Section3 Platform')
-        if (platform && platform.material) {
-          platform.material.color.set('#67b935') // Reset to base grass color
-        }
-      }
-      this._updateSection3TreeLighting(0, 0)
-      // Reset fog and background colors (handled by section3 relighting)
-      return
-    }
-
-    const eyeBot = this._ensureSection3EyeBot()
-    if (!eyeBot || eyeBot._descentElapsed === undefined) return
-
-    // Track eye descent start time
-    if (this.section3EyeDescentStartTime < 0 && eyeBot._descentStarted) {
-      this.section3EyeDescentStartTime = eyeBot._descentElapsed
-    }
-
-    // If eye hasn't started descending yet, reset everything
-    if (!eyeBot._descentStarted) {
-      this.section3EyeDescentStartTime = -1
-      this.section3EyeTransitionStartTime = -1
-      this.section3EyeTransitionProgress = 0
-      // Reset trees to invisible
-      const trees = this.sectionGroups?.section3?.userData?.section3Trees || []
-      trees.forEach((tree) => {
-        if (tree && tree.userData) {
-          setTreeOpacity(tree, 0)
-        }
-      })
-      return
-    }
-
-    // Calculate elapsed time since descent started
-    const elapsedSinceDescent = eyeBot._descentElapsed
-    const DELAY_TIME = 30 // 30 seconds delay
-    const TRANSITION_DURATION = 60 // 60 seconds for color transition
-
-    // Check if we should start the color transition (after 30s)
-    if (this.section3EyeTransitionStartTime < 0 && elapsedSinceDescent >= DELAY_TIME) {
-      this.section3EyeTransitionStartTime = elapsedSinceDescent
-    }
-
-    //Calculate transition progress (0 -> 1 over 60 seconds)
-    if (this.section3EyeTransitionStartTime >= 0) {
-      const elapsedSinceTransitionStart = elapsedSinceDescent - this.section3EyeTransitionStartTime
-      this.section3EyeTransitionProgress = THREE.MathUtils.clamp(elapsedSinceTransitionStart / TRANSITION_DURATION, 0, 1)
-    } else {
-      this.section3EyeTransitionProgress = 0
-    }
-
-    // Apply transitions only if transition is active
-    if (this.section3EyeTransitionProgress > 0) {
-      this._applySection3EyeColorTransition(this.section3EyeTransitionProgress)
-      this._updateSection3TreeOpacity(this.section3EyeTransitionProgress)
-    }
-
-    // Update tree billboarding to face camera
-    if (camera) {
-      this._section3TreeBillboardUpdateAccumulator += delta
-      if (this._section3TreeBillboardUpdateAccumulator < SCENE1_CONFIG.section3TreeBillboardUpdateInterval) {
-        return
-      }
-      this._section3TreeBillboardUpdateAccumulator = 0
-      const trees = this.sectionGroups?.section3?.userData?.section3Trees || []
-      updateBillboards(camera, trees)
-    }
-  }
-
-  _applySection3EyeColorTransition(progress) {
-    const section3Lighting = this.section3Lighting || null
-    const colors = section3Lighting?.colors || {}
-
-    // Get colors from config, fallback to defaults
-    const grassBaseFrom = new THREE.Color(colors.grassBaseNormal ?? '#67b935')
-    const grassBaseTo = new THREE.Color(colors.grassBaseTransitioned ?? '#c00000')
-    const grassVividFrom = new THREE.Color(colors.grassVividNormal ?? '#89ff39')
-    const grassVividTo = new THREE.Color(colors.grassVividTransitioned ?? '#ff4444')
-    const grassSoilFrom = new THREE.Color(colors.grassSoilNormal ?? '#090542')
-    const grassSoilTo = new THREE.Color(colors.grassSoilTransitioned ?? '#4a2020')
-    const grassDeepSoilFrom = new THREE.Color(colors.grassDeepSoilNormal ?? '#13006a')
-    const grassDeepSoilTo = new THREE.Color(colors.grassDeepSoilTransitioned ?? '#1a0a0a')
-    
-    const transitionedBaseColor = grassBaseFrom.clone().lerp(grassBaseTo, progress)
-    const transitionedVividColor = grassVividFrom.clone().lerp(grassVividTo, progress)
-    const transitionedSoilColor = grassSoilFrom.clone().lerp(grassSoilTo, progress)
-    const transitionedDeepSoilColor = grassDeepSoilFrom.clone().lerp(grassDeepSoilTo, progress)
-
-    // Fog color transition
-    const fogColorFrom = new THREE.Color(colors.fogNormal ?? '#cfedff')
-    const fogColorTo = new THREE.Color(colors.fogTransitioned ?? '#4a3d6d')
-    const transitionedFogColor = fogColorFrom.clone().lerp(fogColorTo, progress)
-
-    // Background color transition
-    const bgColorFrom = new THREE.Color(colors.backgroundNormal ?? '#41a5e7')
-    const bgColorTo = new THREE.Color(colors.backgroundTransitioned ?? '#000000')
-    const transitionedBgColor = bgColorFrom.clone().lerp(bgColorTo, progress)
-
-    // Update platform material colors if accessible
-    const section3 = this.sectionGroups?.section3
-    if (section3) {
-      const platform = section3.getObjectByName('Section3 Platform')
-      if (platform && platform.material) {
-        platform.material.color.copy(transitionedBaseColor)
-      }
-
-      // Update grass layer material to transition color from platform
-      section3.traverse((child) => {
-        if (child.name === 'Section3 Grass Patches' && child.material) {
-          // Grass layer transitions from base color during eye transition
-          child.material.color.copy(transitionedBaseColor)
-        }
-      })
-    }
-
-    // Update fog
-    if (this.mainScene?.fog instanceof THREE.Fog) {
-      this.mainScene.fog.color.copy(transitionedFogColor)
-    }
-
-    // Update background
-    if (this.mainScene) {
-      if (this.mainScene.background instanceof THREE.Color) {
-        this.mainScene.background.copy(transitionedBgColor)
-      } else {
-        this.mainScene.background = transitionedBgColor.clone()
-      }
-    }
-
-    // Update renderer clear color to match transition
-    if (this.renderer) {
-      this.renderer.setClearColor(transitionedBgColor, 1.0)
-    }
-
-    // Ensure fog and background updates are visible
-    if (this.mainScene?.fog) {
-      this.mainScene.fog.far = 400 // Ensure fog is updated
-    }
-
-    // Sync descriptor colors so _updateSection3EdgeAtmosphere uses transitioned base colors.
-    if (section3Lighting?.fog) {
-      section3Lighting.fog.color = `#${transitionedFogColor.getHexString()}`
-    }
-    if (section3Lighting) {
-      section3Lighting.background = `#${transitionedBgColor.getHexString()}`
-    }
-  }
-
-  _updateSection3TreeOpacity(progress) {
-    const section3 = this.sectionGroups?.section3
-    const trees = section3?.userData?.section3Trees || []
-    const controllers = section3?.userData?.section3TreeMaterialControllers || []
-    const clampedProgress = THREE.MathUtils.clamp(progress, 0, 1)
-
-    controllers.forEach((controller) => {
-      setTreeMaterialControllerOpacity(controller, clampedProgress)
-    })
-
-    const shouldBeVisible = clampedProgress > 0.001
-    if (section3?.userData?.section3TreesVisible !== shouldBeVisible) {
-      trees.forEach((tree) => {
-        if (tree?.userData) {
-          tree.userData.opacity = clampedProgress
-          tree.visible = shouldBeVisible && tree.userData.section3LodVisible !== false
-        }
-      })
-      if (section3?.userData) {
-        section3.userData.section3TreesVisible = shouldBeVisible
-      }
-      return
-    }
-
-    trees.forEach((tree) => {
-      if (tree?.userData) tree.userData.opacity = clampedProgress
-    })
-  }
-
-  _updateSection3TreeLighting(transitionProgress = 0, edgeDarkness = 0) {
-    const section3 = this.sectionGroups?.section3
-    const trees = section3?.userData?.section3Trees || []
-    const controllers = section3?.userData?.section3TreeMaterialControllers || []
-    const transitionShade = THREE.MathUtils.lerp(1, 0.48, THREE.MathUtils.clamp(transitionProgress, 0, 1))
-    const edgeShade = THREE.MathUtils.lerp(1, 0.18, THREE.MathUtils.clamp(edgeDarkness, 0, 1))
-    const brightness = Math.max(0.08, transitionShade * edgeShade)
-
-    controllers.forEach((controller) => {
-      setTreeMaterialControllerBrightness(controller, brightness)
-    })
-
-    trees.forEach((tree) => {
-      if (tree?.userData) {
-        tree.userData.brightness = brightness
-      }
-    })
-  }
-
-  _updateSection3EyeTracking(syncList, camera = null) {
-    if (this.activeSectionId !== 'section3') return
-
-    if (!this.section3EyeSun && this.sectionGroups?.section3?.userData?.section3EyeSun) {
-      this.section3EyeSun = this.sectionGroups.section3.userData.section3EyeSun
-    }
-
-    const eyeLookUpdater = this.section3EyeSun?.userData?.updateLookAt
-    if (typeof eyeLookUpdater !== 'function') return
-
-    if (camera?.position) {
-      this._tmpSection3EyeLookTarget.set(camera.position.x, camera.position.y, camera.position.z)
-      eyeLookUpdater(this._tmpSection3EyeLookTarget)
-      return
-    }
-
-    const playerEntry = syncList?.find(e => e.name === 'Player' && e.mesh)
-    if (!playerEntry?.mesh) return
-
-    playerEntry.mesh.getWorldPosition(this._tmpSection3EyePlayerPos)
-    eyeLookUpdater(this._tmpSection3EyePlayerPos)
-  }
-
-  _resolveSection3PlatformBounds() {
-    const platform = this.sceneGroup?.getObjectByName('Section3 Platform')
-    if (!platform) return null
-
-    const cache = this._section3PlatformBoundsCache
-    if (cache?.platform === platform) return cache
-
-    const geometryRadius = platform.geometry?.parameters?.radius || 96
-    const scaleRadius = Math.max(Math.abs(platform.scale?.x || 1), Math.abs(platform.scale?.z || 1))
-    const radius = geometryRadius * scaleRadius
-
-    const next = { platform, radius }
-    this._section3PlatformBoundsCache = next
-    return next
-  }
-
-  _updateSection3EdgeAtmosphere(syncList, delta) {
-    if (this.activeSectionId !== 'section3') {
-      this.section3EdgeDarkness = 0
-      this.section3EdgeTeleportCooldown = 0
-      this.section3EdgeOverMaxTimer = 0
-      this.section3EdgeDarkHoldTimer = 0
-      this.section3EdgeRecoveryTimer = 0
-      this.section3EdgeRecoveryStartDarkness = 0
-      this._updateSection3TreeLighting(0, 0)
-      return
-    }
-
-    this.section3EdgeTeleportCooldown = Math.max(0, this.section3EdgeTeleportCooldown - delta)
-
-    const playerEntry = syncList?.find(e => e.name === 'Player' && e.mesh)
-    if (!playerEntry?.mesh) return
-
-    const bounds = this._resolveSection3PlatformBounds()
-    if (!bounds?.platform || !Number.isFinite(bounds.radius) || bounds.radius <= 0.001) return
-
-    bounds.platform.getWorldPosition(this._tmpSection3PlatformCenter)
-    const playerPos = playerEntry.mesh.position
-    const dx = playerPos.x - this._tmpSection3PlatformCenter.x
-    const dz = playerPos.z - this._tmpSection3PlatformCenter.z
-    const distToCenter = Math.sqrt((dx * dx) + (dz * dz))
-
-    const startRadius = bounds.radius * SCENE1_CONFIG.section3EdgeDarkStartRatio
-    const maxRadius = bounds.radius * THREE.MathUtils.clamp(SCENE1_CONFIG.section3EdgeDarkMaxRatio, 0.01, 1)
-    const radiusSpan = Math.max(0.001, maxRadius - startRadius)
-    let edgeProgress = THREE.MathUtils.clamp((distToCenter - startRadius) / radiusSpan, 0, 1)
-
-    if (edgeProgress >= 0.999) {
-      this.section3EdgeOverMaxTimer += delta
-    } else {
-      this.section3EdgeOverMaxTimer = 0
-    }
-
-    const teleportHoldSec = Math.max(0.1, SCENE1_CONFIG.section3EdgeTeleportHoldSec)
-    if (
-      this.section3EdgeOverMaxTimer >= teleportHoldSec &&
-      this.section3EdgeTeleportCooldown <= 0
-    ) {
-      const centerSpawn = this._getSection3CenterSpawnPosition(0.85)
-      this._teleportPlayerEntry(playerEntry, centerSpawn, { withEffect: false })
-      this.section3EdgeTeleportCooldown = Math.max(0.1, SCENE1_CONFIG.section3EdgeTeleportCooldownSec)
-      this.section3EdgeOverMaxTimer = 0
-      this.section3EdgeRecoveryStartDarkness = 1
-      this.section3EdgeDarkness = 1
-      this.section3EdgeDarkHoldTimer = Math.max(0.1, SCENE1_CONFIG.section3EdgePostTeleportDarkHoldSec)
-      this.section3EdgeRecoveryTimer = Math.max(0.1, SCENE1_CONFIG.section3EdgeRecoveryDurationSec)
-      // Start easing darkness down from current value after teleport instead of snapping.
-      edgeProgress = 0
-    }
-
-    const smoothSpeed = Math.max(0.001, SCENE1_CONFIG.section3EdgeDarkSmoothSpeed)
-    const smoothAlpha = Math.min(1, delta * smoothSpeed)
-
-    if (this.section3EdgeDarkHoldTimer > 0) {
-      this.section3EdgeDarkHoldTimer = Math.max(0, this.section3EdgeDarkHoldTimer - delta)
-      this.section3EdgeDarkness = 1
-    } else if (this.section3EdgeRecoveryTimer > 0) {
-      const recoveryDuration = Math.max(0.1, SCENE1_CONFIG.section3EdgeRecoveryDurationSec)
-      this.section3EdgeRecoveryTimer = Math.max(0, this.section3EdgeRecoveryTimer - delta)
-      const recovered = THREE.MathUtils.clamp(1 - (this.section3EdgeRecoveryTimer / recoveryDuration), 0, 1)
-      // Force a fixed-duration recovery curve after teleport: darkness -> current positional target in 5s.
-      this.section3EdgeDarkness = THREE.MathUtils.lerp(this.section3EdgeRecoveryStartDarkness, edgeProgress, recovered)
-    } else {
-      this.section3EdgeDarkness = THREE.MathUtils.lerp(this.section3EdgeDarkness, edgeProgress, smoothAlpha)
-    }
-
-    // Linear darkness from center -> boundary (smoothed over time only).
-    const darkness = this.section3EdgeDarkness
-
-    const section3Lighting = this.section3Lighting || null
-    const mainLight = section3Lighting?.mainLight || null
-    const baseMainIntensity = section3Lighting?.baseMainIntensity ?? mainLight?.intensity
-    if (mainLight && Number.isFinite(baseMainIntensity)) {
-      const minFactor = THREE.MathUtils.clamp(SCENE1_CONFIG.section3EdgeDarkMinMainLightFactor, 0, 1)
-      const target = baseMainIntensity * THREE.MathUtils.lerp(1, minFactor, darkness)
-      mainLight.intensity = Math.max(0, target)
-    }
-
-    if (this.ambientLight && section3Lighting?.ambientIntensity != null) {
-      const baseAmbient = section3Lighting.ambientIntensity
-      const minAmbient = Math.max(0, SCENE1_CONFIG.section3EdgeDarkMinAmbientIntensity)
-      const targetAmbient = THREE.MathUtils.lerp(baseAmbient, minAmbient, darkness)
-      this.currentAmbientIntensity = targetAmbient
-      this.ambientLight.intensity = targetAmbient
-    }
-
-    if (this.mainScene?.fog instanceof THREE.Fog) {
-      const fog = this.mainScene.fog
-      const fogCfg = section3Lighting?.fog || {}
-      const baseNear = fogCfg.near ?? fog.near
-      const baseFar = fogCfg.far ?? fog.far
-      const nearFactor = THREE.MathUtils.clamp(SCENE1_CONFIG.section3EdgeDarkFogNearFactor, 0.05, 1)
-      const farFactor = THREE.MathUtils.clamp(SCENE1_CONFIG.section3EdgeDarkFogFarFactor, 0.05, 1)
-
-      fog.near = Math.max(0.05, THREE.MathUtils.lerp(baseNear, baseNear * nearFactor, darkness))
-      fog.far = Math.max(fog.near + 1.5, THREE.MathUtils.lerp(baseFar, baseFar * farFactor, darkness))
-
-      const colors = section3Lighting?.colors || {}
-      const fogFrom = new THREE.Color(colors.fogNormal ?? '#cfedff')
-      const fogTo = new THREE.Color(colors.fogTransitioned ?? '#4a3d6d')
-      const transitionedFog = fogFrom.clone().lerp(fogTo, this.section3EyeTransitionProgress || 0)
-      const baseFogColor = fogCfg.color ?? `#${transitionedFog.getHexString()}`
-      fog.color.set(baseFogColor)
-      fog.color.lerp(new THREE.Color('#000000'), darkness)
-    }
-
-    if (this.mainScene && section3Lighting?.background != null) {
-      const colors = section3Lighting?.colors || {}
-      const bgFrom = new THREE.Color(colors.backgroundNormal ?? '#41a5e7')
-      const bgTo = new THREE.Color(colors.backgroundTransitioned ?? '#000000')
-      const transitionedBg = bgFrom.clone().lerp(bgTo, this.section3EyeTransitionProgress || 0)
-      const baseBackground = section3Lighting.background ?? `#${transitionedBg.getHexString()}`
-      if (this.mainScene.background instanceof THREE.Color) {
-        this.mainScene.background.set(baseBackground)
-        this.mainScene.background.lerp(new THREE.Color('#000000'), darkness)
-      } else {
-        this.mainScene.background = new THREE.Color(baseBackground)
-      }
-    }
-
-    this._updateSection3TreeLighting(this.section3EyeTransitionProgress || 0, darkness)
   }
 
   _updateAmbientFlicker(delta, syncList) {
@@ -2270,10 +1358,7 @@ export class Scene1Manager {
     })
 
     // Update previousBallNames for next frame
-    // Swap buffers instead of allocating a new Set every frame.
-    const tmp = this.previousBallNames
-    this.previousBallNames = this.currentBallNamesBuffer
-    this.currentBallNamesBuffer = tmp
+    this.previousBallNames = new Set(currentBallNames)
   }
 
   /**
@@ -2282,6 +1367,7 @@ export class Scene1Manager {
    */
   _onBallDestroyed(ballNumber) {
     if (this.nextExpectedBallIndex >= this.destroySequence.length) {
+      console.warn(`[Scoring] Ball ${ballNumber} destroyed but all balls should be done!`)
       return
     }
 
@@ -2298,8 +1384,14 @@ export class Scene1Manager {
         this._triggerFlickerLights()
         this.ballEventFlickerTimer = SCENE1_CONFIG.ambientLightFlickerDuration
       }
+      
+      // Check if all balls destroyed in correct order
+      if (this.nextExpectedBallIndex >= this.destroySequence.length) {
+        console.log(`[SCORING] Perfect order complete: ${this.destroySequence.length} balls`)
+      }
     } else {
       // ✨ WRONG ORDER - RESET!
+      console.log(`[SCORING] Wrong order: expected Ball ${expectedBall}, got Ball ${ballNumber}. Resetting score.`)
       this.currentScore = 0
       this.nextExpectedBallIndex = 0
       this.correctOrderedBallsSinceLastCoin = 0
@@ -2309,6 +1401,7 @@ export class Scene1Manager {
       this.turnOffSection1CeilingAfterFlicker = true
       this._triggerFlickerLights()
       this.ballEventFlickerTimer = SCENE1_CONFIG.ambientLightFlickerDuration
+      console.log(`%c[EFFECT] Score reset! Triggering comprehensive flickering effect...`, 'color: #ff0066; font-weight: bold')
 
       // Spawn penalty Dude and pause spawn cycle until Dude despawns
       this._triggerPenaltyDudeSequence()
@@ -2323,7 +1416,10 @@ export class Scene1Manager {
     if (this.correctOrderedBallsSinceLastCoin < this.orderedBallsPerSilverCoinReward) return
 
     this.correctOrderedBallsSinceLastCoin = 0
-    this._spawnSequenceSilverCoin()
+    const reward = this._spawnSequenceSilverCoin()
+    if (reward) {
+      console.log('%c[SCORING] Reward dropped: Silver Coin (7 correct ordered balls).', 'color: #d8e7ff; font-weight: bold')
+    }
   }
 
   _getScene1TableSpawnPosition(heightOffset = SCENE1_CONFIG.sequenceSilverCoinSpawnHeight, spreadScale = SCENE1_CONFIG.sequenceSilverCoinSpawnSpread) {
@@ -2412,7 +1508,7 @@ export class Scene1Manager {
   _spawnPenaltyDude() {
     if (!this.spawner || !this.world || !this.mainScene) return
     this.penaltyDudeSpawnPending = true
-    this._enqueueSectionWarmup('section2', { title: 'Loading Section 2', showReadyOverlay: true })
+    this._enqueueSectionWarmup('section2', { title: 'Loading Section 2' })
 
     const spawnWithAsset = (asset) => {
       if (!asset || !asset.physics) {
@@ -2461,6 +1557,7 @@ export class Scene1Manager {
       }
 
       this.penaltyDudeSpawnPending = false
+      console.log('[Scene1Manager] Penalty Dude spawned. Ball spawn cycle paused.')
     }
 
     if (this.dudeAsset) {
@@ -2536,7 +1633,7 @@ export class Scene1Manager {
     mat.start(durationMs)
   }
 
-  _getSection3CenterSpawnPosition(yOffset = 0.85) {
+  _getSection3CenterSpawnPosition(yOffset = 7) {
     const section3Platform = this.sceneGroup?.getObjectByName('Section3 Platform')
     const spawnPos = section3Platform ? section3Platform.position.clone() : new THREE.Vector3(0, 140, 0)
     spawnPos.y += yOffset
@@ -2548,34 +1645,12 @@ export class Scene1Manager {
 
     const {
       withEffect = true,
-      effectDurationMs = 4000,
-      skipSectionWarmupGate = false
+      effectDurationMs = 4000
     } = options
-
-    const destinationSection = this._resolveSectionFromPosition(targetPosition)
-
-    if (!skipSectionWarmupGate) {
-      const destinationState = this.sectionWarmState[destinationSection]
-      if (destinationState && !destinationState.ready) {
-        this._enqueueSectionWarmup(destinationSection, {
-          title: `Loading ${destinationSection}`,
-          showReadyOverlay: true,
-          priority: 'high'
-        })
-
-        this.pendingTeleportRequest = {
-          playerEntry,
-          targetPosition: targetPosition.clone(),
-          options: { withEffect, effectDurationMs },
-          destinationSection,
-          queuedAtMs: performance.now()
-        }
-        return
-      }
-    }
 
     // Switch streamed section immediately so destination geometry is visible
     // in the same frame as teleport instead of waiting until next update tick.
+    const destinationSection = this._resolveSectionFromPosition(targetPosition)
     this._setSectionActive(destinationSection)
 
     if (withEffect) {
@@ -2788,7 +1863,7 @@ export class Scene1Manager {
   _isPointInsideOrientedBox(point, boxInfo, padding = 0) {
     if (!point || !boxInfo) return false
 
-    const diff = this._tmpOrientedBoxDiff.copy(point).sub(boxInfo.center)
+    const diff = point.clone().sub(boxInfo.center)
     const localX = diff.dot(boxInfo.right)
     const localY = diff.dot(boxInfo.up)
     const localZ = diff.dot(boxInfo.forward)
@@ -3108,14 +2183,14 @@ export class Scene1Manager {
 
     if (t < split) {
       const localT = THREE.MathUtils.smoothstep(t / split, 0, 1)
-      pos = this._tmpChestAnimPos.copy(applyState.startPos).lerp(applyState.approachPos, localT)
+      pos = applyState.startPos.clone().lerp(applyState.approachPos, localT)
       pos.y += Math.sin(localT * Math.PI) * 0.18
-      quat = this._tmpChestAnimQuat.copy(applyState.startQuat).slerp(applyState.approachQuat, localT)
+      quat = applyState.startQuat.clone().slerp(applyState.approachQuat, localT)
     } else {
       const localT = THREE.MathUtils.smoothstep((t - split) / (1 - split), 0, 1)
-      pos = this._tmpChestAnimPos.copy(applyState.approachPos).lerp(applyState.pourPos, localT)
-      pos.addScaledVector(this._tmpChestAnimUp, Math.sin(localT * Math.PI) * 0.06)
-      quat = this._tmpChestAnimQuat.copy(applyState.approachQuat).slerp(applyState.pourQuat, localT)
+      pos = applyState.approachPos.clone().lerp(applyState.pourPos, localT)
+      pos.addScaledVector(new THREE.Vector3(0, 1, 0), Math.sin(localT * Math.PI) * 0.06)
+      quat = applyState.approachQuat.clone().slerp(applyState.pourQuat, localT)
     }
 
     body.position.set(pos.x, pos.y, pos.z)
@@ -3159,15 +2234,11 @@ export class Scene1Manager {
     if (!triggerInfo) return
 
     if (!state.triggered) {
-      this._chestCollectScanAccumulator += delta
-      if (this._chestCollectScanAccumulator >= SCENE1_CONFIG.chestCollectScanIntervalSec) {
-        this._chestCollectScanAccumulator = 0
-        const babyOilEntry = this._findTriggeredChestBabyOil(syncList, triggerInfo)
-        if (babyOilEntry && this._beginChestOilSequence(babyOilEntry, aggregateInfo || triggerInfo)) {
-          state.triggered = true
-          state.phase = 'oiling'
-          this._spawnChestGuide(aggregateInfo || triggerInfo)
-        }
+      const babyOilEntry = this._findTriggeredChestBabyOil(syncList, triggerInfo)
+      if (babyOilEntry && this._beginChestOilSequence(babyOilEntry, aggregateInfo || triggerInfo)) {
+        state.triggered = true
+        state.phase = 'oiling'
+        this._spawnChestGuide(aggregateInfo || triggerInfo)
       }
     }
 
@@ -3269,10 +2340,10 @@ export class Scene1Manager {
     collectState.elapsed += delta
     const t = THREE.MathUtils.clamp(collectState.elapsed / Math.max(collectState.duration, 1e-4), 0, 1)
 
-    const curPos = this._tmpVendingAnimPos.copy(collectState.startPos).lerp(collectState.targetPos, t)
+    const curPos = collectState.startPos.clone().lerp(collectState.targetPos, t)
     curPos.y += Math.sin(t * Math.PI) * collectState.arcLift
 
-    const curQuat = this._tmpVendingAnimQuat.copy(collectState.startQuat).slerp(collectState.targetQuat, t)
+    const curQuat = collectState.startQuat.clone().slerp(collectState.targetQuat, t)
 
     body.type = CANNON.Body.KINEMATIC
     body.collisionResponse = false
@@ -3428,10 +2499,6 @@ export class Scene1Manager {
     this._updateVendingCoinCollectAnimation(delta)
     if (this.vendingCoinCollectState) return
 
-    this._vendingCollectScanAccumulator += delta
-    if (this._vendingCollectScanAccumulator < SCENE1_CONFIG.vendingCollectScanIntervalSec) return
-    this._vendingCollectScanAccumulator = 0
-
     const targetInfo = this._getVendingCollectTarget()
     if (!targetInfo) return
 
@@ -3459,6 +2526,9 @@ export class Scene1Manager {
 
     this._despawnEntry(this.bowlingBallEntry)
     this.bowlingBallEntry = null
+    if (reason) {
+      console.log(`[Scene1Manager] Bowling ball despawned: ${reason}`)
+    }
     return true
   }
 
@@ -3482,6 +2552,7 @@ export class Scene1Manager {
         this.isInSection2Run = true
         this.section2DoorLoadTriggered = false
         this.teleportCooldown = 1.0
+        console.log('[Scene1Manager] Dude trigger touched Player: despawned Dude and teleported Player to Section 2.')
         break
       }
     }
@@ -3608,6 +2679,7 @@ export class Scene1Manager {
         this.section2ElevatorDisplayPanel.userData.updateDisplay(0, false, 5)
       }
       this.teleportCooldown = 1.0
+      console.log('[Scene1Manager] Player touched Section 2 return elevator: teleported back to Section 1 start.')
     }
   }
 
@@ -3624,6 +2696,7 @@ export class Scene1Manager {
     if (removedCount <= 0) return
 
     this.section2PipeBall8DestroyedCount += removedCount
+    console.log(`[Scene1Manager] Section 2 pipe Ball 8 score: ${this._getSection2PipeBall8DisplayScore()}/5 (${this.section2PipeBall8DestroyedCount} total)`)
   }
 
   _spawnSection2PipeReward(pipeGroup) {
@@ -3675,6 +2748,7 @@ export class Scene1Manager {
 
     this.section2PipeRewardEntry = [...this.syncList].reverse().find(entry => entry?.name === 'Light Stick Off') || null
     this.section2PipeRewardSpawned = true
+    console.log('[Scene1Manager] Section 2 reward spawned: Light Stick Off at last pipe.')
   }
 
   _ensureSection2ObjectsCached() {
@@ -4375,21 +3449,15 @@ export class Scene1Manager {
 
   _updateSection2ProximitySystems(syncList, delta, particleManager = null) {
     if (!syncList) return
-
+    const dynamicEntries = syncList.filter(entry => entry.body && entry.body.mass > 0 && entry.mesh)
+    this._ensureSection2ObjectsCached()
     const playerEntry = syncList.find(e => e.name === 'Player' && e.mesh && e.body)
     const playerInSection2 = this._isPlayerInsideSection2(playerEntry)
 
     if (!this.isInSection2Run || !playerInSection2) {
-      // Only build the expensive dynamicEntries list when we actually need to clear active effects.
-      if (this.section2IsUnderwater || this.section2UnderwaterBlend > 0.001) {
-        const dynamicEntries = syncList.filter(entry => entry.body && entry.body.mass > 0 && entry.mesh)
-        this._deactivateSection2Effects(dynamicEntries)
-      }
+      this._deactivateSection2Effects(dynamicEntries)
       return
     }
-
-    const dynamicEntries = syncList.filter(entry => entry.body && entry.body.mass > 0 && entry.mesh)
-    this._ensureSection2ObjectsCached()
 
     this._updateSection2Water(delta, playerEntry, dynamicEntries, particleManager)
     this._updateSection2PipeWaterEffects(delta, particleManager)
@@ -4414,6 +3482,7 @@ export class Scene1Manager {
     this.penaltyDudeTouchedPlayer = true
     if (this.screenMat) {
       this.screenMat.start(6000, { lowCost: true })
+      console.log('[Scene1Manager] ScreenMat triggered for 30s (Dude touched Player).')
     }
   }
 
@@ -4519,6 +3588,8 @@ export class Scene1Manager {
         this.currentBatchSpawningComplete = true
         this.section1CeilingLightsEnabled = true
         this._setSection1CeilingLightsState(true)
+
+        console.log('[Scene1Manager] Penalty Dude destroyed. Ball spawn cycle resumed.')
       }
     }
 
@@ -4532,22 +3603,36 @@ export class Scene1Manager {
   _triggerBallSequenceReset() {
     if (this.isResetActive) return
     
+    console.log(`%c[Reset] Starting ball sequence reset!`, 'color: #ff3300; font-weight: bold; font-size: 12px')
+    console.log(`[Reset] currentBatchBalls length: ${this.currentBatchBalls.length}`)
+    console.log(`[Reset] destroySystem: ${this.destroySystem ? 'EXISTS' : 'NULL'}`)
+    
     this.isResetActive = true
     this.resetTimer = 3000 // 3 seconds in milliseconds
     
     // Despawn all balls in currentBatchBalls
     this.currentBatchBalls.forEach(ballEntry => {
-      if (ballEntry && this.destroySystem) {
-        this.destroySystem.destroyObject(ballEntry)
+      if (ballEntry) {
+        const ballNum = ballEntry.userData?.ballNumber || '?'
+        console.log(`[Reset] Processing ball ${ballNum}: ${ballEntry.name}`)
+        
+        if (this.destroySystem) {
+          console.log(`[Reset] ✓ Despawning ball ${ballNum}: ${ballEntry.name}`)
+          this.destroySystem.destroyObject(ballEntry)
+        } else {
+          console.warn(`[Reset] ✗ destroySystem is NULL, cannot despawn ball ${ballNum}: ${ballEntry.name}`)
+        }
       }
     })
     
     // Despawn bowling ball if exists
     if (this.bowlingBallEntry && this.destroySystem) {
+      console.log(`[Reset] Despawning bowling ball`)
       this._despawnBowlingBall('ball sequence reset')
     }
     
     this.currentBatchBalls = []
+    console.log(`%c[Reset] All balls despawned. Respawning in 3 seconds...`, 'color: #ff6600; font-weight: bold')
   }
 
   /**
@@ -4566,6 +3651,7 @@ export class Scene1Manager {
       this.ballSpawningActive = true
       this.section1CeilingLightsEnabled = true
       this._setSection1CeilingLightsState(true)
+      console.log(`%c[Reset] Sequence reset! Respawning balls from Ball 1...`, 'color: #0088ff; font-weight: bold')
     }
   }
 
@@ -4587,6 +3673,7 @@ export class Scene1Manager {
     const bowlingStillExists = syncList.includes(this.bowlingBallEntry)
     if (!bowlingStillExists) {
       this.bowlingBallEntry = null
+      console.log('[Scene1Manager] Bowling ball despawned (fell or destroyed)')
       return
     }
   }
@@ -4903,7 +3990,7 @@ export class Scene1Manager {
         
         // Apply random rotation
         this._applyRandomRotation(bowlingEntry)
-        // bowling ball spawned
+        console.log(`[Scene1Manager] Bowling ball spawned!`)
       }
     }).catch(err => {
       console.error('[Scene1Manager] Error loading bowling ball assets:', err)
@@ -5082,7 +4169,7 @@ export class Scene1Manager {
     if (this.currentScore >= 15 && guys.length > 0 && !this.elevatorCountdownActive) {
       this.elevatorCountdownActive = true
       this.elevatorCountdownTimer = 0
-      this._enqueueSectionWarmup('section3', { title: 'Loading Section 3', showReadyOverlay: true })
+      this._enqueueSectionWarmup('section3', { title: 'Loading Section 3' })
       console.log(`%c[Elevator] Score 15 reached + Guy spawned! Starting 50-second countdown...`, 'color: #00ff88; font-weight: bold')
     }
 
@@ -5200,7 +4287,7 @@ export class Scene1Manager {
     const collisionRadius = 3.0
 
     if (distance < collisionRadius && this.teleportCooldown <= 0) {
-      const section3Spawn = this._getSection3CenterSpawnPosition(0.85)
+      const section3Spawn = this._getSection3CenterSpawnPosition(7)
       this._teleportPlayerEntry(playerEntry, section3Spawn, { effectDurationMs: 5000 })
       this.teleportCooldown = 1.0
 
@@ -5313,10 +4400,6 @@ export class Scene1Manager {
     this.section2SpawnedBall8Entries = []
     this.sectionWarmQueue = []
     this.activeSectionWarmJob = null
-    if (this.sectionWarmOverlayTimer !== null) {
-      clearTimeout(this.sectionWarmOverlayTimer)
-      this.sectionWarmOverlayTimer = null
-    }
     if (this.sectionWarmOverlay) {
       this.sectionWarmOverlay.close()
       this.sectionWarmOverlay = null
@@ -5333,19 +4416,6 @@ export class Scene1Manager {
     this.section2PipeBall8DestroyedCount = 0
     this.section2PipeRewardSpawned = false
     this.section2PipeRewardEntry = null
-    this._section3HouseScaleRegistry.clear()
-    this._section3HouseScaleUpdateAccumulator = 0
-    this._section3TreeScaleRegistry.clear()
-    this._section3TreeScaleUpdateAccumulator = 0
-    this._section3TreeBillboardUpdateAccumulator = 0
-    this.section3EdgeDarkness = 0
-    this.section3EdgeTeleportCooldown = 0
-    this.section3EdgeOverMaxTimer = 0
-    this.section3EdgeDarkHoldTimer = 0
-    this.section3EdgeRecoveryTimer = 0
-    this.section3EdgeRecoveryStartDarkness = 0
-    this._section3PlatformBoundsCache = null
-    this.section3EyeBot = null
     this.dudeFogBlend = 0
     this.dudeFogSmoothedDistance = SCENE1_CONFIG.dudeFogMaxDistance
     this.dudeFogTargetBlend = 0
