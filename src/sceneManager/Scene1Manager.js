@@ -825,10 +825,26 @@ export class Scene1Manager {
         try {
           // Ensure all mesh materials are defined and valid before compiling
           this.mainScene.traverse(obj => {
-            if (obj.isMesh && (!obj.material || typeof obj.material !== 'object')) {
-              console.warn('[Scene1Manager] Mesh with undefined or invalid material:', obj);
-              // Assign a default material to prevent errors during shader compilation
-              obj.material = new THREE.MeshBasicMaterial({ color: 0xff00ff });
+            if (obj.isMesh) {
+              // Handle single material
+              if (!obj.material || typeof obj.material !== 'object') {
+                console.warn('[Scene1Manager] Mesh with undefined or invalid material:', obj);
+                obj.material = new THREE.MeshBasicMaterial({ color: 0xff00ff });
+              } else if (Array.isArray(obj.material)) {
+                // Handle array of materials
+                let replaced = false;
+                obj.material = obj.material.map((mat, idx) => {
+                  if (!mat || typeof mat !== 'object' || typeof mat.isReady !== 'function') {
+                    replaced = true;
+                    console.warn(`[Scene1Manager] Mesh with invalid material at index ${idx}:`, obj);
+                    return new THREE.MeshBasicMaterial({ color: 0xff00ff });
+                  }
+                  return mat;
+                });
+                if (replaced) {
+                  // Optionally, mark mesh for debug
+                }
+              }
             }
           });
           if (typeof this.renderer.compileAsync === 'function') {

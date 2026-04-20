@@ -1374,7 +1374,8 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
       if (!window._simPing || window._simPing.lastCheck + 2000 < Date.now()) {
         window._simPing = { lastCheck: Date.now(), value: '--' };
         const start = Date.now();
-        fetch(window.location.origin + '/', { method: 'HEAD', cache: 'no-store' })
+        // Use index.html (always exists on Vite/GitHub Pages) to avoid 404
+        fetch(window.location.origin + window.location.pathname.replace(/\/[^/]*$/, '/index.html'), { method: 'HEAD', cache: 'no-store' })
           .then(() => { window._simPing.value = (Date.now() - start) + 'ms'; window._simPing.lastCheck = Date.now(); })
           .catch(() => { window._simPing.value = '--'; window._simPing.lastCheck = Date.now(); });
       }

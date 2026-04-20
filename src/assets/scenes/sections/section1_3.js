@@ -1122,7 +1122,8 @@ export function createSection3(rootGroup) {
   if (!rootGroup.userData) rootGroup.userData = {}
   rootGroup.userData.section3Trees = trees
   rootGroup.userData.section3TreeCount = trees.length
-  rootGroup.userData.section3TreeMaterialControllers = Array.from(treeMaterialControllers)
+  // Filter out any undefined or invalid controllers (no .isReady)
+  rootGroup.userData.section3TreeMaterialControllers = Array.from(treeMaterialControllers).filter(ctrl => ctrl && typeof ctrl.isReady !== 'undefined')
   rootGroup.userData.section3TreesVisible = false
   rootGroup.userData.section3TreeLod = createSection3TreeLod(trees, treeLodSettings)
 
