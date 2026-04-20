@@ -849,22 +849,33 @@ export class Scene1Manager {
           if (invalidMeshes.length > 0) {
             console.warn('[Scene1Manager] Invalid mesh materials found and replaced before compileAsync:', invalidMeshes);
           }
-          // Defensive: Remove any undefined/invalid material controllers from Sets/arrays in userData
-          if (this.mainScene && this.mainScene.userData) {
-            for (const key of Object.keys(this.mainScene.userData)) {
-              const val = this.mainScene.userData[key];
+          // Defensive: Remove any undefined/invalid material controllers from Sets/arrays in userData for ALL groups in the scene
+          const cleanUserDataSetsAndArrays = (userData, groupName) => {
+            if (!userData) return;
+            for (const key of Object.keys(userData)) {
+              const val = userData[key];
               if (val instanceof Set) {
-                // Remove undefined/invalid
                 for (const item of Array.from(val)) {
                   if (!item || typeof item.isReady !== 'function') {
+                    console.warn(`[Scene1Manager] Removed invalid Set entry from userData.${key} in group ${groupName}:`, item);
                     val.delete(item);
                   }
                 }
               } else if (Array.isArray(val)) {
-                this.mainScene.userData[key] = val.filter(item => item && typeof item.isReady === 'function');
+                const filtered = val.filter(item => item && typeof item.isReady === 'function');
+                if (filtered.length !== val.length) {
+                  console.warn(`[Scene1Manager] Filtered invalid array entries from userData.${key} in group ${groupName}`);
+                }
+                userData[key] = filtered;
               }
             }
-          }
+          };
+          // Traverse all groups in the scene
+          this.mainScene.traverse(obj => {
+            if (obj.userData) {
+              cleanUserDataSetsAndArrays(obj.userData, obj.name || obj.uuid);
+            }
+          });
           if (typeof this.renderer.compileAsync === 'function') {
             await this.renderer.compileAsync(this.mainScene, this._lastWarmupCamera)
           } else if (typeof this.renderer.compile === 'function') {
