@@ -827,8 +827,8 @@ export class Scene1Manager {
           this.mainScene.traverse(obj => {
             if (obj.isMesh && (!obj.material || typeof obj.material !== 'object')) {
               console.warn('[Scene1Manager] Mesh with undefined or invalid material:', obj);
-              // Optionally assign a default material to prevent errors
-              // obj.material = new THREE.MeshBasicMaterial({ color: 0xff00ff });
+              // Assign a default material to prevent errors during shader compilation
+              obj.material = new THREE.MeshBasicMaterial({ color: 0xff00ff });
             }
           });
           if (typeof this.renderer.compileAsync === 'function') {
