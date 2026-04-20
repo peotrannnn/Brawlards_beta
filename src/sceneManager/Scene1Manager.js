@@ -811,6 +811,7 @@ export class Scene1Manager {
       }
 
       const compileSceneForSection = async () => {
+
         if (!this.renderer || !this.mainScene || !this._lastWarmupCamera) {
           return
         }
@@ -824,11 +825,12 @@ export class Scene1Manager {
 
         try {
           // Ensure all mesh materials are defined and valid before compiling
+          let invalidMeshes = [];
           this.mainScene.traverse(obj => {
             if (obj.isMesh) {
               // Handle single material
               if (!obj.material || typeof obj.material !== 'object') {
-                console.warn('[Scene1Manager] Mesh with undefined or invalid material:', obj);
+                invalidMeshes.push(obj);
                 obj.material = new THREE.MeshBasicMaterial({ color: 0xff00ff });
               } else if (Array.isArray(obj.material)) {
                 // Handle array of materials
@@ -836,24 +838,40 @@ export class Scene1Manager {
                 obj.material = obj.material.map((mat, idx) => {
                   if (!mat || typeof mat !== 'object' || typeof mat.isReady !== 'function') {
                     replaced = true;
-                    console.warn(`[Scene1Manager] Mesh with invalid material at index ${idx}:`, obj);
+                    invalidMeshes.push({ obj, idx });
                     return new THREE.MeshBasicMaterial({ color: 0xff00ff });
                   }
                   return mat;
                 });
-                if (replaced) {
-                  // Optionally, mark mesh for debug
-                }
               }
             }
           });
+          if (invalidMeshes.length > 0) {
+            console.warn('[Scene1Manager] Invalid mesh materials found and replaced before compileAsync:', invalidMeshes);
+          }
+          // Defensive: Remove any undefined/invalid material controllers from Sets/arrays in userData
+          if (this.mainScene && this.mainScene.userData) {
+            for (const key of Object.keys(this.mainScene.userData)) {
+              const val = this.mainScene.userData[key];
+              if (val instanceof Set) {
+                // Remove undefined/invalid
+                for (const item of Array.from(val)) {
+                  if (!item || typeof item.isReady !== 'function') {
+                    val.delete(item);
+                  }
+                }
+              } else if (Array.isArray(val)) {
+                this.mainScene.userData[key] = val.filter(item => item && typeof item.isReady === 'function');
+              }
+            }
+          }
           if (typeof this.renderer.compileAsync === 'function') {
             await this.renderer.compileAsync(this.mainScene, this._lastWarmupCamera)
           } else if (typeof this.renderer.compile === 'function') {
             this.renderer.compile(this.mainScene, this._lastWarmupCamera)
           }
         } catch (err) {
-
+          console.error('[Scene1Manager] Error during compileAsync:', err);
         } finally {
           const activeSection = this.activeSectionId || 'section1'
           const shouldRemainVisible =
