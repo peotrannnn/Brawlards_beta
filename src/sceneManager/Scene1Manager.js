@@ -13,6 +13,7 @@ import { getBabyOilAsset } from '../assets/items/babyOil.js'
 import { getSilverCoinAsset } from '../assets/items/silverCoin.js'
 import { getDummyAsset } from '../assets/objects/Dummy.js'
 import { getGuideAsset } from '../assets/objects/Guide.js'
+import { withShadow } from '../effects/shadows/shadowConfig.js'
 import { getPlayerAsset } from '../assets/objects/Player.js'
 import {
   setTreeMaterialControllerBrightness,
@@ -404,11 +405,13 @@ export class Scene1Manager {
       })
     }
 
-    this.activeSectionId = sectionId
+    // Chỉ chấp nhận section1, section2, section3, section4
+    const validSections = ['section1', 'section2', 'section3', 'section4'];
+    this.activeSectionId = validSections.includes(sectionId) ? sectionId : 'section1';
 
-    const cameraController = this._lastWarmupCamera?.userData?.cameraController
+    const cameraController = this._lastWarmupCamera?.userData?.cameraController;
     if (cameraController && typeof cameraController.setActiveSectionKey === 'function') {
-      cameraController.setActiveSectionKey(sectionId)
+      cameraController.setActiveSectionKey(this.activeSectionId);
     }
 
     // Switch per-section lighting (intensity, ambient, fog)
@@ -665,10 +668,61 @@ export class Scene1Manager {
     }
 
     const meshes = []
+    const audioAssets = new Set()
+    const physicsShapes = []
+    const aiAssets = new Set()
+    const navmeshAssets = new Set()
+    const effectAssets = new Set()
     group.traverse(obj => {
       if (obj?.isMesh) meshes.push(obj)
+      // Preload audio if mesh or object has userData.audioName
+      if (obj?.userData?.audioName) audioAssets.add(obj.userData.audioName)
+      // Preload physics shapes if present
+      if (obj?.userData?.physics) physicsShapes.push(obj.userData.physics)
+      // Preload AI if present
+      if (obj?.userData?.aiName) aiAssets.add(obj.userData.aiName)
+      // Preload navmesh if present
+      if (obj?.userData?.navmeshName) navmeshAssets.add(obj.userData.navmeshName)
+      // Preload effect if present
+      if (obj?.userData?.effectName) effectAssets.add(obj.userData.effectName)
     })
 
+    // Preload audio buffers for all found audio assets
+    if (typeof window.AssetCache === 'object' && typeof window.AssetCache.preloadAudio === 'function') {
+      audioAssets.forEach(audioName => {
+        window.AssetCache.preloadAudio(audioName, `/public/music/${audioName}.mp3`).catch(()=>{})
+      })
+    }
+
+    // Preload/init physics shapes (nếu có logic preload riêng, gọi ở đây)
+    if (typeof window.PhysicsManager === 'object' && typeof window.PhysicsManager.preloadShape === 'function') {
+      physicsShapes.forEach(shape => {
+        window.PhysicsManager.preloadShape(shape)
+      })
+    }
+
+    // Preload/init AI controllers if available
+    if (typeof window.AIManager === 'object' && typeof window.AIManager.preloadAI === 'function') {
+      aiAssets.forEach(aiName => {
+        window.AIManager.preloadAI(aiName).catch(()=>{})
+      })
+    }
+
+    // Preload/init navmesh if available
+    if (typeof window.NavmeshManager === 'object' && typeof window.NavmeshManager.preloadNavmesh === 'function') {
+      navmeshAssets.forEach(navmeshName => {
+        window.NavmeshManager.preloadNavmesh(navmeshName).catch(()=>{})
+      })
+    }
+
+    // Preload/init effects if available
+    if (typeof window.EffectManager === 'object' && typeof window.EffectManager.preloadEffect === 'function') {
+      effectAssets.forEach(effectName => {
+        window.EffectManager.preloadEffect(effectName).catch(()=>{})
+      })
+    }
+
+    const BATCH_SIZE = 10; // Số mesh xử lý mỗi frame (có thể điều chỉnh)
     const total = Math.max(1, meshes.length)
     let index = 0
     const warmStartTime = performance.now()
@@ -697,9 +751,11 @@ export class Scene1Manager {
 
     const step = () => {
       const startTime = performance.now()
-      while (index < meshes.length && (performance.now() - startTime) < frameBudgetMs) {
+      let batchCount = 0;
+      while (index < meshes.length && batchCount < BATCH_SIZE) {
         const mesh = meshes[index]
         index += 1
+        batchCount++;
 
         mesh.updateMatrixWorld(true)
 
@@ -767,6 +823,14 @@ export class Scene1Manager {
         group.visible = true
 
         try {
+          // Ensure all mesh materials are defined and valid before compiling
+          this.mainScene.traverse(obj => {
+            if (obj.isMesh && (!obj.material || typeof obj.material !== 'object')) {
+              console.warn('[Scene1Manager] Mesh with undefined or invalid material:', obj);
+              // Optionally assign a default material to prevent errors
+              // obj.material = new THREE.MeshBasicMaterial({ color: 0xff00ff });
+            }
+          });
           if (typeof this.renderer.compileAsync === 'function') {
             await this.renderer.compileAsync(this.mainScene, this._lastWarmupCamera)
           } else if (typeof this.renderer.compile === 'function') {
@@ -2424,10 +2488,11 @@ export class Scene1Manager {
         return
       }
 
+      // Đảm bảo Dude luôn có fake shadow
       const dudePrefab = {
         name: asset.name,
         type: 'dynamic',
-        createMesh: asset.factory,
+        createMesh: withShadow(asset.factory, 1.2, 0.9, 0.4),
         createBody: () => {
           const shape = asset.physics.shapes?.[0]
           const body = new CANNON.Body({
@@ -2541,9 +2606,10 @@ export class Scene1Manager {
   }
 
   _getSection3CenterSpawnPosition(yOffset = 0.85) {
+    // Lower spawn Y so player stands flush with ground (was +0.85)
     const section3Platform = this.sceneGroup?.getObjectByName('Section3 Platform')
     const spawnPos = section3Platform ? section3Platform.position.clone() : new THREE.Vector3(0, 140, 0)
-    spawnPos.y += yOffset
+    spawnPos.y += 0.1 // Just above ground to avoid clipping
     return spawnPos
   }
 

@@ -6,7 +6,7 @@ const CAMERA_CONFIG = {
   FOV: 60,
   NEAR: 0.1,
   FAR: 300,
-  MOUSE_SENSITIVITY: 0.0001,
+  MOUSE_SENSITIVITY: 0.0007,
   INVERT_MOUSE_X: true,
   INVERT_MOUSE_Y: true,
   ROTATION_SPEED_LIMIT: 0.1,
@@ -17,8 +17,7 @@ const CAMERA_CONFIG = {
   ZOOM_FADE_BUFFER: 1.0,
   MAX_ZOOM_DISTANCE: 100,
   DEFAULT_ZOOM_DISTANCE: 5,
-  // ✨ Significantly reduced zoom distance for possess/focused mode
-  POSSESS_MAX_ZOOM_DISTANCE: 15,  // Max 15 units when focusing on object (tighter zoom)
+  POSSESS_MAX_ZOOM_DISTANCE: 15,
   MIN_POLAR_ANGLE: 0.1,
   MAX_POLAR_ANGLE: Math.PI - 0.1,
   CAMERA_HEIGHT_OFFSET: 1.0,
@@ -30,13 +29,13 @@ const CAMERA_CONFIG = {
   CROSSHAIR_TEXT: '+',
   CROSSHAIR_Z_INDEX: '9999',
   SPECTATOR_SPEED: 10,
-  COLLISION_CHECK_INTERVAL: 1 / 30,
+  COLLISION_CHECK_INTERVAL: 1 / 15,
   COLLISION_CHECK_INTERVAL_FAST_ROTATION: 1 / 20,
-  COLLISION_FAST_ROTATION_DELTA_THRESHOLD: 0.01,
+  COLLISION_FAST_ROTATION_DELTA_THRESHOLD: 0.05,
   COLLISION_CACHE_REFRESH_INTERVAL: 0.5,
-  COLLISION_TARGET_EPSILON_SQ: 0.01,
-  COLLISION_DIRECTION_EPSILON: 0.0005,
-  COLLISION_DISTANCE_EPSILON: 0.05,
+  COLLISION_TARGET_EPSILON_SQ: 0.1,
+  COLLISION_DIRECTION_EPSILON: 0.01,
+  COLLISION_DISTANCE_EPSILON: 0.25,
   DITHER_UPDATE_INTERVAL: 1 / 20,
   DITHERING_ALPHA_EPSILON: 0.03,
   ADAPTIVE_PERF_SAMPLE_WINDOW_SEC: 0.5,
@@ -53,10 +52,9 @@ const CAMERA_CONFIG = {
   ADAPTIVE_COLLISION_CHECK_FAST_INTERVAL_LEVEL2: 1 / 8,
   ADAPTIVE_COLLISION_CACHE_REFRESH_INTERVAL_LEVEL1: 2.2,
   ADAPTIVE_COLLISION_CACHE_REFRESH_INTERVAL_LEVEL2: 3.0,
-  // ✨ Dithering effect when camera clips into object
-  DITHERING_DISTANCE_THRESHOLD: 2.0,  // Apply dithering when closer than this
-  DITHERING_ALPHA_START: 1.0,         // Initial alpha value
-  DITHERING_ALPHA_END: 0.3,           // Min alpha when fully inside
+  DITHERING_DISTANCE_THRESHOLD: 1.0,
+  DITHERING_ALPHA_START: 1.0,
+  DITHERING_ALPHA_END: 0.05,
 }
 
 export class ThirdPersonCameraController {
@@ -117,6 +115,7 @@ export class ThirdPersonCameraController {
     this.rotation = new THREE.Quaternion()
     this.rotationEuler = new THREE.Euler(0, 0, 0, 'YXZ')
     this.distance = CAMERA_CONFIG.DEFAULT_ZOOM_DISTANCE
+    this.targetDistance = CAMERA_CONFIG.DEFAULT_ZOOM_DISTANCE
     this.isControlEnabled = false
     this.spectatorPosition = new THREE.Vector3(0, 0, 0)
     this.moveState = { forward: false, backward: false, left: false, right: false, up: false, down: false }
@@ -142,7 +141,7 @@ export class ThirdPersonCameraController {
     this._collisionCacheAccumulator = CAMERA_CONFIG.COLLISION_CACHE_REFRESH_INTERVAL
     this._cachedCollidables = []
     this._sectionCollidableCaches = new Map()
-    this._activeSectionKey = 'global'
+    this._activeSectionKey = 'section1' // Khởi tạo mặc định là section1 thay vì 'global'
     this._effectiveDitherUpdateInterval = CAMERA_CONFIG.DITHER_UPDATE_INTERVAL
     this._effectiveCollisionCheckInterval = CAMERA_CONFIG.COLLISION_CHECK_INTERVAL
     this._effectiveCollisionCheckFastInterval = CAMERA_CONFIG.COLLISION_CHECK_INTERVAL_FAST_ROTATION
@@ -230,8 +229,10 @@ export class ThirdPersonCameraController {
     this._refreshCollisionCache(true)
   }
 
-  setActiveSectionKey(sectionKey = 'global') {
-    const nextKey = sectionKey || 'global'
+  setActiveSectionKey(sectionKey) {
+    // Chỉ chấp nhận section1, section2, section3, section4
+    const validSections = ['section1', 'section2', 'section3', 'section4']
+    const nextKey = validSections.includes(sectionKey) ? sectionKey : 'section1'
     if (this._activeSectionKey === nextKey) return
 
     this._activeSectionKey = nextKey
@@ -499,13 +500,10 @@ export class ThirdPersonCameraController {
     if (this.targetObject) {
       const zoomSpeed = CAMERA_CONFIG.ZOOM_SPEED
       const deltaZoom = Math.max(-CAMERA_CONFIG.ZOOM_DELTA_LIMIT, Math.min(CAMERA_CONFIG.ZOOM_DELTA_LIMIT, e.deltaY * zoomSpeed))
-      
-      this.distance *= 1 + deltaZoom
-  
+      this.targetDistance *= 1 + deltaZoom
       const minRadius = CAMERA_CONFIG.MIN_ZOOM_DISTANCE - CAMERA_CONFIG.ZOOM_FADE_BUFFER
-      // ✨ Apply reduced zoom distance when focusing on object
       const maxRadius = this.isSpectator ? CAMERA_CONFIG.MAX_ZOOM_DISTANCE : CAMERA_CONFIG.POSSESS_MAX_ZOOM_DISTANCE
-      this.distance = Math.max(minRadius, Math.min(maxRadius, this.distance))
+      this.targetDistance = Math.max(minRadius, Math.min(maxRadius, this.targetDistance))
     } else if (this.isSpectator) {
       const zoomSpeed = CAMERA_CONFIG.ZOOM_SPEED * 10
       const delta = Math.max(-CAMERA_CONFIG.ZOOM_DELTA_LIMIT, Math.min(CAMERA_CONFIG.ZOOM_DELTA_LIMIT, e.deltaY * zoomSpeed))
@@ -540,9 +538,13 @@ export class ThirdPersonCameraController {
       this.rotation.setFromEuler(this.rotationEuler)
     }
 
-    // ✨ Enforce distance limit for possess mode
+    // ✨ Smoothly interpolate camera distance toward targetDistance
     if (this.targetObject && !this.isSpectator) {
-      this.distance = Math.max(CAMERA_CONFIG.MIN_ZOOM_DISTANCE, Math.min(CAMERA_CONFIG.POSSESS_MAX_ZOOM_DISTANCE, this.distance))
+      // Clamp targetDistance
+      this.targetDistance = Math.max(CAMERA_CONFIG.MIN_ZOOM_DISTANCE, Math.min(CAMERA_CONFIG.POSSESS_MAX_ZOOM_DISTANCE, this.targetDistance))
+      // Smooth interpolation (lerp)
+      const lerpAlpha = 1.0 - Math.pow(0.05, delta > 0 ? delta * 60 : 1) // ~0.15 per frame at 60fps
+      this.distance += (this.targetDistance - this.distance) * lerpAlpha
     }
 
     if (this.targetObject) {
@@ -557,16 +559,26 @@ export class ThirdPersonCameraController {
           const offset = this._tmpOffset.set(0, 0, 1)
           offset.applyQuaternion(this.rotation)
           
-          // ✨ Check for collision and adjust distance
+          // ✨ Check for collision and clamp distance
           const direction = this._tmpDirection.copy(offset).normalize()
           const adjustedDistance = this._adjustCameraDistanceForCollision(cueWorldPos, direction, this.distance)
-          offset.multiplyScalar(adjustedDistance)
+          // One-way smoothing: snap in when blocked, lerp out when clear
+          let finalDistance = this.distance
+          if (adjustedDistance < this.distance - 0.01) {
+            // Snap in instantly if blocked
+            finalDistance = adjustedDistance
+            this.distance = adjustedDistance
+          } else {
+            // Lerp out smoothly if unblocked
+            finalDistance += (adjustedDistance - finalDistance) * 0.15
+            this.distance = finalDistance
+          }
+          offset.multiplyScalar(finalDistance)
 
           this.camera.position.copy(cueWorldPos).add(offset)
           this.camera.lookAt(cueWorldPos)
-          
           // ✨ Apply dithering effect if camera is very close to target
-          this._updateDithering(adjustedDistance, delta)
+          this._updateDithering(finalDistance, delta)
           return
         }
       }
@@ -576,16 +588,26 @@ export class ThirdPersonCameraController {
       const offset = this._tmpOffset.set(0, 0, 1)
       offset.applyQuaternion(this.rotation)
       
-      // ✨ Check for collision and adjust distance
+      // ✨ Check for collision and clamp distance
       const direction = this._tmpDirection.copy(offset).normalize()
       const adjustedDistance = this._adjustCameraDistanceForCollision(this.targetPosition, direction, this.distance)
-      offset.multiplyScalar(adjustedDistance)
+      // One-way smoothing: snap in when blocked, lerp out when clear
+      let finalDistance = this.distance
+      if (adjustedDistance < this.distance - 0.01) {
+        // Snap in instantly if blocked
+        finalDistance = adjustedDistance
+        this.distance = adjustedDistance
+      } else {
+        // Lerp out smoothly if unblocked
+        finalDistance += (adjustedDistance - finalDistance) * 0.15
+        this.distance = finalDistance
+      }
+      offset.multiplyScalar(finalDistance)
 
       this.camera.position.copy(this.targetPosition).add(offset)
       this.camera.lookAt(this.targetPosition)
-      
       // ✨ Apply dithering effect if camera is very close to target
-      this._updateDithering(adjustedDistance, delta)
+      this._updateDithering(finalDistance, delta)
     } else if (this.isSpectator) {
       this.camera.quaternion.copy(this.rotation)
       

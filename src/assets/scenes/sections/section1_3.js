@@ -40,10 +40,10 @@ const SECTION3_MASTER_CONFIG = {
     backgroundNormal: '#41a5e7',
 
     // Transition state (AFTER 60s transition completes)
-    grassBaseTransitioned: '#ff3c3c',    // Crimson base
+    grassBaseTransitioned: '#d80019',    // Đỏ đậm hơn, không bị đen
     grassVividTransitioned: '#ff8585',   // Bright crimson
-    grassSoilTransitioned: '#110035',    // Dark crimson soil
-    grassDeepSoilTransitioned: '#110034', // Very dark crimson
+    grassSoilTransitioned: '#7a0010',    // Đỏ nâu đậm, không tím đen
+    grassDeepSoilTransitioned: '#4a000a', // Đỏ nâu rất đậm
     fogTransitioned: '#4a3d6d',          // Purple-blue fog
     backgroundTransitioned: '#000000'    // Black sky
   }
@@ -60,12 +60,12 @@ const SECTION3_GRASS_SETTINGS = {
   textureSize: 768,
   textureRepeat: 4096,
   bladeTextureSize: 128,
-  patchCount: 2000,
+  patchCount: 800, // Giảm số cụm cỏ
   bladesPerPatchMin: 80,
   bladesPerPatchMax: 140,
   patchRadiusMin: 1.5,
   patchRadiusMax: 3,
-  edgePadding: 2.8,
+  edgePadding: 12, // Tăng vùng biên không có cỏ, làm vùng cỏ nhỏ lại
   hoverOffset: 0.035,
   jitter: 0.6,
   lodNearDistance: 7,
@@ -341,7 +341,9 @@ function toRgbaString(color, alpha = 1) {
 }
 
 function mixGrassColor(t) {
-  return SECTION3_GRASS_SOIL_COLOR.clone().lerp(SECTION3_GRASS_BASE_COLOR, THREE.MathUtils.clamp(t, 0, 1))
+  // Khi transition, nếu đang ở trạng thái chuyển (t > 1), trộn nhẹ hơn về màu base đỏ đậm
+  // Tăng t lên 1.3 để màu nền cỏ sáng và đỏ hơn, tránh bị đen
+  return SECTION3_GRASS_SOIL_COLOR.clone().lerp(SECTION3_GRASS_BASE_COLOR, Math.min(1, t * 1.3))
 }
 
 function mixGrassColorStyle(t, alpha = 1) {
@@ -933,6 +935,17 @@ vec4 s3SampleStochastic(sampler2D tex, vec2 uv) {
   vec3 macroColor = mix(soilTint, grassTint, macro);
   diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * macroColor, 0.3);
 
+  // ---- EMISSIVE RED for transition ----
+  #ifdef USE_EMISSIVE_MAP
+    // Use the red region mask (where macroColor is redder than a threshold)
+    float redMask = step(0.6, macroColor.r);
+    // Animate emissive intensity based on transition progress (uniform: float section3Transition)
+    float emissiveStrength = redMask * section3Transition * 10.0;
+    // Emissive color: vivid red
+    vec3 emissiveRed = vec3(1.0, 0.13, 0.13);
+    totalEmissiveRadiance += emissiveRed * emissiveStrength;
+  #endif
+
 #endif`
     )
   }
@@ -950,7 +963,7 @@ export function createSection3(rootGroup) {
   const SECTION3_CENTER_X = cfg.center.x
   const SECTION3_CENTER_Y = cfg.center.y
   const SECTION3_CENTER_Z = cfg.center.z
-  const SECTION3_RADIUS = cfg.radius
+  const SECTION3_RADIUS = cfg.radius * 0.55 // Giảm bán kính vùng cỏ
   const SECTION3_THICKNESS = cfg.thickness
   const SECTION3_SEGMENTS = cfg.segments
   const SECTION3_OVERHEAD_LIGHT_HEIGHT = cfg.overheadLightHeight
@@ -986,8 +999,22 @@ export function createSection3(rootGroup) {
     metalness: 0.0,
     envMapIntensity: 0.0
   })
-  if (useHighQuality) {
+
+  // Only patch shader ONCE, never call applySection3StochasticTexture from onBeforeCompile
+  if (!platformMaterial.userData._section3ShaderPatched) {
     applySection3StochasticTexture(platformMaterial)
+    platformMaterial.userData._section3ShaderPatched = true
+  }
+  // Inject section3Transition uniform for emissive shader logic
+  platformMaterial.onBeforeCompile = (shader) => {
+    shader.uniforms.section3Transition = { value: 0 }
+    platformMaterial.userData.section3Shader = shader
+  }
+  // Helper to update section3Transition value externally
+  platformMaterial.userData.setSection3Transition = (t) => {
+    if (platformMaterial.userData.section3Shader) {
+      platformMaterial.userData.section3Shader.uniforms.section3Transition.value = t
+    }
   }
 
   const platform = new THREE.Mesh(
@@ -996,6 +1023,8 @@ export function createSection3(rootGroup) {
   )
   platform.rotation.x = -Math.PI / 2
   platform.position.set(SECTION3_CENTER_X, SECTION3_CENTER_Y, SECTION3_CENTER_Z)
+  // Expose helper for section3Transition update
+  platform.userData.setSection3Transition = platformMaterial.userData.setSection3Transition
   platform.receiveShadow = true
   platform.castShadow = false
   platform.name = 'Section3 Platform'
@@ -1074,8 +1103,9 @@ export function createSection3(rootGroup) {
   const trees = []
   const treeMaterialControllers = new Set()
   treePlacements.forEach((placement, index) => {
+    // Lower tree Y so base is flush with ground (was +0.2)
     const tree = createTreeBillboard(
-      new THREE.Vector3(placement.x, SECTION3_CENTER_Y + 0.2, placement.z),
+      new THREE.Vector3(placement.x, SECTION3_CENTER_Y, placement.z),
       placement.treeIndex
     )
     tree.name = `Section3 Tree ${index + 1}`

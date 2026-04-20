@@ -1,3 +1,21 @@
+  // --- PRELOAD & COMPILE SCREEN MAT (hiệu ứng chuyển cảnh) ---
+  let screenMatMesh = null;
+  if (typeof createScreenMatMesh === 'function') {
+    screenMatMesh = createScreenMatMesh();
+    screenMatMesh.visible = false;
+    scene.add(screenMatMesh);
+    // Render ẩn 1 frame để ép compile shader
+    renderer.render(scene, cameraController.camera);
+    scene.remove(screenMatMesh);
+  }
+  // Đảm bảo screen mat đã được warmup trước khi teleport
+  if (typeof createScreenMatMesh === 'function' && !screenMatMesh) {
+    screenMatMesh = createScreenMatMesh();
+    screenMatMesh.visible = false;
+    scene.add(screenMatMesh);
+    renderer.render(scene, cameraController.camera);
+    scene.remove(screenMatMesh);
+  }
 import * as THREE from "three"
 import * as CANNON from "cannon-es"
 import { createAllGameObjects } from "../gameObjects/temp.js"
@@ -37,14 +55,14 @@ const SIMULATION_CONFIG = {
 }
 
 const RENDER_PERF_CONFIG = {
-  maxDevicePixelRatio: 1.5,
-  minScale: 0.5,
-  maxScale: 0.7,
-  downshiftFps: 55,
+  maxDevicePixelRatio: 1.0,
+  minScale: 0.1,
+  maxScale: 0.2,
+  downshiftFps: 58,
   upshiftFps: 60,
   sampleWindowSec: 0.5,
-  adjustCooldownSec: 0.01,
-  scaleStepDown: 0.6,
+  adjustCooldownSec: 0.0001,
+  scaleStepDown: 0.9,
   scaleStepUp: 0.01,
   startupDurationSec: 4.0,
   startupScale: 0.6,
@@ -58,6 +76,142 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
   // ==================== CONTROL GUIDE UI ====================
   const controlGuideUI = new ControlGuideUI()
   let controlGuideState = { phase: 0 }
+
+  // ==================== PERFORMANCE OVERLAY (Simulation only) ====================
+  let perfOverlay = null
+  let lastPerfStats = {
+        // --- Simulation config ---
+        fixedTimeStep: SIMULATION_CONFIG.fixedTimeStep,
+        spawnRateMs: SIMULATION_CONFIG.spawnRateMs,
+        maxObjects: SIMULATION_CONFIG.maxObjectsInScene,
+        bowlingLifeMin: SIMULATION_CONFIG.bowlingLifetimeMinMs,
+        bowlingLifeMax: SIMULATION_CONFIG.bowlingLifetimeMaxMs,
+        // --- Render config ---
+        maxDevicePixelRatio: RENDER_PERF_CONFIG.maxDevicePixelRatio,
+        minScaleCfg: RENDER_PERF_CONFIG.minScale,
+        maxScaleCfg: RENDER_PERF_CONFIG.maxScale,
+        downshiftFps: RENDER_PERF_CONFIG.downshiftFps,
+        upshiftFps: RENDER_PERF_CONFIG.upshiftFps,
+        scaleStepDown: RENDER_PERF_CONFIG.scaleStepDown,
+        scaleStepUp: RENDER_PERF_CONFIG.scaleStepUp,
+        // --- Scene/asset ---
+        sceneName: '--',
+        assetName: '--',
+        prefabCount: '--',
+        dynamicPrefabCount: '--',
+        staticPrefabCount: '--',
+        kinematicPrefabCount: '--',
+        // --- Object counts ---
+        syncDynamic: '--',
+        syncStatic: '--',
+        syncKinematic: '--',
+        sceneBodies: '--',
+        // --- UI state ---
+        helpVisible: '--',
+        spawnMenuVisible: '--',
+        pauseMenuVisible: '--',
+        gameOverVisible: '--',
+        // --- System state ---
+        particleCount: '--',
+        shadowCount: '--',
+        physicsEventCount: '--',
+        // --- Table info ---
+        tableColor: '--',
+        tableSize: '--',
+        // --- Portal/trigger ---
+        portalCount: '--',
+        triggerCount: '--',
+        // --- Player ---
+        playerAlive: '--',
+        playerTime: '--',
+        playerSpawn: '--',
+        playerDestroy: '--',
+        // --- Light/fog/camera ---
+        fogType: '--',
+        lightCount: '--',
+        shadowMapSize: '--',
+        cameraDist: '--',
+        spectator: '--',
+      section: '--',
+      phase: '--',
+      moveState: '--',
+      pointerLock: '--',
+      controlEnabled: '--',
+      aiGuy: '--',
+      aiDude: '--',
+      aiGuide: '--',
+      aiDummy: '--',
+      aiBall8: '--',
+      aiBowling: '--',
+      aiCompune: '--',
+      sectionKey: '--',
+      phaseGuy: '--',
+      lastEvent: '--',
+    fps: '--',
+    frameTime: '--',
+    objectCount: '--',
+    drawCalls: '--',
+    triangles: '--',
+    geometries: '--',
+    textures: '--',
+    jsHeap: '--',
+    jsHeapUsed: '--',
+    jsHeapTotal: '--',
+    devicePixelRatio: '--',
+    renderScale: '--',
+    startupPerfTimer: '--',
+    perfAdjustCooldownSec: '--',
+    minScale: '--',
+    maxScale: '--',
+    sampleWindowSec: '--',
+    adjustCooldownSec: '--',
+    cameraPos: '--',
+    cameraTarget: '--',
+    possessed: '--',
+    worldBodies: '--',
+    memoryJS: '--',
+    memoryTotal: '--',
+    memoryUsed: '--',
+    time: '--',
+    userAgent: '--',
+    platform: '--',
+    screen: '--',
+    window: '--',
+    location: '--',
+    url: '--',
+    // Thêm các trường khác nếu cần
+  }
+  if (!gameplayMode) {
+    perfOverlay = document.createElement('div')
+    perfOverlay.id = 'simulationPerfOverlay'
+    perfOverlay.style.cssText = `
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      min-width: 220px;
+      max-width: 520px;
+      background: #002d1a;
+      border: 2px solid #00CC77;
+      border-radius: 0;
+      color: #00FFAA;
+      font-size: 9.5px;
+      font-family: 'Roboto Mono', 'Consolas', 'Monaco', 'Courier New', monospace;
+      font-weight: 300;
+      z-index: 10001;
+      box-shadow: 0 0 20px rgba(0, 204, 119, 0.6), inset 0 0 10px rgba(0, 204, 119, 0.3);
+      pointer-events: none;
+      user-select: none;
+      text-align: left;
+      letter-spacing: 0.5px;
+      line-height: 1.18;
+      padding: 6px 10px 6px 10px;
+      white-space: normal;
+      word-break: break-all;
+      margin: 0;
+    `
+    perfOverlay.innerText = 'FPS: --';
+    document.body.appendChild(perfOverlay)
+  }
   let shootDialogShown = false
   let itemDialogShown = false
 
@@ -385,7 +539,7 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
   let fpsAccumSec = 0, fpsFrameCount = 0, perfAdjustCooldownSec = 0, startupPerfTimer = 0
 
   const applyRenderResolution = (force = false) => {
-    const nextPixelRatio = Math.max(0.5, Math.min(basePixelRatio, basePixelRatio * renderScale))
+    const nextPixelRatio = Math.max(1.0, Math.min(basePixelRatio, basePixelRatio * renderScale))
     if (!force && Math.abs(nextPixelRatio - currentPixelRatio) < 0.01) return
     currentPixelRatio = nextPixelRatio
     renderer.setPixelRatio(currentPixelRatio)
@@ -1008,6 +1162,10 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
     if (renderScale > scaleCap) { renderScale = scaleCap; applyRenderResolution() }
     if (fpsAccumSec < RENDER_PERF_CONFIG.sampleWindowSec) return
     const fps = fpsFrameCount / fpsAccumSec
+    // Cập nhật thông tin hiệu năng nếu ở chế độ Simulation
+    if (perfOverlay) {
+      lastPerfStats.fps = Math.round(fps)
+    }
     fpsAccumSec = 0
     fpsFrameCount = 0
     if (perfAdjustCooldownSec > 0) return
@@ -1056,12 +1214,181 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
 
   // ==================== ANIMATION LOOP ====================
   function animate() {
+                // --- Scene/asset ---
+                lastPerfStats.sceneName = currentSceneManager && currentSceneManager.sceneName ? currentSceneManager.sceneName : (typeof currentSceneGroup?.name === 'string' ? currentSceneGroup.name : '--')
+                lastPerfStats.assetName = currentSceneGroup && currentSceneGroup.name ? currentSceneGroup.name : '--'
+                lastPerfStats.prefabCount = Array.isArray(objects) ? objects.length : '--'
+                lastPerfStats.dynamicPrefabCount = Array.isArray(objects) ? objects.filter(o=>o.type==='dynamic').length : '--'
+                lastPerfStats.staticPrefabCount = Array.isArray(objects) ? objects.filter(o=>o.type==='static').length : '--'
+                lastPerfStats.kinematicPrefabCount = Array.isArray(objects) ? objects.filter(o=>o.type==='kinematic').length : '--'
+                // --- Object counts ---
+                lastPerfStats.syncDynamic = syncList ? syncList.filter(e=>e.type==='dynamic').length : '--'
+                lastPerfStats.syncStatic = syncList ? syncList.filter(e=>e.type==='static').length : '--'
+                lastPerfStats.syncKinematic = syncList ? syncList.filter(e=>e.type==='kinematic').length : '--'
+                lastPerfStats.sceneBodies = Array.isArray(sceneBodies) ? sceneBodies.length : '--'
+                // --- UI state ---
+                lastPerfStats.helpVisible = typeof helpVisible !== 'undefined' ? helpVisible : '--'
+                lastPerfStats.spawnMenuVisible = typeof spawnMenuVisible !== 'undefined' ? spawnMenuVisible : '--'
+                lastPerfStats.pauseMenuVisible = typeof pauseMenuScreen !== 'undefined' && pauseMenuScreen && pauseMenuScreen.isVisible ? 'ON' : 'OFF'
+                lastPerfStats.gameOverVisible = typeof gameOverScreen !== 'undefined' && gameOverScreen && gameOverScreen.isVisible ? 'ON' : 'OFF'
+                // --- System state ---
+                lastPerfStats.particleCount = particleManager && typeof particleManager.countAll === 'function' ? particleManager.countAll() : '--'
+                lastPerfStats.shadowCount = fakeShadowManager && typeof fakeShadowManager.countAll === 'function' ? fakeShadowManager.countAll() : '--'
+                lastPerfStats.physicsEventCount = physicsEventManager && typeof physicsEventManager.countAll === 'function' ? physicsEventManager.countAll() : '--'
+                // --- Table info ---
+                if (typeof currentSceneGroup?.getObjectByName === 'function') {
+                  const tableObj = currentSceneGroup.getObjectByName('Billiard Table')
+                  if (tableObj && tableObj.userData && tableObj.userData.tableDimensions) {
+                    lastPerfStats.tableColor = tableObj.userData.tableDimensions.clothColor || '--'
+                    lastPerfStats.tableSize = `${tableObj.userData.tableDimensions.width||''}x${tableObj.userData.tableDimensions.length||''}`
+                  }
+                }
+                // --- Portal/trigger ---
+                lastPerfStats.portalCount = syncList ? syncList.filter(e=>e.name&&e.name.includes('Portal')).length : '--'
+                lastPerfStats.triggerCount = syncList ? syncList.filter(e=>e.name&&e.name.includes('Trigger')).length : '--'
+                // --- Player ---
+                lastPerfStats.playerAlive = possessed && possessed.name==='Player' ? 'YES' : 'NO'
+                lastPerfStats.playerTime = possessed && possessed.name==='Player' && possessed.body && possessed.body.timeAlive ? possessed.body.timeAlive.toFixed(2) : '--'
+                lastPerfStats.playerSpawn = typeof playerMovement?.spawnCount !== 'undefined' ? playerMovement.spawnCount : '--'
+                lastPerfStats.playerDestroy = typeof playerMovement?.destroyCount !== 'undefined' ? playerMovement.destroyCount : '--'
+                // --- Light/fog/camera ---
+                lastPerfStats.fogType = scene && scene.fog ? (scene.fog.name || 'fog') : 'none'
+                lastPerfStats.lightCount = scene && scene.children ? scene.children.filter(c=>c.isLight).length : '--'
+                lastPerfStats.shadowMapSize = renderer && renderer.shadowMap ? renderer.shadowMap.width : '--'
+                lastPerfStats.cameraDist = cameraController && cameraController.distance ? cameraController.distance.toFixed(2) : '--'
+                lastPerfStats.spectator = cameraController && cameraController.isSpectator ? 'ON' : 'OFF'
+          // Section/phase: luôn đồng bộ section với sectionKey (camera)
+          if (cameraController && cameraController._activeSectionKey) {
+            const validSections = ['section1', 'section2', 'section3', 'section4'];
+            controlGuideState.section = validSections.includes(cameraController._activeSectionKey)
+              ? cameraController._activeSectionKey
+              : 'section1';
+          } else {
+            controlGuideState.section = 'section1';
+          }
+          lastPerfStats.section = controlGuideState.section;
+          lastPerfStats.phase = typeof controlGuideState !== 'undefined' && controlGuideState.phase !== undefined ? controlGuideState.phase : '--';
+              // Khi load scene mới, chỉ giữ lại section đang active, giải phóng mesh/object các section khác
+              // (giả sử mỗi section là một group con của currentSceneGroup, tên dạng 'section1', 'section2', ...)
+              let activeSectionKey = (cameraController && ['section1','section2','section3','section4'].includes(cameraController._activeSectionKey))
+                ? cameraController._activeSectionKey
+                : 'section1';
+              if (typeof currentSceneGroup?.children === 'object') {
+                currentSceneGroup.children.forEach(child => {
+                  if (child.name && child.name.startsWith('section')) {
+                    child.visible = (child.name === activeSectionKey);
+                    // Nếu không phải section active thì giải phóng mesh/material
+                    if (child.name !== activeSectionKey) {
+                      child.traverse(obj => {
+                        if (obj.geometry) { obj.geometry.dispose && obj.geometry.dispose(); obj.geometry = null; }
+                        if (obj.material) {
+                          if (Array.isArray(obj.material)) obj.material.forEach(mat => mat && mat.dispose && mat.dispose());
+                          else obj.material.dispose && obj.material.dispose();
+                          obj.material = null;
+                        }
+                      });
+                    }
+                  }
+                });
+              }
+          // Input state
+          if (cameraController && cameraController.moveState) {
+            lastPerfStats.moveState = Object.entries(cameraController.moveState).filter(([k,v])=>v).map(([k])=>k[0].toUpperCase()).join('') || '-'
+          }
+          lastPerfStats.pointerLock = document.pointerLockElement ? 'ON' : 'OFF'
+          lastPerfStats.controlEnabled = cameraController && cameraController.isControlEnabled ? 'ON' : 'OFF'
+          // AI counts
+          lastPerfStats.aiGuy = guyAIControllers ? guyAIControllers.size : '--'
+          lastPerfStats.aiDude = dudeAIControllers ? dudeAIControllers.size : '--'
+          lastPerfStats.aiGuide = guideAIControllers ? guideAIControllers.size : '--'
+          lastPerfStats.aiDummy = dummyAIControllers ? dummyAIControllers.size : '--'
+          lastPerfStats.aiBall8 = ball8AIControllers ? ball8AIControllers.size : '--'
+          lastPerfStats.aiBowling = bowlingAIControllers ? bowlingAIControllers.size : '--'
+          lastPerfStats.aiCompune = compuneAIControllers ? compuneAIControllers.size : '--'
+          // Section key (camera)
+          lastPerfStats.sectionKey = (cameraController && ['section1','section2','section3','section4'].includes(cameraController._activeSectionKey))
+            ? cameraController._activeSectionKey
+            : 'section1';
+          // Phase AI (guy)
+          let phaseGuy = '--';
+          if (guyAIControllers && guyAIControllers.size > 0) {
+            for (const ai of guyAIControllers.values()) {
+              if (ai.currentPhase !== undefined) { phaseGuy = ai.currentPhase; break; }
+            }
+          }
+          lastPerfStats.phaseGuy = phaseGuy
+            // Last event (simple: lấy sự kiện keydown gần nhất)
+            if (window._lastSimEvent) lastPerfStats.lastEvent = window._lastSimEvent
     animationId = requestAnimationFrame(animate)
     const currentTime = performance.now()
     const rawDelta = (currentTime - lastTime) / 1000
     const delta = Math.min(rawDelta, 0.1)
     lastTime = currentTime
     updateAdaptiveRenderResolution(rawDelta)
+    // Cập nhật các thông số hiệu năng khác
+    if (perfOverlay) {
+      lastPerfStats.frameTime = (rawDelta * 1000).toFixed(1)
+      lastPerfStats.objectCount = syncList ? syncList.length : '--'
+      if (renderer && renderer.info) {
+        const info = renderer.info
+        lastPerfStats.drawCalls = info.render.calls
+        lastPerfStats.triangles = info.render.triangles
+        lastPerfStats.geometries = info.memory.geometries
+        lastPerfStats.textures = info.memory.textures
+      }
+      if (window.performance && performance.memory) {
+        const mem = performance.memory
+        lastPerfStats.jsHeap = (mem.usedJSHeapSize / 1048576).toFixed(1) + ' / ' + (mem.totalJSHeapSize / 1048576).toFixed(1) + ' MB'
+        lastPerfStats.jsHeapUsed = (mem.usedJSHeapSize / 1048576).toFixed(1) + ' MB'
+        lastPerfStats.jsHeapTotal = (mem.totalJSHeapSize / 1048576).toFixed(1) + ' MB'
+      } else {
+        lastPerfStats.jsHeap = '--'
+        lastPerfStats.jsHeapUsed = '--'
+        lastPerfStats.jsHeapTotal = '--'
+      }
+      lastPerfStats.devicePixelRatio = window.devicePixelRatio
+      lastPerfStats.renderScale = typeof renderScale !== 'undefined' ? renderScale.toFixed(3) : '--'
+      lastPerfStats.startupPerfTimer = typeof startupPerfTimer !== 'undefined' ? startupPerfTimer.toFixed(2) : '--'
+      lastPerfStats.perfAdjustCooldownSec = typeof perfAdjustCooldownSec !== 'undefined' ? perfAdjustCooldownSec.toFixed(2) : '--'
+      lastPerfStats.minScale = RENDER_PERF_CONFIG.minScale
+      lastPerfStats.maxScale = RENDER_PERF_CONFIG.maxScale
+      lastPerfStats.sampleWindowSec = RENDER_PERF_CONFIG.sampleWindowSec
+      lastPerfStats.adjustCooldownSec = RENDER_PERF_CONFIG.adjustCooldownSec
+      if (cameraController && cameraController.camera) {
+        const c = cameraController.camera
+        lastPerfStats.cameraPos = c.position ? `${c.position.x.toFixed(2)},${c.position.y.toFixed(2)},${c.position.z.toFixed(2)}` : '--'
+        lastPerfStats.cameraTarget = cameraController.getTarget ? cameraController.getTarget() : '--'
+      }
+      lastPerfStats.possessed = possessed && possessed.name ? possessed.name : '--'
+      lastPerfStats.worldBodies = world && world.bodies ? world.bodies.length : '--'
+      lastPerfStats.time = new Date().toLocaleTimeString()
+      lastPerfStats.userAgent = navigator.userAgent
+      lastPerfStats.platform = navigator.platform
+      lastPerfStats.screen = `${window.screen.width}x${window.screen.height}`
+      lastPerfStats.window = `${window.innerWidth}x${window.innerHeight}`
+      lastPerfStats.location = window.location ? window.location.href : '--'
+      lastPerfStats.url = document.URL
+      // Trình bày thông tin theo hàng ngang, cách nhau bằng dấu phẩy, tự động xuống dòng khi tràn lề
+      // Ping đo bằng fetch tới một endpoint đơn giản (nếu cần, có thể đo mỗi N frame)
+      // Đo ping bằng endpoint luôn trả về 200 (/, hoặc 1 file nhỏ chắc chắn tồn tại)
+      if (!window._simPing || window._simPing.lastCheck + 2000 < Date.now()) {
+        window._simPing = { lastCheck: Date.now(), value: '--' };
+        const start = Date.now();
+        fetch(window.location.origin + '/', { method: 'HEAD', cache: 'no-store' })
+          .then(() => { window._simPing.value = (Date.now() - start) + 'ms'; window._simPing.lastCheck = Date.now(); })
+          .catch(() => { window._simPing.value = '--'; window._simPing.lastCheck = Date.now(); });
+      }
+      // Xác định "tốn tài nguyên nhất" (heap, drawCalls, triangles)
+      let heavy = 'Draw:' + lastPerfStats.drawCalls + ', Tri:' + lastPerfStats.triangles + ', Heap:' + lastPerfStats.jsHeap;
+      // Overlay chỉ giữ lại các trường cần thiết
+      const infoArr = [
+        `FPS:${lastPerfStats.fps}`,
+        `Ping:${window._simPing ? window._simPing.value : '--'}`,
+        `Section:${lastPerfStats.section}`,
+        `Heavy:${heavy}`
+      ];
+      perfOverlay.innerText = infoArr.join(', ');
+    }
 
     if (gameOverScreen && gameplayMode) gameOverScreen.update(delta)
     if (gameplayMode && currentSceneManager && currentSceneManager.gameOver) {
@@ -1320,6 +1647,8 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
   // ==================== CLEANUP ====================
   cleanupFn = function cleanup() {
     controlGuideUI.cleanup()
+    // Xóa overlay hiệu năng nếu có
+    if (perfOverlay && perfOverlay.parentNode) perfOverlay.parentNode.removeChild(perfOverlay)
     const simBackBtn = document.getElementById("simulationBackButton")
     if (simBackBtn) simBackBtn.remove()
     cancelAnimationFrame(animationId)
