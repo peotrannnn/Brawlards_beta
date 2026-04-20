@@ -92,9 +92,11 @@ export const IT_STYLE = {
   }
 }
 
+
 const renderer = new THREE.WebGLRenderer({ antialias: true })
 renderer.setSize(window.innerWidth, window.innerHeight)
 renderer.shadowMap.enabled = true
+renderer.shadowMap.type = THREE.PCFShadowMap // Use PCFShadowMap to avoid deprecation warning
 
 document.body.style.margin = "0"
 document.body.style.overflow = "hidden"
