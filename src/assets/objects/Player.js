@@ -209,6 +209,9 @@ function createCue(bodyCenterY, meshLift) {
 function createPlayer() {
   const root = new THREE.Group()
   root.name = "Player"
+  // Always define HP for player
+  root.hp = 100;
+  root.maxHP = 100;
 
   // Materials
   const bodyMaterial = new THREE.MeshPhysicalMaterial({

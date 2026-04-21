@@ -99,8 +99,10 @@ function createHitboxHelper(body, color) {
         if (!shapeOffset) return;
 
         let mesh;
+        // Always assign a valid material
+        const safeColor = color || 0xff00ff;
         const material = new THREE.MeshBasicMaterial({
-            color: color,
+            color: safeColor,
             wireframe: VISUAL_CONFIG.wireframe,
             transparent: VISUAL_CONFIG.transparent,
             opacity: VISUAL_CONFIG.globalOpacity,

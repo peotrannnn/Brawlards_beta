@@ -1,3 +1,23 @@
+// Utility: Patch all meshes in a scene to ensure valid materials
+function patchMaterials(scene) {
+  scene.traverse(obj => {
+    if (obj.isMesh) {
+      if (Array.isArray(obj.material)) {
+        obj.material = obj.material.map((mat) => {
+          if (!mat || typeof mat !== 'object') {
+            return new THREE.MeshBasicMaterial({ color: 0xff00ff });
+          }
+          return mat;
+        });
+        if (obj.material.length === 0) {
+          obj.material = new THREE.MeshBasicMaterial({ color: 0xff00ff });
+        }
+      } else if (!obj.material || typeof obj.material !== 'object') {
+        obj.material = new THREE.MeshBasicMaterial({ color: 0xff00ff });
+      }
+    }
+  });
+}
 import * as THREE from 'three'
 import * as CANNON from 'cannon-es'
 import { CompuneAI } from '../AI/compuneBot.js'
@@ -667,12 +687,15 @@ export class Scene1Manager {
       state.ready = false
     }
 
+
+    // --- Patch: Collect all asset loading promises for this section ---
     const meshes = []
     const audioAssets = new Set()
     const physicsShapes = []
     const aiAssets = new Set()
     const navmeshAssets = new Set()
     const effectAssets = new Set()
+    const assetPromises = []
     group.traverse(obj => {
       if (obj?.isMesh) meshes.push(obj)
       // Preload audio if mesh or object has userData.audioName
@@ -685,40 +708,59 @@ export class Scene1Manager {
       if (obj?.userData?.navmeshName) navmeshAssets.add(obj.userData.navmeshName)
       // Preload effect if present
       if (obj?.userData?.effectName) effectAssets.add(obj.userData.effectName)
+      // --- Patch: Track texture loading promises ---
+      if (obj.material) {
+        const mats = Array.isArray(obj.material) ? obj.material : [obj.material]
+        mats.forEach(mat => {
+          if (mat && mat.map && mat.map instanceof THREE.Texture && mat.map.image === undefined && typeof mat.map.then === 'function') {
+            // If texture is a promise-like (custom loader), push it
+            assetPromises.push(mat.map)
+          }
+          // If texture has .onLoad or .loaded flag, wait for it
+          if (mat && mat.map && mat.map instanceof THREE.Texture && mat.map.image === undefined && mat.map.onceLoadedPromise) {
+            assetPromises.push(mat.map.onceLoadedPromise)
+          }
+        })
+      }
     })
 
     // Preload audio buffers for all found audio assets
     if (typeof window.AssetCache === 'object' && typeof window.AssetCache.preloadAudio === 'function') {
       audioAssets.forEach(audioName => {
-        window.AssetCache.preloadAudio(audioName, `/public/music/${audioName}.mp3`).catch(()=>{})
+        const p = window.AssetCache.preloadAudio(audioName, `/public/music/${audioName}.mp3`).catch(()=>{})
+        assetPromises.push(p)
       })
     }
 
     // Preload/init physics shapes (nếu có logic preload riêng, gọi ở đây)
     if (typeof window.PhysicsManager === 'object' && typeof window.PhysicsManager.preloadShape === 'function') {
       physicsShapes.forEach(shape => {
-        window.PhysicsManager.preloadShape(shape)
+        const p = window.PhysicsManager.preloadShape(shape)
+        if (p && typeof p.then === 'function') assetPromises.push(p)
       })
     }
 
     // Preload/init AI controllers if available
     if (typeof window.AIManager === 'object' && typeof window.AIManager.preloadAI === 'function') {
       aiAssets.forEach(aiName => {
-        window.AIManager.preloadAI(aiName).catch(()=>{})
+        const p = window.AIManager.preloadAI(aiName).catch(()=>{})
+        assetPromises.push(p)
       })
     }
 
     // Preload/init navmesh if available
     if (typeof window.NavmeshManager === 'object' && typeof window.NavmeshManager.preloadNavmesh === 'function') {
       navmeshAssets.forEach(navmeshName => {
-        window.NavmeshManager.preloadNavmesh(navmeshName).catch(()=>{})
+        const p = window.NavmeshManager.preloadNavmesh(navmeshName).catch(()=>{})
+        assetPromises.push(p)
       })
     }
 
     // Preload/init effects if available
     if (typeof window.EffectManager === 'object' && typeof window.EffectManager.preloadEffect === 'function') {
       effectAssets.forEach(effectName => {
-        window.EffectManager.preloadEffect(effectName).catch(()=>{})
+        const p = window.EffectManager.preloadEffect(effectName).catch(()=>{})
+        assetPromises.push(p)
       })
     }
 
@@ -811,13 +853,25 @@ export class Scene1Manager {
       }
 
       const compileSceneForSection = async () => {
-
         if (!this.renderer || !this.mainScene || !this._lastWarmupCamera) {
           return
         }
 
         if (this.sectionWarmOverlay) {
-          this.sectionWarmOverlay.update(0.95, 'compiling shaders')
+          this.sectionWarmOverlay.update(0.95, 'waiting for assets')
+        }
+
+        // --- Patch: Wait for all asset loading promises before compiling ---
+        if (assetPromises.length > 0) {
+          try {
+            await Promise.allSettled(assetPromises)
+          } catch (err) {
+            console.warn('[Scene1Manager] Asset loading error (ignored for compile):', err)
+          }
+        }
+
+        if (this.sectionWarmOverlay) {
+          this.sectionWarmOverlay.update(0.97, 'compiling shaders')
         }
 
         const previousVisible = group.visible
@@ -826,60 +880,12 @@ export class Scene1Manager {
         try {
           // Ensure all mesh materials are defined and valid before compiling
           let invalidMeshes = [];
-          this.mainScene.traverse(obj => {
-            if (obj.isMesh) {
-              // Handle single material
-              if (!obj.material || typeof obj.material !== 'object') {
-                invalidMeshes.push(obj);
-                obj.material = new THREE.MeshBasicMaterial({ color: 0xff00ff });
-              } else if (Array.isArray(obj.material)) {
-                // Handle array of materials
-                let replaced = false;
-                obj.material = obj.material.map((mat, idx) => {
-                  if (!mat || typeof mat !== 'object' || typeof mat.isReady !== 'function') {
-                    replaced = true;
-                    invalidMeshes.push({ obj, idx });
-                    return new THREE.MeshBasicMaterial({ color: 0xff00ff });
-                  }
-                  return mat;
-                });
-              }
-            }
-          });
-          if (invalidMeshes.length > 0) {
-            console.warn('[Scene1Manager] Invalid mesh materials found and replaced before compileAsync:', invalidMeshes);
-          }
-          // Defensive: Remove any undefined/invalid material controllers from Sets/arrays in userData for ALL groups in the scene
-          const cleanUserDataSetsAndArrays = (userData, groupName) => {
-            if (!userData) return;
-            for (const key of Object.keys(userData)) {
-              const val = userData[key];
-              if (val instanceof Set) {
-                for (const item of Array.from(val)) {
-                  if (!item || typeof item.isReady !== 'function') {
-                    console.warn(`[Scene1Manager] Removed invalid Set entry from userData.${key} in group ${groupName}:`, item);
-                    val.delete(item);
-                  }
-                }
-              } else if (Array.isArray(val)) {
-                const filtered = val.filter(item => item && typeof item.isReady === 'function');
-                if (filtered.length !== val.length) {
-                  console.warn(`[Scene1Manager] Filtered invalid array entries from userData.${key} in group ${groupName}`);
-                }
-                userData[key] = filtered;
-              }
-            }
-          };
-          // Traverse all groups in the scene
-          this.mainScene.traverse(obj => {
-            if (obj.userData) {
-              cleanUserDataSetsAndArrays(obj.userData, obj.name || obj.uuid);
-            }
-          });
-          if (typeof this.renderer.compileAsync === 'function') {
-            await this.renderer.compileAsync(this.mainScene, this._lastWarmupCamera)
-          } else if (typeof this.renderer.compile === 'function') {
-            this.renderer.compile(this.mainScene, this._lastWarmupCamera)
+          patchMaterials(this.mainScene);
+          // Không còn bất kỳ filter hoặc truy cập .isReady nào với section3TreeMaterialControllers hoặc section3Trees
+          // Không làm gì ở đây nữa để tránh bug cây biến mất hoặc lỗi .isReady
+          // Remove compileAsync entirely; only use compile if available
+          if (typeof this.renderer.compile === 'function') {
+            this.renderer.compile(this.mainScene, this._lastWarmupCamera);
           }
         } catch (err) {
           console.error('[Scene1Manager] Error during compileAsync:', err);
@@ -990,14 +996,12 @@ export class Scene1Manager {
         this.section1TeleportPosition = playerEntry.body.position.clone()
         this.section1TeleportQuaternion = playerEntry.body.quaternion.clone()
       }
-      
       // Create cue stick for player (same as SimulationTest does)
       if (playerEntry.mesh && playerEntry.mesh.userData.createCue) {
         playerEntry.mesh.userData.createCue()
         // Mark that player should have active cue
         playerEntry.mesh.userData.shouldHaveCue = true
       }
-      
       this._initializeScene1Gameplay(playerEntry, mainScene)
     }
     
@@ -2320,7 +2324,7 @@ export class Scene1Manager {
     } else {
       if (this.ambientLight) this.ambientLight.intensity = this.baseAmbientIntensity
       if (this.sunLight) this.sunLight.intensity = this.baseSunIntensity
-      if (this.mainScene?.fog instanceof THREE.Fog) {
+      if (this.mainScene?.fog && this.mainScene.fog instanceof THREE.Fog) {
         this.mainScene.fog.far = SCENE1_CONFIG.sunLightBaseFar
       }
     }
@@ -4294,6 +4298,7 @@ export class Scene1Manager {
         createBody: (physicsMaterials) => {
           const ballShape = ballAsset.physics.shapes?.[0]
           const radius = ballShape ? ballShape.radius : 0.25
+          
           const body = new CANNON.Body({
             mass: ballAsset.physics.mass,
             collisionFilterGroup: COLLISION_GROUPS.BALL,
@@ -4884,7 +4889,7 @@ export class Scene1Manager {
             mass: ballAsset.physics.mass,
             collisionFilterGroup: COLLISION_GROUPS.BALL,
             collisionFilterMask: COLLISION_MASKS.BALL,
-            material: physicsMaterials?.ball || undefined,  // Use ball physics material
+            material: physicsMaterials?.ball || undefined,
             linearDamping: ballAsset.physics.linearDamping || 0.1,
             angularDamping: ballAsset.physics.angularDamping || 0.8
           })
@@ -5048,7 +5053,7 @@ export class Scene1Manager {
       // Calculate spawn position - slightly narrower area like other balls
       const tableWidth = 20
       const tableDepth = 11
-      const shrinkFactor = 0.7 // Narrower spawn area (same as _spawnSingleBall)
+      const shrinkFactor = 0.7 // Narrower spawn area
       const halfW = (tableWidth / 2) * shrinkFactor
       const halfD = (tableDepth / 2) * shrinkFactor
       const x = (Math.random() * 2 - 1) * halfW
@@ -5081,8 +5086,13 @@ export class Scene1Manager {
           
           const body = new CANNON.Body({
             mass: ballAsset.physics.mass,
-            shape: new CANNON.Sphere(radius)
+            collisionFilterGroup: COLLISION_GROUPS.BALL,
+            collisionFilterMask: COLLISION_MASKS.BALL,
+            material: physicsMaterials?.ball || undefined,
+            linearDamping: ballAsset.physics.linearDamping || 0.1,
+            angularDamping: ballAsset.physics.angularDamping || 0.8
           })
+          body.addShape(new CANNON.Sphere(radius))
           return body
         }
       }
@@ -5193,7 +5203,8 @@ export class Scene1Manager {
     }
 
     // ✨ NEW: Start countdown when score reaches 15 (no Guy required)
-    if (this.currentScore >= 15 && !this.elevatorCountdownActive) {
+    // Only trigger in main game (not simulation)
+    if (this.currentScore >= 15 && !this.elevatorCountdownActive && !this._simulationMode) {
       this.elevatorCountdownActive = true
       this.elevatorCountdownTimer = 0
       this._enqueueSectionWarmup('section3', { title: 'Loading Section 3', showReadyOverlay: true })
@@ -5292,7 +5303,9 @@ export class Scene1Manager {
       this.elevatorDoor = this.sceneGroup.getObjectByName('Elevator Door')
     }
 
-    if (!this.elevatorDoor) return
+    if (!this.elevatorDoor) {
+      return
+    }
 
     // Check if door is open
     const animState = this.elevatorDoor.userData.animationState

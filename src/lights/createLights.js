@@ -104,7 +104,7 @@ export function setupSceneLighting(scene, renderer, options = {}) {
 
   if (renderer && config.shadows.enabled) {
     renderer.shadowMap.enabled = true
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap  // Bóng mềm hơn, đẹp hơn và che được răng cưa
+    renderer.shadowMap.type = THREE.PCFShadowMap  // Use supported shadow type
   }
 
   // ======================================================

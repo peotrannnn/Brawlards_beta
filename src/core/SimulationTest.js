@@ -1,4 +1,4 @@
-  // --- PRELOAD & COMPILE SCREEN MAT (hiệu ứng chuyển cảnh) ---
+// --- PRELOAD & COMPILE SCREEN MAT (hiệu ứng chuyển cảnh) ---
   let screenMatMesh = null;
   if (typeof createScreenMatMesh === 'function') {
     screenMatMesh = createScreenMatMesh();
@@ -373,6 +373,15 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
           gameOverScreen.reason = reason
           gameOverScreen.show()
         })
+        // Ensure main game elevator logic is NOT in simulation mode
+        if (typeof currentSceneManager.setSimulationMode === 'function') {
+          currentSceneManager.setSimulationMode(false)
+        }
+      } else {
+        // Simulation mode: allow elevator to open with L key
+        if (typeof currentSceneManager.setSimulationMode === 'function') {
+          currentSceneManager.setSimulationMode(true)
+        }
       }
       
       const guyAsset = objects.find(obj => obj.name === 'Guy')
@@ -1000,6 +1009,11 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
           playerMovement.cueActive = true
           playerMovement.enableInput()
           cameraController.focus(playerEntry.mesh)
+          // Hiện HP bar ngay khi possess player (auto-spawn)
+          if (possessed.name === 'Player') {
+            uiManager.showHPBar(true)
+            uiManager.updateHPBar(possessed.hp, possessed.maxHP)
+          }
         }
       }
       _activeTimeouts.delete(timeoutId)
@@ -1138,6 +1152,11 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
         if (possessed.name === 'Player') {
           playerMovement.cueActive = true
           if (possessed.mesh.userData.createCue) possessed.mesh.userData.createCue()
+          // Hiện HP bar ngay khi possess player (click)
+          if (possessed.name === 'Player') {
+            uiManager.showHPBar(true)
+            uiManager.updateHPBar(possessed.hp, possessed.maxHP)
+          }
         }
         cameraController.focus(entry.mesh)
       }
@@ -1284,7 +1303,8 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
                         if (obj.material) {
                           if (Array.isArray(obj.material)) obj.material.forEach(mat => mat && mat.dispose && mat.dispose());
                           else obj.material.dispose && obj.material.dispose();
-                          obj.material = null;
+                          // Patch: assign fallback invisible material instead of null
+                          obj.material = new THREE.MeshBasicMaterial({ visible: false, color: 0x000000 });
                         }
                       });
                     }
@@ -1406,7 +1426,30 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
 
     if (possessed) {
       playerMovement.update(possessed.body, possessed.mesh, cameraController)
+
+      // --- HP Regen Logic ---
+      if (!possessed._lastDamageTime) possessed._lastDamageTime = performance.now();
+      if (!possessed._lastRegenTime) possessed._lastRegenTime = performance.now();
+      // Nếu vừa nhận sát thương ở nơi khác, hãy cập nhật _lastDamageTime ở đó!
+      // Tự động hồi máu nếu đủ điều kiện
+      const now = performance.now();
+      if (possessed.hp > 0) {
+        // Nếu đã đủ 10s không nhận sát thương
+        if (now - possessed._lastDamageTime > 10000 && possessed.hp < possessed.maxHP) {
+          if (now - possessed._lastRegenTime > 1000) {
+            possessed.hp = Math.min(possessed.maxHP, possessed.hp + 1);
+            possessed._lastRegenTime = now;
+          }
+        } else {
+          // Nếu vừa nhận sát thương, reset timer hồi máu
+          possessed._lastRegenTime = now;
+        }
+      }
+
+      // HP BAR UI: luôn hiện khi nhập vào player (dù hp = 0)
       if (possessed.name === "Player" && hasPlayerCameraAttachment()) {
+        uiManager.showHPBar(true)
+        uiManager.updateHPBar(possessed.hp, possessed.maxHP)
         if (playerMovement.isCharging()) {
           if (playerMovement.cueBody && !playerMovement.cueBody.userData?.hitboxAdded) {
             CollisionManager.addHitboxForObject({ body: playerMovement.cueBody, name: 'Cue', type: 'kinematic' })
@@ -1430,6 +1473,7 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
           uiManager.updatePowerBar(false)
         }
       } else {
+        uiManager.showHPBar(false)
         uiManager.updateChargeIndicator(false)
         uiManager.updateChargeLine(false)
         uiManager.updatePowerBar(false)
@@ -1586,9 +1630,7 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
       if (result && result.touchedTarget && result.touchedTarget !== entry) {
         const target = result.touchedTarget
         const targetName = target.name || ''
-        const isCharacter = ['Player', 'Guy', 'Dude', 'Compune'].includes(targetName)
-        if (isCharacter && typeof destroySystem.destroyCharacter === 'function') destroySystem.destroyCharacter(target)
-        else destroySystem.destroyObject(target)
+        // ĐÃ XOÁ: Không destroy player ngay khi bị bowling ball chạm, chỉ trừ máu qua destroy.js
       }
     })
 

@@ -34,6 +34,8 @@ function createLightStickOff() {
   const root = new THREE.Group()
   root.name = 'Light Stick Off'
 
+
+  // Tạo sẵn material và PointLight cho hiệu ứng glow, tránh clone lại khi Guide nhặt
   const stickMaterial = new THREE.MeshPhysicalMaterial({
     color: LIGHTSTICK_OFF_CONFIG.STICK_COLOR,
     emissive: '#000000',
@@ -57,10 +59,25 @@ function createLightStickOff() {
   stickMesh.name = 'StickMesh'
   root.add(stickMesh)
 
+  // Tạo sẵn PointLight (dùng cho hiệu ứng Guide nhặt)
+  const pointLight = new THREE.PointLight('#00ff00', 0, 5)
+  pointLight.name = 'StickPointLight'
+  pointLight.castShadow = false
+  root.add(pointLight)
+
+  // Đánh dấu đã clone material cho các mesh con
+  stickMesh.userData.guideGlowMaterialCloned = true
+
   root.userData.physics = lightStickOffPhysicsDef
 
   root.userData.update = function(delta) {
     // Intentionally empty: off version has no glow/light animation.
+  }
+
+  // Đánh dấu cache glow cho Guide
+  root.userData.guideGlowCache = {
+    stickMeshes: [stickMesh],
+    pointLight: pointLight
   }
 
   return root

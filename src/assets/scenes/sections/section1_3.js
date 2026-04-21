@@ -58,13 +58,13 @@ const SECTION3_GRASS_DEEP_SOIL_COLOR = new THREE.Color(SECTION3_MASTER_CONFIG.co
 // Grass rendering
 const SECTION3_GRASS_SETTINGS = {
   textureSize: 768,
-  textureRepeat: 4096,
-  bladeTextureSize: 128,
+  textureRepeat: 2048,
+  bladeTextureSize: 32,
   patchCount: 800, // Giảm số cụm cỏ
   bladesPerPatchMin: 80,
   bladesPerPatchMax: 140,
   patchRadiusMin: 1.5,
-  patchRadiusMax: 3,
+  patchRadiusMax: 2,
   edgePadding: 12, // Tăng vùng biên không có cỏ, làm vùng cỏ nhỏ lại
   hoverOffset: 0.035,
   jitter: 0.6,
@@ -853,10 +853,14 @@ function createSection3TreeLod(trees, settings = SECTION3_TREE_LOD_SETTINGS) {
 function applySection3StochasticTexture(material) {
   material.customProgramCacheKey = () => 'section3_stochastic_texture_v4_optimized'
   material.onBeforeCompile = (shader) => {
+    // Thêm uniform groundRotation và section3Transition
+    shader.uniforms.groundRotation = { value: material.userData._groundRotation || 0 }
+    shader.uniforms.section3Transition = { value: 0 }
 
     shader.fragmentShader = shader.fragmentShader.replace(
       '#include <map_pars_fragment>',
       `#include <map_pars_fragment>
+uniform float groundRotation;
 
 // ---- shared helpers ----
 float s3Hash(vec2 p) {
@@ -890,7 +894,8 @@ vec4 s3SampleStochastic(sampler2D tex, vec2 uv) {
     for(int ix=0;ix<=1;ix++) {
       vec2 co  = vec2(float(ix),float(iy));
       vec2 id  = cell + co;
-      float ang = s3Hash(id+vec2(17.31,3.11)) * 6.28318;
+      // Thêm groundRotation vào góc xoay từng tile
+      float ang = s3Hash(id+vec2(17.31,3.11)) * 6.28318 + groundRotation;
       vec2 jit  = (s3Hash2(id+vec2(23.7,71.9)) - 0.5) * 0.22;
       vec2 loc  = fract(g - id);
       if(s3Hash(id+vec2(47.9,59.2)) > 0.5) loc.x = 1.0 - loc.x;
@@ -910,6 +915,11 @@ vec4 s3SampleStochastic(sampler2D tex, vec2 uv) {
 
   // normalized 0..1 across the whole platform
   vec2 worldUv = vMapUv / 720.0;
+  // Áp dụng xoay ngẫu nhiên lên worldUv
+  float s = sin(groundRotation);
+  float c = cos(groundRotation);
+  mat2 rot = mat2(c, -s, s, c);
+  worldUv = rot * (worldUv - 0.5) + 0.5;
 
   // ---- STEP 2: MICRO distortion (small ripples inside each tile) ----
   vec2 tiledUv = worldUv * 720.0;
@@ -940,7 +950,7 @@ vec4 s3SampleStochastic(sampler2D tex, vec2 uv) {
     // Use the red region mask (where macroColor is redder than a threshold)
     float redMask = step(0.6, macroColor.r);
     // Animate emissive intensity based on transition progress (uniform: float section3Transition)
-    float emissiveStrength = redMask * section3Transition * 10.0;
+    float emissiveStrength = redMask * section3Transition * 100.0;
     // Emissive color: vivid red
     vec3 emissiveRed = vec3(1.0, 0.13, 0.13);
     totalEmissiveRadiance += emissiveRed * emissiveStrength;
@@ -992,6 +1002,9 @@ export function createSection3(rootGroup) {
 
   const grassTexture = createGrassNoiseTexture(grassSettings.textureSize)
   grassTexture.repeat.set(grassSettings.textureRepeat, grassSettings.textureRepeat)
+  grassTexture.center.set(0.5, 0.5)
+  // Tạo góc xoay ngẫu nhiên cho nền đất
+  const groundRotation = Math.random() * Math.PI * 2
   const platformMaterial = new THREE.MeshStandardMaterial({
     color: mixGrassColor(0.82),
     map: grassTexture,
@@ -1000,21 +1013,24 @@ export function createSection3(rootGroup) {
     envMapIntensity: 0.0
   })
 
-  // Only patch shader ONCE, never call applySection3StochasticTexture from onBeforeCompile
+  // Patch shader ONCE, truyền groundRotation vào userData để applySection3StochasticTexture sử dụng
+  platformMaterial.userData._groundRotation = groundRotation
   if (!platformMaterial.userData._section3ShaderPatched) {
     applySection3StochasticTexture(platformMaterial)
     platformMaterial.userData._section3ShaderPatched = true
   }
-  // Inject section3Transition uniform for emissive shader logic
-  platformMaterial.onBeforeCompile = (shader) => {
-    shader.uniforms.section3Transition = { value: 0 }
-    platformMaterial.userData.section3Shader = shader
-  }
-  // Helper to update section3Transition value externally
+  // Helper để update section3Transition value từ ngoài
   platformMaterial.userData.setSection3Transition = (t) => {
+    // Tìm shader đã được patch và cập nhật uniform
     if (platformMaterial.userData.section3Shader) {
       platformMaterial.userData.section3Shader.uniforms.section3Transition.value = t
     }
+  }
+  // Lưu shader instance khi patch xong
+  const origOnBeforeCompile = platformMaterial.onBeforeCompile
+  platformMaterial.onBeforeCompile = (shader) => {
+    origOnBeforeCompile(shader)
+    platformMaterial.userData.section3Shader = shader
   }
 
   const platform = new THREE.Mesh(
@@ -1103,7 +1119,6 @@ export function createSection3(rootGroup) {
   const trees = []
   const treeMaterialControllers = new Set()
   treePlacements.forEach((placement, index) => {
-    // Lower tree Y so base is flush with ground (was +0.2)
     const tree = createTreeBillboard(
       new THREE.Vector3(placement.x, SECTION3_CENTER_Y, placement.z),
       placement.treeIndex
@@ -1112,7 +1127,8 @@ export function createSection3(rootGroup) {
     tree.userData.isSection3Tree = true
     tree.userData.initialOpacity = 0 // Start invisible, fade in during transition
     setTreeOpacity(tree, 0)
-    if (tree.userData?.treeMaterialController) {
+    // Đảm bảo controller luôn là object đúng chuẩn
+    if (tree.userData && tree.userData.treeMaterialController && typeof tree.userData.treeMaterialController === 'object') {
       treeMaterialControllers.add(tree.userData.treeMaterialController)
     }
     rootGroup.add(tree)
@@ -1120,10 +1136,9 @@ export function createSection3(rootGroup) {
   })
 
   if (!rootGroup.userData) rootGroup.userData = {}
-  rootGroup.userData.section3Trees = trees
+  rootGroup.userData.section3Trees = trees // KHÔNG filter, giữ nguyên mảng cây
   rootGroup.userData.section3TreeCount = trees.length
-  // Filter out any undefined or invalid controllers (no .isReady)
-  rootGroup.userData.section3TreeMaterialControllers = Array.from(treeMaterialControllers).filter(ctrl => ctrl && typeof ctrl.isReady !== 'undefined')
+  rootGroup.userData.section3TreeMaterialControllers = Array.from(treeMaterialControllers)
   rootGroup.userData.section3TreesVisible = false
   rootGroup.userData.section3TreeLod = createSection3TreeLod(trees, treeLodSettings)
 

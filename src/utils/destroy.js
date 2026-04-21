@@ -197,7 +197,7 @@ export class DestroySystem {
     this.lastUpdateTime = now;
 
     // Check character destroy conditions (Player vs Guy)
-    this.checkCharacterDestroyConditions(delta);
+    this.checkCharacterDestroyConditions(delta, now);
     this._flushDestroyQueue();
 
     const newPlane = this._computePlaneFromTable();
@@ -334,7 +334,36 @@ export class DestroySystem {
    * - Player destroyed: Small trigger chạm small trigger của Guy
    * - Guy destroyed: Không có Player trong vòng large trigger của Guy trong 10 giây
    */
-  checkCharacterDestroyConditions(delta = 0) {
+  /**
+   * Kiểm tra điều kiện destroy và xử lý HP cho Player
+   * @param {number} delta - delta time (s)
+   * @param {number} now - current time (s)
+   */
+  checkCharacterDestroyConditions(delta = 0, now = performance.now() / 1000) {
+      // 5. Bowling Ball: trừ máu liên tục khi chạm (dùng hitbox/body, không dùng trigger zone)
+      // (Moved up to ensure bowlingBalls is initialized before use)
+      const bowlingBalls = this.syncList.filter(e => (e.name === 'Bowling Ball' || e.mesh?.userData?.isBowlingBall) && !this.destroyedCharacters.has(e));
+            // --- Bowling Ball destroys dynamic objects (except player) on hitbox collision ---
+            // For each bowling ball, check collision with all dynamic objects (not player, not itself)
+            // If hitbox overlaps, destroy the object immediately
+            for (const bowling of bowlingBalls) {
+              if (!bowling.body) continue;
+              let bowlingPos = bowling.body.position;
+              let bowlingRadius = bowling.body.shapes?.[0]?.radius || 0.5;
+              for (const entry of this.syncList) {
+                if (!entry || entry === bowling || this.destroyedCharacters.has(entry)) continue;
+                if (entry.name === 'Player') continue; // Don't destroy player here
+                if (!entry.body || entry.body === bowling.body) continue;
+                if (entry.type !== 'dynamic') continue;
+                let entryPos = entry.body.position;
+                let entryRadius = entry.body.shapes?.[0]?.radius || 0.5;
+                if (!entryPos) continue;
+                const dist = bowlingPos.distanceTo(entryPos);
+                if (dist < (bowlingRadius + entryRadius)) {
+                  this.destroyCharacter(entry);
+                }
+              }
+            }
     // Lọc danh sách tất cả Player, Guy, và Compune hiện có (chưa bị destroy)
     const players = this.syncList.filter(e => e.name === 'Player' && !this.destroyedCharacters.has(e));
     const guys = this.syncList.filter(e => e.name === 'Guy' && !this.destroyedCharacters.has(e));
@@ -342,7 +371,7 @@ export class DestroySystem {
 
     this._debugLog(`[destroy] checkCharacterDestroyConditions: ${players.length} players, ${guys.length} guys, ${compunes.length} compunes`);
 
-    // 1. Check Player Destroyed (Nếu Player chạm vào Small Trigger của BẤT KỲ Guy nào)
+    // 1. Guy gây sát thương liên tục khi chạm Player (trừ 1 HP mỗi frame nếu còn chạm)
     for (const guy of guys) {
       const guySmallTrigger = guy.mesh?.children.find(c => c.name === 'TriggerZone_Small');
       if (!guySmallTrigger) continue;
@@ -368,7 +397,23 @@ export class DestroySystem {
 
         const dist = playerPos.distanceTo(guyPos);
         if (dist < (guyRadius + playerRadius)) {
-          this.destroyCharacter(player);
+          // --- HP logic ---
+          // Ensure HP fields are always numbers
+          if (typeof player.hp !== 'number' || isNaN(player.hp)) player.hp = 100;
+          if (typeof player.maxHP !== 'number' || isNaN(player.maxHP)) player.maxHP = 100;
+          player.hp -= 1 * delta * 60; // Trừ 1 HP mỗi frame (giả định 60fps, scale theo delta)
+          player._lastDamageTime = performance.now();
+          // Update HP bar nếu có UIManager
+          if (typeof window !== 'undefined' && window.uiManager) {
+            window.uiManager.updateHPBar(player.hp, player.maxHP);
+          }
+          if (player.hp <= 0) {
+            player.hp = 0;
+            if (typeof window !== 'undefined' && window.uiManager) {
+              window.uiManager.updateHPBar(player.hp, player.maxHP);
+            }
+            this.destroyCharacter(player);
+          }
         }
       }
     }
@@ -424,9 +469,8 @@ export class DestroySystem {
       }
     }
 
-    // 3. Ball 8 Logic: Destroy Player nếu 3+ Ball 8s chạm vào Player's trigger zone
+    // 3. Ball 8 Logic: Nếu 3+ Ball 8s chạm vào Player, trừ 1 HP mỗi frame (liên tục)
     const ball8s = this.syncList.filter(e => e.name === 'Ball 8' && !this.destroyedCharacters.has(e));
-    
     for (const player of players) {
       if (this.destroyedCharacters.has(player)) continue;
 
@@ -457,10 +501,68 @@ export class DestroySystem {
         }
       }
 
-      // Destroy player if 3+ Ball 8s are touching the trigger zone
       if (ball8sInTrigger >= 3) {
-        this._debugLog(`[destroy] Ball 8s attacking! ${ball8sInTrigger} Ball 8s in player trigger - destroying player`);
-        this.destroyCharacter(player);
+        player.hp -= 1 * delta * 60; // Trừ 1 HP mỗi frame (giả định 60fps, scale theo delta)
+        player._lastDamageTime = performance.now();
+        if (typeof window !== 'undefined' && window.uiManager) {
+          window.uiManager.updateHPBar(player.hp, player.maxHP);
+        }
+        if (player.hp <= 0) {
+          player.hp = 0;
+          if (typeof window !== 'undefined' && window.uiManager) {
+            window.uiManager.updateHPBar(player.hp, player.maxHP);
+          }
+          this._debugLog(`[destroy] Ball 8s attacking! ${ball8sInTrigger} Ball 8s in player trigger - destroying player`);
+          this.destroyCharacter(player);
+        }
+      }
+    }
+    // 5. Bowling Ball: trừ máu liên tục khi chạm (giống Guy/Ball 8, không cooldown)
+    for (const player of players) {
+      if (this.destroyedCharacters.has(player)) continue;
+
+      // Lấy vị trí và bán kính của Player (ưu tiên dùng trigger nếu có)
+      let playerPos = player.mesh.position;
+      let playerRadius = 0.5;
+      const playerSmallTrigger = player.mesh?.children?.find(c => c.name === 'TriggerZone_Small');
+      if (playerSmallTrigger) {
+        const pPos = this._tmpPlayerPos;
+        playerSmallTrigger.getWorldPosition(pPos);
+        playerPos = pPos;
+        playerRadius = playerSmallTrigger.geometry?.parameters?.radius || 1.5;
+      }
+
+      for (const bowling of bowlingBalls) {
+        // Lấy vị trí và bán kính của Bowling Ball (ưu tiên dùng trigger nếu có)
+        let bowlingPos = bowling.mesh?.position;
+        let bowlingRadius = 0.5;
+        const bowlingSmallTrigger = bowling.mesh?.children?.find(c => c.name === 'TriggerZone_Small');
+        if (bowlingSmallTrigger) {
+          const bPos = this._tmpBall8Pos; // reuse temp vector
+          bowlingSmallTrigger.getWorldPosition(bPos);
+          bowlingPos = bPos;
+          bowlingRadius = bowlingSmallTrigger.geometry?.parameters?.radius || 1.5;
+        }
+        if (!bowlingPos) continue;
+        const dist = playerPos.distanceTo(bowlingPos);
+        if (dist < (bowlingRadius + playerRadius)) {
+          // Ensure HP fields are always numbers
+          if (typeof player.hp !== 'number' || isNaN(player.hp)) player.hp = 100;
+          if (typeof player.maxHP !== 'number' || isNaN(player.maxHP)) player.maxHP = 100;
+          // Trừ máu liên tục khi chạm (giống Guy, 1 HP mỗi frame ở 60fps)
+          player.hp -= 1 * delta * 60;
+          player._lastDamageTime = performance.now();
+          if (typeof window !== 'undefined' && window.uiManager) {
+            window.uiManager.updateHPBar(player.hp, player.maxHP);
+          }
+          if (player.hp <= 0) {
+            player.hp = 0;
+            if (typeof window !== 'undefined' && window.uiManager) {
+              window.uiManager.updateHPBar(player.hp, player.maxHP);
+            }
+            this.destroyCharacter(player);
+          }
+        }
       }
     }
 
@@ -491,6 +593,8 @@ export class DestroySystem {
     // Remove from player fall tracking if it's a player
     if (characterName === 'Player') {
       this.playerFallTracking.delete(character);
+      // Đặt HP về 0 khi destroy
+      character.hp = 0;
     }
     
     // Clean up all AI controller references if present on this system

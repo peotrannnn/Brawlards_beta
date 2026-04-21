@@ -1,15 +1,16 @@
 import * as THREE from 'three'
 
 /**
- * UIManager - Quản lý tất cả UI elements
+ * UIManager - Manages all UI elements
  * 
- * Trách nhiệm:
- * - Tạo và quản lý crosshair
- * - Tạo và quản lý power bar (vòng tròn charging)
- * - Tạo và quản lý charge indicator (chỉ vị trí bắn)
- * - Tạo và quản lý charge line (đường kéo cue)
+ * Responsibilities:
+ * - Create and manage crosshair
+ * - Create and manage power bar (charging circle)
+ * - Create and manage charge indicator (shows hit position)
+ * - Create and manage charge line (drag cue line)
+ * - Create and manage HP bar (simple rectangle that changes color)
  * 
- * Tách biệt khỏi camera controller để dễ bảo trì và debug
+ * Separated from camera controller for easier maintenance and debugging
  */
 
 const UI_CONFIG = {
@@ -20,37 +21,46 @@ const UI_CONFIG = {
   CROSSHAIR_Z_INDEX: '9999',
   CHARGE_INDICATOR_COLOR: '#00ff00',
   POWER_BAR_Z_INDEX: '9999',
-  CHARGE_LINE_Z_INDEX: '9998'
+  CHARGE_LINE_Z_INDEX: '9998',
+  HP_BAR_Z_INDEX: '9999',
+  HP_BAR_WIDTH: 100,
+  HP_BAR_HEIGHT: 1,
+  HP_BAR_BG: '#333333',
+  HP_BAR_BORDER: '1px solid #000000',
+  HP_TRANSITION_DURATION: '0.2s' // Thời gian chuyển màu
 }
 
 export class UIManager {
   constructor() {
-    this.camera = null  // Set later từ SimulationTest
+    this.camera = null
     this.elements = {
       crosshair: null,
       powerBarContainer: null,
       powerBarPath: null,
       chargeIndicator: null,
       chargeLine: null,
-      spectatorUI: null  // ✨ Spectator UI element
+      spectatorUI: null,
+      hpBar: null,
+      hpFill: null
     }
     
     this._createUIElements()
   }
 
   /**
-   * Set camera reference - cần để project world positions sang screen
+   * Set camera reference - needed to project world positions to screen
    */
   setCamera(camera) {
     this.camera = camera
   }
 
   /**
-   * Tạo tất cả UI elements
+   * Create all UI elements
    */
   _createUIElements() {
+      // ...existing code...
     // ========================================
-    // CROSSHAIR (dấu cộng giữa màn hình)
+    // CROSSHAIR (plus sign at screen center)
     // ========================================
     const crosshair = document.createElement('div')
     crosshair.style.position = 'fixed'
@@ -69,7 +79,7 @@ export class UIManager {
     this.elements.crosshair = crosshair
 
     // ========================================
-    // POWER BAR (vòng tròn charging)
+    // POWER BAR (charging circle)
     // ========================================
     const powerBarContainer = document.createElement('div')
     powerBarContainer.style.position = 'fixed'
@@ -107,7 +117,7 @@ export class UIManager {
     spectatorUI.style.position = 'fixed'
     spectatorUI.style.top = '50%'
     spectatorUI.style.left = '50%'
-    spectatorUI.style.transform = 'translate(-50%, calc(-50% + 40px))'  // ✨ Dưới dấu +
+    spectatorUI.style.transform = 'translate(-50%, calc(-50% + 40px))'
     spectatorUI.style.fontSize = '10px'
     spectatorUI.style.fontFamily = 'monospace'
     spectatorUI.style.pointerEvents = 'none'
@@ -116,12 +126,12 @@ export class UIManager {
     spectatorUI.style.textAlign = 'center'
     spectatorUI.style.whiteSpace = 'nowrap'
     spectatorUI.style.textShadow = '1px 1px 2px black'
-    spectatorUI.innerHTML = 'C to enter cam'  // ✨ Chỉ có text, không có dấu +
+    spectatorUI.innerHTML = 'C to enter cam'
     document.body.appendChild(spectatorUI)
     this.elements.spectatorUI = spectatorUI
 
     // ========================================
-    // CHARGE INDICATOR (chỉ vị trí bắn "Hit here")
+    // CHARGE INDICATOR (shows "Hit here" position)
     // ========================================
     const chargeIndicator = document.createElement('div')
     chargeIndicator.style.position = 'fixed'
@@ -151,7 +161,7 @@ export class UIManager {
     this.elements.chargeIndicator = chargeIndicator
 
     // ========================================
-    // CHARGE LINE (đường kéo cue)
+    // CHARGE LINE (drag cue line)
     // ========================================
     const chargeLine = document.createElement('div')
     chargeLine.style.position = 'fixed'
@@ -163,20 +173,45 @@ export class UIManager {
     chargeLine.style.transformOrigin = '0 50%'
     document.body.appendChild(chargeLine)
     this.elements.chargeLine = chargeLine
+
+    // ========================================
+    // HP BAR (simple rectangle, no rounded corners, no effects)
+    // ========================================
+    const hpBar = document.createElement('div')
+    hpBar.style.position = 'fixed'
+    hpBar.style.left = '50%'
+    hpBar.style.bottom = '30px'
+    hpBar.style.transform = 'translateX(-50%)'
+    hpBar.style.width = UI_CONFIG.HP_BAR_WIDTH + 'px'
+    hpBar.style.height = UI_CONFIG.HP_BAR_HEIGHT + 'px'
+    hpBar.style.backgroundColor = UI_CONFIG.HP_BAR_BG
+    hpBar.style.border = UI_CONFIG.HP_BAR_BORDER
+    hpBar.style.display = 'none'
+    hpBar.style.zIndex = UI_CONFIG.HP_BAR_Z_INDEX
+    hpBar.style.overflow = 'hidden'
+
+    const hpFill = document.createElement('div')
+    hpFill.style.height = '100%'
+    hpFill.style.width = '100%'
+    hpFill.style.backgroundColor = '#66bb6a'
+    hpFill.style.transition = `width ${UI_CONFIG.HP_TRANSITION_DURATION} ease-out, background-color ${UI_CONFIG.HP_TRANSITION_DURATION} ease-out`
+
+    hpBar.appendChild(hpFill)
+    document.body.appendChild(hpBar)
+    
+    this.elements.hpBar = hpBar
+    this.elements.hpFill = hpFill
   }
 
   /**
-   * Hiển thị/ẩn crosshair (dấu cộng giữa màn hình)
+   * Show/hide crosshair (plus sign at screen center)
    */
   showCrosshair(visible = true) {
     this.elements.crosshair.style.display = visible ? 'block' : 'none'
   }
 
   /**
-   * Cập nhật charge indicator (chỉ "Hit here" ở vị trí bắn)
-   * @param {boolean} visible - Hiển thị hay không
-   * @param {THREE.Vector3} worldPosition - Vị trí trong world space
-   * @param {THREE.Camera} camera - Camera để project sang screen space
+   * Update charge indicator (shows "Hit here" at shoot position)
    */
   updateChargeIndicator(visible, worldPosition, camera = null) {
     const cam = camera || this.camera
@@ -189,7 +224,6 @@ export class UIManager {
     const vector = worldPosition.clone()
     vector.project(cam)
 
-    // Nếu object đằng sau camera thì ẩn
     if (vector.z > 1) {
       this.elements.chargeIndicator.style.display = 'none'
       return
@@ -204,9 +238,7 @@ export class UIManager {
   }
 
   /**
-   * Cập nhật power bar (vòng tròn charging)
-   * @param {boolean} visible - Hiển thị hay không
-   * @param {number} chargeAmount - Lượng charge (0-1)
+   * Update power bar (charging circle)
    */
   updatePowerBar(visible, chargeAmount) {
     if (!visible || chargeAmount === undefined) {
@@ -218,7 +250,6 @@ export class UIManager {
     const percentage = t * 100
     this.elements.powerBarPath.style.strokeDasharray = `${percentage}, 100`
 
-    // Color gradient: Green → Yellow → Red → Purple
     let r, g, b
     if (t < 0.33) {
       const localT = t / 0.33
@@ -242,11 +273,7 @@ export class UIManager {
   }
 
   /**
-   * Cập nhật charge line (đường kéo từ cue tip tới target)
-   * @param {boolean} visible - Hiển thị hay không
-   * @param {THREE.Vector3} startWorldPos - Vị trí bắt đầu (cue tip)
-   * @param {THREE.Vector3} endWorldPos - Vị trí kết thúc (target)
-   * @param {THREE.Camera} camera - Camera để project sang screen space
+   * Update charge line (drag line from cue tip to target)
    */
   updateChargeLine(visible, startWorldPos, endWorldPos, camera = null) {
     const cam = camera || this.camera
@@ -259,7 +286,6 @@ export class UIManager {
     const startVec = startWorldPos.clone().project(cam)
     const endVec = endWorldPos.clone().project(cam)
 
-    // Nếu cả hai điểm đằng sau camera thì ẩn
     if (startVec.z > 1 || endVec.z > 1) {
       this.elements.chargeLine.style.display = 'none'
       return
@@ -283,49 +309,134 @@ export class UIManager {
   }
 
   /**
-   * Reset tất cả UI về trạng thái ẩn
+   * Reset all UI to hidden state
    */
   reset() {
     this.showCrosshair(false)
     this.updateChargeIndicator(false)
     this.updatePowerBar(false)
     this.updateChargeLine(false)
+    this.showHPBar(false)
   }
 
   /**
-   * ✨ Hide all player UI (charge bar, indicator, line)
-   * Called when exiting player camera
+   * Hide all player UI (charge bar, indicator, line)
    */
   hidePlayerUI() {
     this.elements.crosshair.style.display = 'none'
     this.elements.powerBarContainer.style.display = 'none'
     this.elements.chargeIndicator.style.display = 'none'
     this.elements.chargeLine.style.display = 'none'
+    this.showHPBar(false)
   }
 
   /**
-   * ✨ Show spectator UI with camera controls hint
-   * Called when in spectator mode
-   * @param {boolean} pointerLocked - Whether camera is in pointer lock mode
+   * Show/hide HP bar - always visible when camera attaches to player
+   */
+  showHPBar(visible = true, hp = null, maxHP = null) {
+    this.elements.hpBar.style.display = visible ? 'block' : 'none'
+    // Always update HP bar fill and color to match the latest values when showing
+    if (visible) {
+      // If values are not provided, try to keep the current fill
+      if (typeof hp === 'number' && typeof maxHP === 'number') {
+        this.updateHPBar(hp, maxHP)
+      }
+    }
+  }
+
+  /**
+   * Helper function: Interpolate between two RGB colors
+   * @param {number} t - Interpolation factor (0 to 1)
+   * @param {Object} color1 - First color {r, g, b}
+   * @param {Object} color2 - Second color {r, g, b}
+   * @returns {string} RGB color string
+   */
+  _interpolateColor(t, color1, color2) {
+    const r = Math.floor(color1.r + (color2.r - color1.r) * t)
+    const g = Math.floor(color1.g + (color2.g - color1.g) * t)
+    const b = Math.floor(color1.b + (color2.b - color1.b) * t)
+    return `rgb(${r}, ${g}, ${b})`
+  }
+
+  /**
+   * Get color based on health percentage with smooth gradient
+   * Chuyển màu từ XANH DƯƠNG -> VÀNG -> ĐỎ
+   * @param {number} percentage - Health percentage (0 to 1)
+   * @returns {string} RGB color string
+   */
+  _getHealthColor(percentage) {
+    const colors = [
+    { pos: 0.0, r: 239, g: 83,  b: 80  }, // Đỏ mềm (không gắt)
+    { pos: 0.5, r: 255, g: 202, b: 40  }, // Vàng ấm
+    { pos: 1.0, r: 102, g: 187, b: 106 }  // Xanh lá dịu
+  ]
+    
+    if (percentage <= 0) {
+      return `rgb(${colors[0].r}, ${colors[0].g}, ${colors[0].b})`
+    }
+    
+    if (percentage >= 1) {
+      return `rgb(${colors[colors.length - 1].r}, ${colors[colors.length - 1].g}, ${colors[colors.length - 1].b})`
+    }
+    
+    // Tìm hai màu để nội suy
+    for (let i = 0; i < colors.length - 1; i++) {
+      if (percentage <= colors[i + 1].pos) {
+        const color1 = colors[i]
+        const color2 = colors[i + 1]
+        
+        // Tính toán hệ số nội suy giữa hai điểm màu
+        const range = color2.pos - color1.pos
+        const t = (percentage - color1.pos) / range
+        
+        return this._interpolateColor(t, color1, color2)
+      }
+    }
+    
+    // Fallback
+    return `rgb(${colors[colors.length - 1].r}, ${colors[colors.length - 1].g}, ${colors[colors.length - 1].b})`
+  }
+
+  /**
+   * Update HP bar - smooth color transition based on health percentage
+   * Màu sắc chuyển mượt: Xanh dương (full HP) -> Vàng -> Đỏ (0 HP)
+   */
+  updateHPBar(hp, maxHP = 100, wasDamaged = false) {
+    if (typeof hp !== 'number' || typeof maxHP !== 'number') return
+
+    const percentage = Math.max(0, Math.min(1, hp / maxHP))
+    const widthPercent = percentage * 100
+
+    // Cập nhật chiều rộng với transition mượt
+    this.elements.hpFill.style.width = widthPercent + '%'
+
+    // Lấy màu gradient mượt dựa trên phần trăm HP
+    const color = this._getHealthColor(percentage)
+    this.elements.hpFill.style.backgroundColor = color
+
+    // ...existing code...
+  }
+
+  // ...existing code...
+
+  /**
+   * Show spectator UI with camera controls hint
    */
   showSpectatorUI(pointerLocked = false) {
-    // ✨ Hide spectator UI text completely - default state shows no hint
     if (!pointerLocked) {
-      // Camera not locked - no text needed
       this.elements.spectatorUI.style.display = 'none'
     }
   }
 
   /**
-   * ✨ Hide spectator UI
-   * Called when focusing on a game object
+   * Hide spectator UI
    */
   hideSpectatorUI() {
     this.elements.spectatorUI.style.display = 'none'
   }
 
   /**
-   * Cleanup - xóa tất cả elements khỏi DOM
+   * Cleanup - remove all elements from DOM
    */
   dispose() {
     Object.values(this.elements).forEach(element => {

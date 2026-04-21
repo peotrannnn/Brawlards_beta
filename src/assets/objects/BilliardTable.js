@@ -349,17 +349,17 @@ const cushionMaterial = new THREE.MeshStandardMaterial({
 // HÀM TẠO RAIL BOX
 // ======================================================
 
+
 function createRail(x, z, w, d) {
-
+  // Always assign a valid material
+  const safeMaterial = new THREE.MeshStandardMaterial({ color: 0x8B5A2B, roughness: 0.7, metalness: 0.2 });
   const mesh = new THREE.Mesh(
-    new THREE.BoxGeometry(w, railHeight, d)
-  )
-
-  mesh.position.set(x, railY, z)
-  mesh.updateMatrix()
-
-  return mesh
-
+    new THREE.BoxGeometry(w, railHeight, d),
+    safeMaterial
+  );
+  mesh.position.set(x, railY, z);
+  mesh.updateMatrix();
+  return mesh;
 }
 
 // ======================================================
