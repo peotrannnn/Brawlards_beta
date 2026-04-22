@@ -1031,14 +1031,14 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
     if (table && table.userData && table.userData.tableDimensions) {
       baseY = table.userData.tableDimensions.topY || 0
     }
-    spawnerSpawnRandom({ scene, dynamicPrefabs: spawnableDynamicPrefabs, world, physicsMaterials, syncList, particleManager, height: 12, baseY })
+    spawnerSpawnRandom({ scene, dynamicPrefabs: spawnableDynamicPrefabs, world, physicsMaterials, syncList, particleManager, height: 12, baseY, fakeShadowManager })
   }
 
   function spawnSelected(index) {
     const prefab = spawnableDynamicPrefabs[index]
     if (!prefab) return
     const pos = randomPositionAboveTable(8)
-    spawnerSpawn({ scene, prefab, position: pos, world, physicsMaterials, syncList, particleManager })
+    spawnerSpawn({ scene, prefab, position: pos, world, physicsMaterials, syncList, particleManager, fakeShadowManager })
   }
 
   let spawnIntervalId = null
