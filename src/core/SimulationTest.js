@@ -387,7 +387,8 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
       const guyAsset = objects.find(obj => obj.name === 'Guy')
       if (guyAsset) {
         currentSceneManager.initializeSpawning(
-          spawnerSpawn, guyAsset, world, physicsMaterials, syncList,
+          (args) => spawnerSpawn({ ...args, fakeShadowManager }),
+          guyAsset, world, physicsMaterials, syncList,
           particleManager, SIMULATION_CONFIG, renderer
         )
       }

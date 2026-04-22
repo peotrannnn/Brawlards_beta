@@ -920,6 +920,12 @@ export class Scene1Manager {
     this.particleManager = particleManager
     this.SIMULATION_CONFIG = simulationConfig
     this.renderer = renderer
+    // Lưu fakeShadowManager nếu có
+    if (renderer && renderer.fakeShadowManager) {
+      this.fakeShadowManager = renderer.fakeShadowManager;
+    } else if (typeof FakeShadowManager !== 'undefined' && this.mainScene && this.mainScene.fakeShadowManager) {
+      this.fakeShadowManager = this.mainScene.fakeShadowManager;
+    }
 
     if (!this.screenMat) {
       this.screenMat = new ScreenMat(document.body)
@@ -983,7 +989,8 @@ export class Scene1Manager {
       world: this.world,
       physicsMaterials: this.physicsMaterials,
       syncList: this.syncList,
-      particleManager: this.particleManager
+      particleManager: this.particleManager,
+      fakeShadowManager: this.fakeShadowManager || null
     })
 
     // Find spawned player in syncList and return it

@@ -56,6 +56,7 @@ export function spawnObject({
   physicsMaterials,
   syncList,
   particleManager,
+  fakeShadowManager = null, // optional, for fake shadow
   destroySystem = null // optional, for despawn
 }) {
   // --- Only allow one instance for certain types ---
@@ -68,7 +69,7 @@ export function spawnObject({
         if (destroySystem && typeof destroySystem.destroyObject === 'function') {
           destroySystem.destroyObject(entry);
         } else if (typeof returnObjectToPool === 'function') {
-          returnObjectToPool(entry, scene, world);
+          returnObjectToPool(entry, scene, world, fakeShadowManager);
         }
         // Remove from syncList
         syncList.splice(i, 1);
@@ -89,6 +90,10 @@ export function spawnObject({
       // Reset transforms if needed
       entry.mesh.rotation.set(0, 0, 0);
       entry.mesh.scale.set(1, 1, 1);
+      // Nếu có fakeShadowManager và mesh có shadowConfig thì add lại fake shadow
+      if (fakeShadowManager && entry.mesh.userData && entry.mesh.userData.shadowConfig) {
+        fakeShadowManager.addShadow(entry.mesh, entry.mesh.userData.shadowConfig);
+      }
     }
     // Reactivate body
     if (entry.body) {
@@ -132,6 +137,10 @@ export function spawnObject({
     mesh.userData.spawnCategory = spawnCategory;
 
     entry = { mesh, body, type: prefab.type, name: prefab.name, spawnCategory };
+    // Nếu có fakeShadowManager và mesh có shadowConfig thì add lại fake shadow
+    if (fakeShadowManager && mesh.userData && mesh.userData.shadowConfig) {
+      fakeShadowManager.addShadow(mesh, mesh.userData.shadowConfig);
+    }
   }
 
   // --- Reset state for unique types ---
@@ -186,12 +195,16 @@ export function spawnObject({
  * Trả object về pool thay vì xóa hoàn toàn
  * Gọi trong destroy logic (destroy.js)
  */
-export function returnObjectToPool(entry, scene, world) {
+export function returnObjectToPool(entry, scene, world, fakeShadowManager = null) {
   if (!entry) return;
   // Remove from scene/world
   if (entry.mesh) {
     entry.mesh.visible = false;
     scene.remove(entry.mesh);
+    // Nếu có fakeShadowManager thì remove fake shadow
+    if (fakeShadowManager) {
+      fakeShadowManager.removeShadow(entry.mesh);
+    }
   }
   if (entry.body) {
     world.removeBody(entry.body);
