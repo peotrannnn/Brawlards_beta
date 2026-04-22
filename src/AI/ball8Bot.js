@@ -1,10 +1,42 @@
 import * as THREE from 'three'
 import * as CANNON from 'cannon-es'
 import { BALL8_AI_CONFIG } from '../assets/objects/BallFactory.js'
+import { createDestroyParticleEffect } from '../effects/particles/particle17.js'
 
 // Ball8AI uses config from BallFactory.js (the source of truth)
 
 export class Ball8AI {
+    /**
+     * Dispose Ball8AI: clean up all effects and memory
+     * Call this when Ball 8 is destroyed or removed from scene
+     */
+    dispose() {
+      this.cleanupParticles();
+      // Add more cleanup if needed in future
+    }
+
+    /**
+     * Clean up all particle effects (destroy, sweat, etc) for this Ball 8
+     * Call this when Ball 8 is destroyed or reset to avoid memory leaks
+     */
+    cleanupParticles() {
+      if (this._destroyParticleEffect) {
+        try { this._destroyParticleEffect.dispose(); } catch (e) {}
+        this._destroyParticleEffect = null;
+      }
+      // If you add more custom particles, clean them here
+    }
+
+    /**
+     * Update all custom particles (destroy, sweat, etc) every frame
+     * Call this in update() to animate effects
+     */
+    updateParticles(delta) {
+      if (this._destroyParticleEffect && typeof this._destroyParticleEffect.update === 'function') {
+        this._destroyParticleEffect.update(delta);
+      }
+      // Add more custom effect updates here if needed
+    }
   /**
    * BALL 8 AI SYSTEM
    * ================
@@ -492,21 +524,32 @@ export class Ball8AI {
    */
   updateFatigueState(delta) {
     this.fatigueTimer += delta
-    
-    const targetDuration = this.isFatigued 
-      ? this.fatigueTiredDuration 
+
+    const targetDuration = this.isFatigued
+      ? this.fatigueTiredDuration
       : this.fatigueNormalDuration
-    
+
+    // Detect fatigue state change
     if (this.fatigueTimer >= targetDuration) {
       this.isFatigued = !this.isFatigued
       this.fatigueTimer = 0
       console.debug(`[Ball8AI] Ball fatigue state changed: ${this.isFatigued ? 'TIRED' : 'NORMAL'}`)
+
+      // Trigger Destroy! particle effect when entering fatigue
+      if (this.isFatigued && this.scene && this.mesh) {
+        if (!this._destroyParticleEffect) {
+          this._destroyParticleEffect = createDestroyParticleEffect(this.scene, this.mesh)
+        }
+      } else if (!this.isFatigued) {
+        // Remove the effect when leaving fatigue
+        this.cleanupParticles()
+      }
     }
 
     // ===== CONTINUOUS SWEAT SPAWNING WHILE FATIGUED =====
     if (this.isFatigued && this.particleManager && this.mesh) {
       this.sweatSpawnTimer -= delta
-      
+
       if (this.sweatSpawnTimer <= 0) {
         this.particleManager.spawn('sweat', this.mesh.position.clone())
         this.sweatSpawnTimer = this.sweatSpawnInterval  // Reset timer
@@ -658,6 +701,7 @@ export class Ball8AI {
    * Returns bodyYaw or null
    */
   update(delta, syncList) {
+      this.updateParticles(delta);
     this.timeAlive += delta
     this.isAngry = false
 

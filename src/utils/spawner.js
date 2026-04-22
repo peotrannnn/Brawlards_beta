@@ -4,6 +4,19 @@ import { TABLE_WIDTH, TABLE_DEPTH } from "../assets/objects/BilliardTable.js"
 import { CollisionManager } from './collisionManager.js'
 import { COLLISION_GROUPS } from '../physics/physicsHelper.js'
 
+// --- Simple Object Pool ---
+// Key: prefab.name, Value: Array of pooled entries
+const _objectPools = new Map();
+
+export function getObjectPool(prefabName) {
+  if (!_objectPools.has(prefabName)) _objectPools.set(prefabName, []);
+  return _objectPools.get(prefabName);
+}
+
+export function clearAllObjectPools() {
+  _objectPools.clear();
+}
+
 function inferSpawnCategory(prefab, body) {
   if (prefab?.spawnCategory === 'item' || prefab?.spawnCategory === 'gameObject') {
     return prefab.spawnCategory
@@ -42,49 +55,152 @@ export function spawnObject({
   world,
   physicsMaterials,
   syncList,
-  particleManager
+  particleManager,
+  destroySystem = null // optional, for despawn
 }) {
-  const mesh = prefab.createMesh()
-  scene.add(mesh)
-  mesh.position.copy(position)
-
-  const spawnCategoryFromPrefab = prefab?.spawnCategory
-
-  // Keep item spawns lightweight: shadows on tiny collectibles are costly and not gameplay-critical.
-  const shouldApplyShadowTraversal = spawnCategoryFromPrefab !== 'item'
-  if (shouldApplyShadowTraversal) {
-    mesh.traverse(child => {
-      if (child.isMesh) {
-        child.castShadow = true
-        child.receiveShadow = true
+  // --- Only allow one instance for certain types ---
+  const uniqueTypes = ['Bowling Ball', 'Guy', 'Dude', 'Player'];
+  if (uniqueTypes.includes(prefab.name) && Array.isArray(syncList)) {
+    for (let i = syncList.length - 1; i >= 0; i--) {
+      const entry = syncList[i];
+      if (entry && entry.name === prefab.name) {
+        // Despawn old instance
+        if (destroySystem && typeof destroySystem.destroyObject === 'function') {
+          destroySystem.destroyObject(entry);
+        } else if (typeof returnObjectToPool === 'function') {
+          returnObjectToPool(entry, scene, world);
+        }
+        // Remove from syncList
+        syncList.splice(i, 1);
       }
-    })
+    }
+  }
+  // Try to reuse from pool
+  const pool = getObjectPool(prefab.name);
+
+  let entry = null;
+  if (pool.length > 0) {
+    entry = pool.pop();
+    // Reactivate mesh
+    if (entry.mesh) {
+      scene.add(entry.mesh);
+      entry.mesh.visible = true;
+      entry.mesh.position.copy(position);
+      // Reset transforms if needed
+      entry.mesh.rotation.set(0, 0, 0);
+      entry.mesh.scale.set(1, 1, 1);
+    }
+    // Reactivate body
+    if (entry.body) {
+      entry.body.position.copy(position);
+      entry.body.velocity.set(0, 0, 0);
+      entry.body.angularVelocity.set(0, 0, 0);
+      entry.body.quaternion.set(0, 0, 0, 1);
+      entry.body.wakeUp?.();
+      world.addBody(entry.body);
+    }
+    entry._pooled = false;
+  } else {
+    // Create new
+    const mesh = prefab.createMesh();
+    scene.add(mesh);
+    mesh.position.copy(position);
+
+    const spawnCategoryFromPrefab = prefab?.spawnCategory;
+    // Keep item spawns lightweight: shadows on tiny collectibles are costly and not gameplay-critical.
+    const shouldApplyShadowTraversal = spawnCategoryFromPrefab !== 'item';
+    if (shouldApplyShadowTraversal) {
+      mesh.traverse(child => {
+        if (child.isMesh) {
+          child.castShadow = true;
+          child.receiveShadow = true;
+        }
+      });
+    }
+
+    const body = prefab.createBody(physicsMaterials);
+    if (body) {
+      body.position.copy(position);
+      body.name = prefab.name || mesh.name;
+      body.userData = body.userData || {};
+      body.userData.spawnCategory = inferSpawnCategory(prefab, body);
+      world.addBody(body);
+    }
+
+    const spawnCategory = inferSpawnCategory(prefab, body);
+    mesh.userData = mesh.userData || {};
+    mesh.userData.spawnCategory = spawnCategory;
+
+    entry = { mesh, body, type: prefab.type, name: prefab.name, spawnCategory };
   }
 
-  const body = prefab.createBody(physicsMaterials)
-  if (body) {
-    body.position.copy(position)
-    body.name = prefab.name || mesh.name
-    body.userData = body.userData || {}
-    body.userData.spawnCategory = inferSpawnCategory(prefab, body)
-    world.addBody(body)
+  // --- Reset state for unique types ---
+  const resetUnique = ['Player', 'Guy', 'Dude', 'Bowling Ball'];
+  if (entry && resetUnique.includes(entry.name)) {
+    // --- Common resets ---
+    entry._destroyFxSpawned = false;
+    if (entry.mesh && entry.mesh.userData) {
+      entry.mesh.userData._cachedCarriedFlag = false;
+    }
+    if (entry.body && entry.body.userData) {
+      entry.body.userData.isCollectedItem = false;
+      entry.body.userData.hasBeenCollectedOnce = false;
+    }
+
+    // --- Player specific ---
+    if (entry.name === 'Player') {
+      entry.hp = 100;
+      entry.maxHP = 100;
+      entry._isWalking = false;
+      entry._lastDamageTime = 0;
+      // Reset animation (chân)
+      if (entry.mesh) {
+        entry.mesh.traverse(child => {
+          if (child.userData && child.userData.isLeg) child.rotation.x = 0;
+        });
+      }
+    }
+    // --- Guy/Dude specific: reset AI/bot state nếu có ---
+    if ((entry.name === 'Guy' || entry.name === 'Dude') && entry.bot) {
+      if (typeof entry.bot.resetState === 'function') entry.bot.resetState();
+      // Nếu có biến phase, reset về mặc định
+      if ('phase' in entry.bot) entry.bot.phase = 0;
+    }
+    // --- Bowling Ball: reset các biến đặc biệt nếu có ---
+    if (entry.name === 'Bowling Ball') {
+      // Thêm reset nếu có thuộc tính đặc biệt
+    }
   }
 
-  const spawnCategory = inferSpawnCategory(prefab, body)
-  mesh.userData = mesh.userData || {}
-  mesh.userData.spawnCategory = spawnCategory
-
-  const entry = { mesh, body, type: prefab.type, name: prefab.name, spawnCategory }
-  syncList.push(entry)
-
-  CollisionManager.addHitboxForObject(entry)
+  syncList.push(entry);
+  CollisionManager.addHitboxForObject(entry);
 
   // spawn a little smoke when object appears
   if (particleManager && particleManager.spawn) {
-    particleManager.spawn('smoke', position.clone())
+    particleManager.spawn('smoke', position.clone());
   }
 
-  return entry
+  return entry;
+}
+/**
+ * Trả object về pool thay vì xóa hoàn toàn
+ * Gọi trong destroy logic (destroy.js)
+ */
+export function returnObjectToPool(entry, scene, world) {
+  if (!entry) return;
+  // Remove from scene/world
+  if (entry.mesh) {
+    entry.mesh.visible = false;
+    scene.remove(entry.mesh);
+  }
+  if (entry.body) {
+    world.removeBody(entry.body);
+  }
+  // Đánh dấu đã trả về pool
+  entry._pooled = true;
+  // Đưa vào pool theo tên prefab
+  const pool = getObjectPool(entry.name);
+  pool.push(entry);
 }
 
 export function spawnRandom({

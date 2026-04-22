@@ -18,6 +18,7 @@ import { getBabyOilAsset } from "../assets/items/babyOil.js"
 import { getLightStickAsset } from "../assets/items/lightStick.js"
 import { getLightStickOffAsset } from "../assets/items/lightStickOff.js"
 import { getSilverCoinAsset } from "../assets/items/silverCoin.js"
+import { getM4A1Asset } from "../assets/items/M4A1.js"
 
 // ==================== CONFIGURATION ====================
 const IT_STYLE = {
@@ -224,6 +225,7 @@ export function createInspector(renderer, onBack) {
     getLightStickOffAsset(),
     getBabyOilAsset(),
     getSilverCoinAsset(),
+    getM4A1Asset(),
     ...ballAssets
   ]
 

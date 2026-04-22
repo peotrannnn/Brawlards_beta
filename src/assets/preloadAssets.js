@@ -105,9 +105,14 @@ export function preloadCoreAssets(onProgress) {
   const totalCritical = criticalAssets.length || 1
   let completedCritical = 0
 
-  const report = (label) => {
+  const report = (label, asset) => {
     if (typeof onProgress !== 'function') return
-    onProgress(Math.min(completedCritical / totalCritical, 1), label)
+    let display = label
+    if (asset && asset.displayName) display = asset.displayName
+    if (asset) {
+      console.log('[PRELOAD] Loading:', display)
+    }
+    onProgress(Math.min(completedCritical / totalCritical, 1), display)
   }
 
   preloadPromise = (async () => {
@@ -120,10 +125,10 @@ export function preloadCoreAssets(onProgress) {
         completedCritical += 1
         if (error) {
           console.error(`Asset preload error: ${error.message}`)
-          report(`ERROR: ${asset.name}`)
+          report(`ERROR: ${asset.displayName || asset.name}`, asset)
           return
         }
-        report(asset.name)
+        report(asset.displayName || asset.name, asset)
       }
     )
 

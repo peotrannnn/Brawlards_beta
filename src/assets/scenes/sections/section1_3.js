@@ -10,7 +10,7 @@ import { createTreeBillboard, updateBillboards, setTreeOpacity } from '../../obj
 const SECTION3_MASTER_CONFIG = {
   // Platform geometry
   center: { x: 0, y: 140, z: 0 },
-  radius: 96,
+  radius: 110,
   thickness: 1.2,
   segments: 96,
 

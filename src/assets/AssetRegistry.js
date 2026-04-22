@@ -16,6 +16,12 @@ export const MODELS = {
     url: new URL('./models/vending_machine_-_only_fantas.glb', import.meta.url).href,
     type: 'model'
   }
+  ,
+  m4a1_assault_rifle: {
+      name: 'funny_item',
+      url: new URL('./models/m4a1_-_assault_rifle.glb', import.meta.url).href,
+      type: 'model'
+  }
 }
 
 // Texture assets

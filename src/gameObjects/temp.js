@@ -14,6 +14,7 @@ import { getLightStickAsset } from "../assets/items/lightStick.js";
 import { getLightStickOffAsset } from "../assets/items/lightStickOff.js";
 import { getBabyOilAsset } from "../assets/items/babyOil.js";
 import { getSilverCoinAsset } from "../assets/items/silverCoin.js";
+import { getM4A1Asset } from "../assets/items/M4A1.js";
 import { withShadow } from "../effects/shadows/shadowConfig.js";
 
 /**
@@ -87,6 +88,7 @@ export function createAllGameObjects(renderer) {
     const lightStickOffAsset = getLightStickOffAsset();
     const babyOilAsset = getBabyOilAsset();
     const silverCoinAsset = getSilverCoinAsset();
+    const m4a1Asset = getM4A1Asset();
 
     // Gán 'type' để SimulationTest.js có thể lọc ra các object động
     // Spawner.js gọi hàm 'createMesh' và 'createBody', nên ta gán các hàm tương ứng
@@ -190,7 +192,27 @@ export function createAllGameObjects(renderer) {
         createBody: (mats) => createBody(silverCoinAsset.physics, mats)
     };
 
-    return [...dynamicBallAssets, dynamicPlayerAsset, dynamicGuideAsset, dynamicGuyAsset, dynamicDudeAsset, dynamicDummyAsset, dynamicCompuneAsset, dynamicEyeAsset, dynamicLightStickAsset, dynamicLightStickOffAsset, dynamicBabyOilAsset, dynamicSilverCoinAsset];
+    const dynamicM4A1Asset = {
+        ...m4a1Asset,
+        type: 'dynamic',
+        createMesh: withShadow(m4a1Asset.factory, 0.8, 0.8, 0.8),
+        createBody: (mats) => createBody(m4a1Asset.physics, mats)
+    };
+    return [
+        ...dynamicBallAssets,
+        dynamicPlayerAsset,
+        dynamicGuideAsset,
+        dynamicGuyAsset,
+        dynamicDudeAsset,
+        dynamicDummyAsset,
+        dynamicCompuneAsset,
+        dynamicEyeAsset,
+        dynamicLightStickAsset,
+        dynamicLightStickOffAsset,
+        dynamicBabyOilAsset,
+        dynamicSilverCoinAsset,
+        dynamicM4A1Asset
+    ];
 }
 
 /**

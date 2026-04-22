@@ -1,4 +1,5 @@
 import * as THREE from "three"
+import { returnObjectToPool } from "./spawner.js"
 
 const DESTROY_SYSTEM_CONFIG = {
   destroyTimeout: 3000, // ms
@@ -138,34 +139,13 @@ export class DestroySystem {
       this.pending.delete(entry);
     }
     this.destroyQueueSet.delete(entry);
-    if (entry.body) {
-      // Xóa Trigger Body đi kèm nếu có
-      if (entry.body.userData && entry.body.userData.triggerBody) {
-          const tb = entry.body.userData.triggerBody;
-          this.world.removeBody(tb);
-          if (this.hbManager && this.hbManager.removeHitboxForObject) {
-              this.hbManager.removeHitboxForObject({ body: tb });
-          }
-      }
-      
-      // Clean up Ball8AI trigger mesh if exists
-      if (entry.body.userData && entry.body.userData.ball8AI) {
-        const ball8AI = entry.body.userData.ball8AI;
-        if (ball8AI.dispose) {
-          ball8AI.dispose();
-        }
-      }
-      
-      this.world.removeBody(entry.body);
-    }
-    if (entry.mesh) {
-      this.scene.remove(entry.mesh);
-    }
+    // Remove hitbox if needed
     if (this.hbManager && this.hbManager.removeHitboxForObject) {
       this.hbManager.removeHitboxForObject(entry);
     }
-    const idx2 = this.syncList.indexOf(entry);
-    if (idx2 !== -1) this.syncList.splice(idx2, 1);
+    // Remove from syncList if present
+    const idx = this.syncList.indexOf(entry);
+    if (idx !== -1) this.syncList.splice(idx, 1);
     if (this.guyTimers.has(entry)) this.guyTimers.delete(entry); // Cleanup timer
     if (this.destroyedCharacters.has(entry)) this.destroyedCharacters.delete(entry);
     if (entry && entry.name === 'Player') {
@@ -179,9 +159,21 @@ export class DestroySystem {
       clearTimeout(this.pending.get(entry));
       this.pending.delete(entry);
     }
-    // Remove from syncList if present
-    const idx = this.syncList.indexOf(entry);
-    if (idx !== -1) this.syncList.splice(idx, 1);
+    // Clean up Ball8AI trigger mesh if exists
+    if (entry.body?.userData?.ball8AI) {
+      const ball8AI = entry.body.userData.ball8AI;
+      if (ball8AI.dispose) ball8AI.dispose();
+    }
+    // Xóa Trigger Body đi kèm nếu có
+    if (entry.body?.userData?.triggerBody) {
+      const tb = entry.body.userData.triggerBody;
+      this.world.removeBody(tb);
+      if (this.hbManager && this.hbManager.removeHitboxForObject) {
+        this.hbManager.removeHitboxForObject({ body: tb });
+      }
+    }
+    // Trả object về pool thay vì xóa hoàn toàn
+    returnObjectToPool(entry, this.scene, this.world);
     if (this.onDestroyCallback) {
       try { this.onDestroyCallback(entry); } catch (e) { }
     }

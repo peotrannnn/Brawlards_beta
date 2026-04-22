@@ -1008,6 +1008,36 @@ export class PlayerMovementController {
                 continue
             }
 
+
+            // Nếu player đang nhảy (không grounded), hover item bằng cách lerp trục Y, nhưng không cho xuống thấp hơn targetY (mượt hơn)
+            if (!this.canJump) {
+                const lerpSpeed = 0.22;
+                body.position.x = targetPos.x;
+                body.position.z = targetPos.z;
+                let nextY = body.position.y;
+                if (body.position.y > targetPos.y) {
+                    // Chỉ nội suy khi đi lên
+                    nextY = THREE.MathUtils.lerp(body.position.y, targetPos.y, lerpSpeed);
+                } else {
+                    // Nếu đi xuống hoặc bằng, giữ ở targetY
+                    nextY = targetPos.y;
+                }
+                body.position.y = nextY;
+                // Sync mesh trực tiếp
+                if (carried.entry?.mesh) {
+                    carried.entry.mesh.position.x = body.position.x;
+                    carried.entry.mesh.position.z = body.position.z;
+                    carried.entry.mesh.position.y = body.position.y;
+                }
+                // Giữ quaternion đúng hướng
+                const halfYaw = this.bodyYaw * 0.5;
+                body.quaternion.set(0, Math.sin(halfYaw), 0, Math.cos(halfYaw));
+                this._syncBodyInterpolation(body);
+                body.aabbNeedsUpdate = true;
+                continue;
+            }
+
+            // Nếu grounded, snap về đúng vị trí stack như cũ
             this._setCarriedBodyLocked(carried, targetPos)
         }
     }

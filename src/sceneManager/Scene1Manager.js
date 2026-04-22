@@ -5208,7 +5208,7 @@ export class Scene1Manager {
       this.elevatorCountdownActive = true
       this.elevatorCountdownTimer = 0
       this._enqueueSectionWarmup('section3', { title: 'Loading Section 3', showReadyOverlay: true })
-      console.log(`%c[Elevator] Score 15 reached! Starting 50-second countdown...`, 'color: #00ff88; font-weight: bold')
+      // [Elevator] log removed
     }
 
     // ✨ NEW: Update countdown timer
@@ -5219,14 +5219,14 @@ export class Scene1Manager {
         this.elevatorCountdownTimer = 0
         this.elevatorCountdownFinished = true // Mark as finished
         this.elevatorFinalDisplayValue = 0 // Keep displaying 0
-        console.log(`%c[Elevator] Countdown complete! Opening door now...`, 'color: #ffff00; font-weight: bold')
+        // [Elevator] log removed
         
         // ✨ FIXED: Open door only when countdown finishes
         if (this.elevatorDoor.userData.animationState) {
           this.elevatorDoor.userData.animationState.isOpening = true
           this.elevatorDoor.userData.animationState.openStartTime = Date.now()
         }
-        console.log(`%c[Elevator] Door opening triggered! Countdown finished!`, 'color: #00ddff; font-weight: bold')
+        // [Elevator] log removed
       }
     }
 
@@ -5333,7 +5333,7 @@ export class Scene1Manager {
 
       if (!this.elevatorDoorTouched) {
         this.elevatorDoorTouched = true
-        console.log('[Scene1Manager] Section 1 elevator touched: teleported Player to Section 3 center spawn.')
+        // [Scene1Manager] log removed
       }
 
       // Previous completion flow kept for future reuse:
