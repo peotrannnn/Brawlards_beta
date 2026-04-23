@@ -84,16 +84,14 @@ export function spawnObject({
     entry = pool.pop();
     // Reactivate mesh
     if (entry.mesh) {
+      // Đảm bảo không còn shadow ghost: luôn remove trước khi add lại
+      if (fakeShadowManager) fakeShadowManager.removeShadow(entry.mesh);
       scene.add(entry.mesh);
       entry.mesh.visible = true;
       entry.mesh.position.copy(position);
-      // Reset transforms if needed
       entry.mesh.rotation.set(0, 0, 0);
       entry.mesh.scale.set(1, 1, 1);
-      // Nếu có fakeShadowManager và mesh có shadowConfig thì add lại fake shadow
-      if (fakeShadowManager && entry.mesh.userData && entry.mesh.userData.shadowConfig) {
-        fakeShadowManager.addShadow(entry.mesh, entry.mesh.userData.shadowConfig);
-      }
+      if (fakeShadowManager) fakeShadowManager.addShadow(entry.mesh, entry.mesh.userData.shadowConfig);
     }
     // Reactivate body
     if (entry.body) {
@@ -101,6 +99,19 @@ export function spawnObject({
       entry.body.velocity.set(0, 0, 0);
       entry.body.angularVelocity.set(0, 0, 0);
       entry.body.quaternion.set(0, 0, 0, 1);
+      // --- FIX: Reset body state for pooled items ---
+      // Only reset for items (like Baby Oil) or all dynamic objects
+      if (entry.spawnCategory === 'item' || entry.type === 'dynamic' || entry.name === 'Baby Oil') {
+        // CANNON.Body.DYNAMIC = 1
+        entry.body.type = 1;
+        entry.body.collisionResponse = true;
+        // ĐÚNG: dùng COLLISION_MASKS.ITEM để va chạm đúng với tường, bóng, player, cue
+        if (typeof COLLISION_MASKS !== 'undefined' && COLLISION_MASKS.ITEM) {
+          entry.body.collisionFilterMask = COLLISION_MASKS.ITEM;
+        } else {
+          entry.body.collisionFilterMask = -1;
+        }
+      }
       entry.body.wakeUp?.();
       world.addBody(entry.body);
     }
@@ -110,18 +121,9 @@ export function spawnObject({
     const mesh = prefab.createMesh();
     scene.add(mesh);
     mesh.position.copy(position);
-
-    const spawnCategoryFromPrefab = prefab?.spawnCategory;
-    // Keep item spawns lightweight: shadows on tiny collectibles are costly and not gameplay-critical.
-    const shouldApplyShadowTraversal = spawnCategoryFromPrefab !== 'item';
-    if (shouldApplyShadowTraversal) {
-      mesh.traverse(child => {
-        if (child.isMesh) {
-          child.castShadow = true;
-          child.receiveShadow = true;
-        }
-      });
-    }
+    // Đảm bảo không còn shadow ghost: luôn remove trước khi add lại
+    if (fakeShadowManager) fakeShadowManager.removeShadow(mesh);
+    if (fakeShadowManager) fakeShadowManager.addShadow(mesh, mesh.userData.shadowConfig);
 
     const body = prefab.createBody(physicsMaterials);
     if (body) {
@@ -137,10 +139,6 @@ export function spawnObject({
     mesh.userData.spawnCategory = spawnCategory;
 
     entry = { mesh, body, type: prefab.type, name: prefab.name, spawnCategory };
-    // Nếu có fakeShadowManager và mesh có shadowConfig thì add lại fake shadow
-    if (fakeShadowManager && mesh.userData && mesh.userData.shadowConfig) {
-      fakeShadowManager.addShadow(mesh, mesh.userData.shadowConfig);
-    }
   }
 
   // --- Reset state for unique types ---
@@ -199,19 +197,15 @@ export function returnObjectToPool(entry, scene, world, fakeShadowManager = null
   if (!entry) return;
   // Remove from scene/world
   if (entry.mesh) {
+    // Luôn remove shadow trước khi remove khỏi scene
+    if (fakeShadowManager) fakeShadowManager.removeShadow(entry.mesh);
     entry.mesh.visible = false;
     scene.remove(entry.mesh);
-    // Nếu có fakeShadowManager thì remove fake shadow
-    if (fakeShadowManager) {
-      fakeShadowManager.removeShadow(entry.mesh);
-    }
   }
   if (entry.body) {
     world.removeBody(entry.body);
   }
-  // Đánh dấu đã trả về pool
   entry._pooled = true;
-  // Đưa vào pool theo tên prefab
   const pool = getObjectPool(entry.name);
   pool.push(entry);
 }

@@ -3252,6 +3252,11 @@ export class Scene1Manager {
 
     if (t < 1) return 'running'
 
+    // --- FIX: Restore original body state before destroy ---
+    if (applyState.originalType !== undefined) body.type = applyState.originalType;
+    if (applyState.originalCollisionResponse !== undefined) body.collisionResponse = applyState.originalCollisionResponse;
+    if (applyState.originalCollisionFilterMask !== undefined) body.collisionFilterMask = applyState.originalCollisionFilterMask;
+
     const destroyPos = applyState.latchTarget.clone()
     this._despawnEntry(entry)
     this.chestOilApplyState = null
