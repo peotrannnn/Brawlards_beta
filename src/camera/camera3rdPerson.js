@@ -1,6 +1,7 @@
 
 
 import * as THREE from 'three'
+import { settingsManager } from '../core/SettingsManager.js'
 
 const CAMERA_CONFIG = {
   FOV: 60,
@@ -56,6 +57,16 @@ const CAMERA_CONFIG = {
   DITHERING_ALPHA_START: 1.0,
   DITHERING_ALPHA_END: 0.05,
 }
+
+// Apply initial settings
+CAMERA_CONFIG.MOUSE_SENSITIVITY = settingsManager.get('mouseSensitivity') * 0.0007
+CAMERA_CONFIG.INVERT_MOUSE_Y = settingsManager.get('invertY')
+
+// Listen for settings changes
+settingsManager.onChange((settings) => {
+  CAMERA_CONFIG.MOUSE_SENSITIVITY = settings.mouseSensitivity * 0.0007
+  CAMERA_CONFIG.INVERT_MOUSE_Y = settings.invertY
+})
 
 export class ThirdPersonCameraController {
   /**
@@ -473,10 +484,10 @@ export class ThirdPersonCameraController {
       const clampedDeltaY = Math.max(-CAMERA_CONFIG.MOUSE_DELTA_LIMIT, Math.min(CAMERA_CONFIG.MOUSE_DELTA_LIMIT, deltaY))
       
       const finalDeltaX = clampedDeltaX * (CAMERA_CONFIG.INVERT_MOUSE_X ? -1 : 1)
-      const finalDeltaY = clampedDeltaY * (CAMERA_CONFIG.INVERT_MOUSE_Y ? -1 : 1)
+      const finalDeltaY = clampedDeltaY * (settingsManager.get('invertY') ? 1 : -1)
       
-      this.rotationDeltaX += finalDeltaX * CAMERA_CONFIG.MOUSE_SENSITIVITY
-      this.rotationDeltaY += finalDeltaY * CAMERA_CONFIG.MOUSE_SENSITIVITY
+      this.rotationDeltaX += finalDeltaX * settingsManager.get('mouseSensitivity') * 0.0007
+      this.rotationDeltaY += finalDeltaY * settingsManager.get('mouseSensitivity') * 0.0007
       
       this.lastMouseX = e.clientX
       this.lastMouseY = e.clientY
@@ -487,10 +498,10 @@ export class ThirdPersonCameraController {
       const deltaY = Math.max(-CAMERA_CONFIG.MOUSE_DELTA_LIMIT, Math.min(CAMERA_CONFIG.MOUSE_DELTA_LIMIT, e.movementY))
       
       const finalDeltaX = deltaX * (CAMERA_CONFIG.INVERT_MOUSE_X ? -1 : 1)
-      const finalDeltaY = deltaY * (CAMERA_CONFIG.INVERT_MOUSE_Y ? -1 : 1)
+      const finalDeltaY = deltaY * (settingsManager.get('invertY') ? 1 : -1)
       
-      this.rotationDeltaX += finalDeltaX * CAMERA_CONFIG.MOUSE_SENSITIVITY
-      this.rotationDeltaY += finalDeltaY * CAMERA_CONFIG.MOUSE_SENSITIVITY
+      this.rotationDeltaX += finalDeltaX * settingsManager.get('mouseSensitivity') * 0.0007
+      this.rotationDeltaY += finalDeltaY * settingsManager.get('mouseSensitivity') * 0.0007
     }
   }
 

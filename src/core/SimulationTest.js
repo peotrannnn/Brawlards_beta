@@ -25,6 +25,7 @@ import { ControlGuideUI } from "../ui/ControlGuideUI.js"
 import { SCENE1_CONTROL_GUIDES } from "../assets/scenes/scene1Dialogs.js"
 import { GameOverScreen } from "../ui/GameOverScreen.js"
 import { PauseMenuScreen } from "../ui/PauseMenuScreen.js"
+import { createSettingsScreen } from "../ui/SettingsMenuScreen.js"
 import { PlayerMovementController } from "../playerMovement/playerMovement.js"
 import { CharacterController } from "../playerMovement/characterController.js"
 import { GuyAI } from "../AI/guyBot.js"
@@ -44,6 +45,7 @@ import { DestroySystem } from "../utils/destroy.js"
 import { ParticleManager } from "../utils/particleManager.js"
 import { sceneAssets } from "../assets/sceneAssets.js"
 import { Scene1Manager } from "../sceneManager/Scene1Manager.js"
+import { settingsManager } from "./SettingsManager.js"
 
 // ==================== CONFIGURATION ====================
 const SIMULATION_CONFIG = {
@@ -55,18 +57,18 @@ const SIMULATION_CONFIG = {
 }
 
 const RENDER_PERF_CONFIG = {
-  maxDevicePixelRatio: 1.0,
-  minScale: 0.1,
-  maxScale: 0.2,
-  downshiftFps: 58,
-  upshiftFps: 60,
-  sampleWindowSec: 0.5,
-  adjustCooldownSec: 0.0001,
-  scaleStepDown: 0.9,
-  scaleStepUp: 0.01,
-  startupDurationSec: 4.0,
-  startupScale: 0.6,
-  startupMaxScale: 0.7
+  maxDevicePixelRatio: 2.0,
+  minScale: 0.25,
+  maxScale: 1.0,
+  downshiftFps: 50,
+  upshiftFps: 58,
+  sampleWindowSec: 1.0,
+  adjustCooldownSec: 0.5,
+  scaleStepDown: 0.05,
+  scaleStepUp: 0.02,
+  startupDurationSec: 2.0,
+  startupScale: 0.8,
+  startupMaxScale: 1.0
 }
 
 // ==================== MAIN EXPORT ====================
@@ -76,6 +78,26 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
   // ==================== CONTROL GUIDE UI ====================
   const controlGuideUI = new ControlGuideUI()
   let controlGuideState = { phase: 0 }
+
+  // Synchronize with global settings
+  const syncWithSettings = (settings) => {
+    // 1. Shadows
+    renderer.shadowMap.enabled = settings.shadows
+    if (lightController && typeof lightController.toggleShadows === 'function') {
+      lightController.toggleShadows(settings.shadows)
+    }
+
+    // 2. Resolution / Quality
+    const quality = settings.quality || 'high'
+    const targetMaxScale = quality === 'high' ? 1.0 : quality === 'medium' ? 0.75 : 0.5
+    RENDER_PERF_CONFIG.maxScale = targetMaxScale
+    
+    // Force immediate update if current scale is too high for new setting
+    if (typeof renderScale !== 'undefined' && renderScale > targetMaxScale) {
+        renderScale = targetMaxScale
+        if (typeof applyRenderResolution === 'function') applyRenderResolution(true)
+    }
+  }
 
   // ==================== PERFORMANCE OVERLAY (Simulation only) ====================
   let perfOverlay = null
@@ -316,7 +338,7 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
         lightController = setupSceneLighting(scene, renderer, {
           fogType: 'none',
           fogColor: 0x111111,
-          shadows: true,
+          shadows: settingsManager.get('shadows'),
           shadowMapSize: 2048,
           shadowBias: -0.0001,
           directionalLight: {
@@ -330,6 +352,7 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
           helpers: false,
         })
       }
+      syncWithSettings(settingsManager.getAll())
     }
 
     // Person trigger
@@ -611,10 +634,17 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
       }
 
   let lightController = setupSceneLighting(scene, renderer, {
-    fogType: 'none', fogColor: 0x111111, shadows: true, shadowMapSize: 2048, shadowBias: -0.0001,
+    fogType: 'none', fogColor: 0x111111, shadows: settingsManager.get('shadows'), shadowMapSize: 2048, shadowBias: -0.0001,
     directionalLight: { color: 0xfff5d1, intensity: 2.5, position: [15, 25, 15], castShadow: true },
     pointLights: [], spotLights: [], helpers: false,
   })
+
+
+  // Initial sync
+  syncWithSettings(settingsManager.getAll())
+
+  // Listen for changes
+  settingsManager.onChange(syncWithSettings)
 
   const sceneBodies = []
   let currentSceneGroup = null
@@ -746,7 +776,15 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
   if (gameplayMode) {
     pauseMenuScreen = new PauseMenuScreen(
       () => { if (!isGameOverUIVisible()) lockCameraFromPauseResume() },
-      () => {},
+      () => {
+        // onSettings
+        createSettingsScreen(() => {
+          // When settings screen is closed, show pause menu again
+          if (pauseMenuScreen && !pauseMenuScreen.isVisible) {
+            pauseMenuScreen.show();
+          }
+        });
+      },
       () => {
         if (pauseMenuScreen) { pauseMenuScreen.destroy(); pauseMenuScreen = null }
         if (typeof cleanupFn === 'function') cleanupFn()

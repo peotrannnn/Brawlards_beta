@@ -68,7 +68,7 @@ export class PauseMenuScreen {
 
     const menuItems = [
       { label: 'RESUME', action: () => this.onResume(), defaultColor: '#00FF00', selectedColor: '#000', selectedBg: '#0066FF' },
-      { label: 'SETTINGS (chưa có 🥺 đừng bấm)', action: () => this.onSettings(), defaultColor: '#888888', selectedColor: '#000', selectedBg: '#0066FF' },
+      { label: 'SETTINGS', action: () => this.onSettings(), defaultColor: '#00FF00', selectedColor: '#000', selectedBg: '#0066FF' },
       { label: 'BACK TO MENU', action: () => this.onBackToMenu(), defaultColor: '#ff4444', selectedColor: '#000', selectedBg: '#0066FF' },
     ]
 

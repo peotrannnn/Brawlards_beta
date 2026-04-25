@@ -5,6 +5,9 @@ import { startPlay } from "./core/Play.js"
 import { MusicPlayer } from "./music/MusicPlayer.js"
 import { preloadCoreAssets } from "./assets/preloadAssets.js"
 import { runWithLoadingOverlay } from "./utils/loadingOverlay.js"
+import { settingsManager } from "./core/SettingsManager.js"
+import { createSettingsScreen } from "./ui/SettingsMenuScreen.js"
+import { initFPSCounter } from "./ui/FPSCounter.js"
 
 // ==================== IT-STYLE UI THEME ====================
 export const IT_STYLE = {
@@ -98,6 +101,20 @@ renderer.setSize(window.innerWidth, window.innerHeight)
 renderer.shadowMap.enabled = true
 renderer.shadowMap.type = THREE.PCFShadowMap // Use PCFShadowMap to avoid deprecation warning
 
+// Apply initial settings
+renderer.shadowMap.enabled = settingsManager.get('shadows')
+const initialQuality = settingsManager.get('quality')
+renderer.setPixelRatio(initialQuality === 'high' ? window.devicePixelRatio : initialQuality === 'medium' ? 1 : 0.75)
+
+// Listen to settings changes
+settingsManager.onChange((settings) => {
+  renderer.shadowMap.enabled = settings.shadows
+  const pR = settings.quality === 'high' ? window.devicePixelRatio : settings.quality === 'medium' ? 1 : 0.75
+  renderer.setPixelRatio(pR)
+  // We can't easily force all materials to update shadow maps without traversing the scene,
+  // but it will apply on the next play or scene load.
+})
+
 document.body.style.margin = "0"
 document.body.style.overflow = "hidden"
 document.body.appendChild(renderer.domElement)
@@ -105,6 +122,9 @@ document.body.appendChild(renderer.domElement)
 let currentCleanup = null
 
 const musicPlayer = new MusicPlayer()
+
+// Initialize FPS Counter
+initFPSCounter()
 
 document.addEventListener('click', async () => {
   if (!musicPlayer.isPlaying) {
@@ -176,6 +196,7 @@ function showHomePage() {
     { label: 'PLAY', action: (afterFade) => navigateToPlay(afterFade) },
     { label: 'DEBUG', action: (afterFade) => navigateToSimulation(afterFade) },
     { label: 'INSPECT', action: (afterFade) => navigateToInspector(afterFade) },
+    { label: 'SETTINGS', action: (afterFade) => navigateToSettings(afterFade) },
   ];
 
   // --- PATCH: Ensure music always starts on any menu action ---
@@ -338,6 +359,13 @@ async function navigateToSimulation() {
 function navigateToPlay() {
   clearEntireUI()
   currentCleanup = startPlay(renderer, () => {
+    showHomePage()
+  })
+}
+
+function navigateToSettings() {
+  clearEntireUI()
+  currentCleanup = createSettingsScreen(() => {
     showHomePage()
   })
 }

@@ -2,6 +2,8 @@
  * MusicPlayer - Background music system
  * Manages audio context, playlist generation, and fade in/out
  */
+import { settingsManager } from '../core/SettingsManager.js'
+
 export class MusicPlayer {
   constructor() {
     this.audioContext = null
@@ -21,6 +23,14 @@ export class MusicPlayer {
   initAudioContext() {
     try {
       this.audioContext = new (window.AudioContext || window.webkitAudioContext)()
+      this.masterGainNode = this.audioContext.createGain()
+      this.masterGainNode.connect(this.audioContext.destination)
+      this.updateVolume()
+      
+      settingsManager.onChange(() => {
+        this.updateVolume()
+      })
+
       document.addEventListener('click', () => {
         if (this.audioContext.state === 'suspended') {
           this.audioContext.resume()
@@ -28,6 +38,12 @@ export class MusicPlayer {
       }, { once: true })
     } catch (error) {
       console.error('Web Audio API not supported:', error)
+    }
+  }
+
+  updateVolume() {
+    if (this.masterGainNode) {
+      this.masterGainNode.gain.value = settingsManager.get('masterVolume') * settingsManager.get('musicVolume')
     }
   }
   
@@ -93,7 +109,7 @@ export class MusicPlayer {
       
       this.currentSource.buffer = audioBuffer
       this.currentSource.connect(this.currentGainNode)
-      this.currentGainNode.connect(this.audioContext.destination)
+      this.currentGainNode.connect(this.masterGainNode)
       
       this.currentGainNode.gain.setValueAtTime(0, this.audioContext.currentTime)
       
@@ -169,6 +185,9 @@ export class MusicPlayer {
           this.audioContext.close();
         } catch (e) {}
         this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        this.masterGainNode = this.audioContext.createGain();
+        this.masterGainNode.connect(this.audioContext.destination);
+        this.updateVolume();
       }
       await this.playNextSong(true);
     } finally {
