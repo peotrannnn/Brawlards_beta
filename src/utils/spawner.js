@@ -111,6 +111,10 @@ export function spawnObject({
         } else {
           entry.body.collisionFilterMask = -1;
         }
+        // --- RESET MARKER STATE ---
+        entry.body.userData = entry.body.userData || {};
+        entry.body.userData.hasBeenCollectedOnce = false;
+        entry.body.userData.isCollectedItem = false;
       }
       entry.body.wakeUp?.();
       world.addBody(entry.body);
