@@ -104,13 +104,17 @@ renderer.shadowMap.type = THREE.PCFShadowMap // Use PCFShadowMap to avoid deprec
 // Apply initial settings
 renderer.shadowMap.enabled = settingsManager.get('shadows')
 const initialQuality = settingsManager.get('quality')
-renderer.setPixelRatio(initialQuality === 'high' ? window.devicePixelRatio : initialQuality === 'medium' ? 1 : 0.75)
+const baseRatio = window.devicePixelRatio || 1
+renderer.setPixelRatio(initialQuality === 'high' ? baseRatio : initialQuality === 'medium' ? baseRatio * 0.5 : baseRatio * 0.25)
+renderer.domElement.style.filter = `brightness(${settingsManager.get('brightness')})`
 
 // Listen to settings changes
 settingsManager.onChange((settings) => {
   renderer.shadowMap.enabled = settings.shadows
-  const pR = settings.quality === 'high' ? window.devicePixelRatio : settings.quality === 'medium' ? 1 : 0.75
+  const baseRatio = window.devicePixelRatio || 1
+  const pR = settings.quality === 'high' ? baseRatio : settings.quality === 'medium' ? baseRatio * 0.5 : baseRatio * 0.25
   renderer.setPixelRatio(pR)
+  renderer.domElement.style.filter = `brightness(${settings.brightness})`
   // We can't easily force all materials to update shadow maps without traversing the scene,
   // but it will apply on the next play or scene load.
 })
@@ -364,10 +368,12 @@ function navigateToPlay() {
 }
 
 function navigateToSettings() {
-  clearEntireUI()
-  currentCleanup = createSettingsScreen(() => {
-    showHomePage()
-  })
+  const cleanupSettings = createSettingsScreen(() => {
+    if (currentCleanup === cleanupSettings) {
+      currentCleanup = null;
+    }
+  });
+  currentCleanup = cleanupSettings;
 }
 
 async function navigateToInspector() {

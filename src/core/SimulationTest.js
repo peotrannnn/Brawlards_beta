@@ -1,21 +1,21 @@
 // --- PRELOAD & COMPILE SCREEN MAT (hiệu ứng chuyển cảnh) ---
-  let screenMatMesh = null;
-  if (typeof createScreenMatMesh === 'function') {
-    screenMatMesh = createScreenMatMesh();
-    screenMatMesh.visible = false;
-    scene.add(screenMatMesh);
-    // Render ẩn 1 frame để ép compile shader
-    renderer.render(scene, cameraController.camera);
-    scene.remove(screenMatMesh);
-  }
-  // Đảm bảo screen mat đã được warmup trước khi teleport
-  if (typeof createScreenMatMesh === 'function' && !screenMatMesh) {
-    screenMatMesh = createScreenMatMesh();
-    screenMatMesh.visible = false;
-    scene.add(screenMatMesh);
-    renderer.render(scene, cameraController.camera);
-    scene.remove(screenMatMesh);
-  }
+let screenMatMesh = null;
+if (typeof createScreenMatMesh === 'function') {
+  screenMatMesh = createScreenMatMesh();
+  screenMatMesh.visible = false;
+  scene.add(screenMatMesh);
+  // Render ẩn 1 frame để ép compile shader
+  renderer.render(scene, cameraController.camera);
+  scene.remove(screenMatMesh);
+}
+// Đảm bảo screen mat đã được warmup trước khi teleport
+if (typeof createScreenMatMesh === 'function' && !screenMatMesh) {
+  screenMatMesh = createScreenMatMesh();
+  screenMatMesh.visible = false;
+  scene.add(screenMatMesh);
+  renderer.render(scene, cameraController.camera);
+  scene.remove(screenMatMesh);
+}
 import * as THREE from "three"
 import * as CANNON from "cannon-es"
 import { createAllGameObjects } from "../gameObjects/temp.js"
@@ -89,86 +89,86 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
 
     // 2. Resolution / Quality
     const quality = settings.quality || 'high'
-    const targetMaxScale = quality === 'high' ? 1.0 : quality === 'medium' ? 0.75 : 0.5
+    const targetMaxScale = quality === 'high' ? 1.0 : quality === 'medium' ? 0.5 : 0.25
     RENDER_PERF_CONFIG.maxScale = targetMaxScale
-    
+
     // Force immediate update if current scale is too high for new setting
     if (typeof renderScale !== 'undefined' && renderScale > targetMaxScale) {
-        renderScale = targetMaxScale
-        if (typeof applyRenderResolution === 'function') applyRenderResolution(true)
+      renderScale = targetMaxScale
+      if (typeof applyRenderResolution === 'function') applyRenderResolution(true)
     }
   }
 
   // ==================== PERFORMANCE OVERLAY (Simulation only) ====================
   let perfOverlay = null
   let lastPerfStats = {
-        // --- Simulation config ---
-        fixedTimeStep: SIMULATION_CONFIG.fixedTimeStep,
-        spawnRateMs: SIMULATION_CONFIG.spawnRateMs,
-        maxObjects: SIMULATION_CONFIG.maxObjectsInScene,
-        bowlingLifeMin: SIMULATION_CONFIG.bowlingLifetimeMinMs,
-        bowlingLifeMax: SIMULATION_CONFIG.bowlingLifetimeMaxMs,
-        // --- Render config ---
-        maxDevicePixelRatio: RENDER_PERF_CONFIG.maxDevicePixelRatio,
-        minScaleCfg: RENDER_PERF_CONFIG.minScale,
-        maxScaleCfg: RENDER_PERF_CONFIG.maxScale,
-        downshiftFps: RENDER_PERF_CONFIG.downshiftFps,
-        upshiftFps: RENDER_PERF_CONFIG.upshiftFps,
-        scaleStepDown: RENDER_PERF_CONFIG.scaleStepDown,
-        scaleStepUp: RENDER_PERF_CONFIG.scaleStepUp,
-        // --- Scene/asset ---
-        sceneName: '--',
-        assetName: '--',
-        prefabCount: '--',
-        dynamicPrefabCount: '--',
-        staticPrefabCount: '--',
-        kinematicPrefabCount: '--',
-        // --- Object counts ---
-        syncDynamic: '--',
-        syncStatic: '--',
-        syncKinematic: '--',
-        sceneBodies: '--',
-        // --- UI state ---
-        helpVisible: '--',
-        spawnMenuVisible: '--',
-        pauseMenuVisible: '--',
-        gameOverVisible: '--',
-        // --- System state ---
-        particleCount: '--',
-        shadowCount: '--',
-        physicsEventCount: '--',
-        // --- Table info ---
-        tableColor: '--',
-        tableSize: '--',
-        // --- Portal/trigger ---
-        portalCount: '--',
-        triggerCount: '--',
-        // --- Player ---
-        playerAlive: '--',
-        playerTime: '--',
-        playerSpawn: '--',
-        playerDestroy: '--',
-        // --- Light/fog/camera ---
-        fogType: '--',
-        lightCount: '--',
-        shadowMapSize: '--',
-        cameraDist: '--',
-        spectator: '--',
-      section: '--',
-      phase: '--',
-      moveState: '--',
-      pointerLock: '--',
-      controlEnabled: '--',
-      aiGuy: '--',
-      aiDude: '--',
-      aiGuide: '--',
-      aiDummy: '--',
-      aiBall8: '--',
-      aiBowling: '--',
-      aiCompune: '--',
-      sectionKey: '--',
-      phaseGuy: '--',
-      lastEvent: '--',
+    // --- Simulation config ---
+    fixedTimeStep: SIMULATION_CONFIG.fixedTimeStep,
+    spawnRateMs: SIMULATION_CONFIG.spawnRateMs,
+    maxObjects: SIMULATION_CONFIG.maxObjectsInScene,
+    bowlingLifeMin: SIMULATION_CONFIG.bowlingLifetimeMinMs,
+    bowlingLifeMax: SIMULATION_CONFIG.bowlingLifetimeMaxMs,
+    // --- Render config ---
+    maxDevicePixelRatio: RENDER_PERF_CONFIG.maxDevicePixelRatio,
+    minScaleCfg: RENDER_PERF_CONFIG.minScale,
+    maxScaleCfg: RENDER_PERF_CONFIG.maxScale,
+    downshiftFps: RENDER_PERF_CONFIG.downshiftFps,
+    upshiftFps: RENDER_PERF_CONFIG.upshiftFps,
+    scaleStepDown: RENDER_PERF_CONFIG.scaleStepDown,
+    scaleStepUp: RENDER_PERF_CONFIG.scaleStepUp,
+    // --- Scene/asset ---
+    sceneName: '--',
+    assetName: '--',
+    prefabCount: '--',
+    dynamicPrefabCount: '--',
+    staticPrefabCount: '--',
+    kinematicPrefabCount: '--',
+    // --- Object counts ---
+    syncDynamic: '--',
+    syncStatic: '--',
+    syncKinematic: '--',
+    sceneBodies: '--',
+    // --- UI state ---
+    helpVisible: '--',
+    spawnMenuVisible: '--',
+    pauseMenuVisible: '--',
+    gameOverVisible: '--',
+    // --- System state ---
+    particleCount: '--',
+    shadowCount: '--',
+    physicsEventCount: '--',
+    // --- Table info ---
+    tableColor: '--',
+    tableSize: '--',
+    // --- Portal/trigger ---
+    portalCount: '--',
+    triggerCount: '--',
+    // --- Player ---
+    playerAlive: '--',
+    playerTime: '--',
+    playerSpawn: '--',
+    playerDestroy: '--',
+    // --- Light/fog/camera ---
+    fogType: '--',
+    lightCount: '--',
+    shadowMapSize: '--',
+    cameraDist: '--',
+    spectator: '--',
+    section: '--',
+    phase: '--',
+    moveState: '--',
+    pointerLock: '--',
+    controlEnabled: '--',
+    aiGuy: '--',
+    aiDude: '--',
+    aiGuide: '--',
+    aiDummy: '--',
+    aiBall8: '--',
+    aiBowling: '--',
+    aiCompune: '--',
+    sectionKey: '--',
+    phaseGuy: '--',
+    lastEvent: '--',
     fps: '--',
     frameTime: '--',
     objectCount: '--',
@@ -379,10 +379,10 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
       currentSceneManager.reset()
       currentSceneManager = null
     }
-    
+
     if (asset.name === "Pilot Room") {
       currentSceneManager = new Scene1Manager(currentSceneGroup, destroySystem, scene)
-      
+
       if (gameplayMode) {
         gameOverScreen = new GameOverScreen(asset.name, 0, onBack, cameraController)
         currentSceneManager.setGameOverCallback((reason, completionTime) => {
@@ -406,7 +406,7 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
           currentSceneManager.setSimulationMode(true)
         }
       }
-      
+
       const guyAsset = objects.find(obj => obj.name === 'Guy')
       if (guyAsset) {
         currentSceneManager.initializeSpawning(
@@ -415,11 +415,11 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
           particleManager, SIMULATION_CONFIG, renderer
         )
       }
-      
+
       // Portal doors
       const door1Asset = objects.find(o => o.name === 'Door (Portal 1)')
       const door2Asset = objects.find(o => o.name === 'Door (Portal 2)')
-      
+
       if (door1Asset && door2Asset) {
         const door1Mesh = door1Asset.createMesh()
         door1Mesh.position.set(-15, -2, 10)
@@ -427,17 +427,17 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
         door1Body.position.copy(door1Mesh.position)
         scene.add(door1Mesh)
         world.addBody(door1Body)
-        
+
         const door2Mesh = door2Asset.createMesh()
         door2Mesh.position.set(15, -2, 10)
         const door2Body = door2Asset.createBody(physicsMaterials)
         door2Body.position.copy(door2Mesh.position)
         scene.add(door2Mesh)
         world.addBody(door2Body)
-        
+
         door1Mesh.userData.linkedDoor = { mesh: door2Mesh }
         door2Mesh.userData.linkedDoor = { mesh: door1Mesh }
-        
+
         syncList.push({ body: door1Body, mesh: door1Mesh, name: 'Door (Portal 1)', type: 'static' })
         syncList.push({ body: door2Body, mesh: door2Mesh, name: 'Door (Portal 2)', type: 'static' })
       }
@@ -503,7 +503,7 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
           } else {
             body.position.set(childWorldPosition.x, childWorldPosition.y, childWorldPosition.z)
           }
-          
+
           if (def.rotation) {
             body.quaternion.setFromEuler(...def.rotation)
           } else {
@@ -546,7 +546,7 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
           body.collisionResponse = false
           shape.collisionResponse = false
         }
-        
+
         if (def.material === 'rail') {
           body.collisionFilterGroup = COLLISION_GROUPS.RAIL
           body.collisionFilterMask = COLLISION_MASKS.RAIL
@@ -615,23 +615,23 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
   const bowlingAIControllers = new Map()
   const compuneAIControllers = new Map()
 
-    // ==================== CONTROL GUIDE TRIGGERS ====================
-    // (Moved to after _activeTimeouts declaration)
+  // ==================== CONTROL GUIDE TRIGGERS ====================
+  // (Moved to after _activeTimeouts declaration)
 
-      // Patch playerMovement._collectItem để hiển thị dialog item khi nhặt lần đầu
-      const origCollectItem = playerMovement._collectItem?.bind(playerMovement);
-      if (origCollectItem) {
-        playerMovement._collectItem = function(entry, mesh) {
-          if (gameplayMode && !itemDialogShown && controlGuideState.phase < 4) {
-            itemDialogShown = true;
-            setTimeout(() => {
-              controlGuideUI.showDialog(SCENE1_CONTROL_GUIDES.item, 10);
-              controlGuideState.phase = 4;
-            }, 0);
-          }
-          return origCollectItem(entry, mesh);
-        };
+  // Patch playerMovement._collectItem để hiển thị dialog item khi nhặt lần đầu
+  const origCollectItem = playerMovement._collectItem?.bind(playerMovement);
+  if (origCollectItem) {
+    playerMovement._collectItem = function (entry, mesh) {
+      if (gameplayMode && !itemDialogShown && controlGuideState.phase < 4) {
+        itemDialogShown = true;
+        setTimeout(() => {
+          controlGuideUI.showDialog(SCENE1_CONTROL_GUIDES.item, 10);
+          controlGuideState.phase = 4;
+        }, 0);
       }
+      return origCollectItem(entry, mesh);
+    };
+  }
 
   let lightController = setupSceneLighting(scene, renderer, {
     fogType: 'none', fogColor: 0x111111, shadows: settingsManager.get('shadows'), shadowMapSize: 2048, shadowBias: -0.0001,
@@ -750,23 +750,32 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
       pauseMenuScreen.show()
     }
     if (document.pointerLockElement === renderer.domElement) {
-      try { document.exitPointerLock() } catch (err) {}
+      try { document.exitPointerLock() } catch (err) { }
     }
   }
 
-  function lockCameraFromPauseResume() {
+  function lockCameraFromPauseResume(fromEscape = false) {
     isResumeRequested = true
     const attemptToken = ++resumeAttemptToken
 
-    // Request pointer lock if not active
-    if (document.pointerLockElement !== renderer.domElement) {
-      renderer.domElement.requestPointerLock()
-    }
-    // Hide pause menu if visible and resume input
+    // Ensure menu is hidden immediately
     if (pauseMenuScreen && pauseMenuScreen.isVisible) pauseMenuScreen.hide()
+
+    // Focus the canvas
+    focusGameCanvas()
+
+    if (fromEscape) {
+      const overlay = document.getElementById('simClickResumeOverlay');
+      if (overlay) overlay.style.display = 'flex';
+    } else {
+      if (cameraController) {
+        cameraController.enableControl()
+      } else if (document.pointerLockElement !== renderer.domElement) {
+        renderer.domElement.requestPointerLock()
+      }
+    }
+
     playerMovement.enableInput()
-    cameraController.enableControl() // Ensure camera control is enabled
-    isResumeRequested = false
   }
 
   // Remove pointerLockResumeOverlay if present (for safety)
@@ -783,7 +792,7 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
           if (pauseMenuScreen && !pauseMenuScreen.isVisible) {
             pauseMenuScreen.show();
           }
-        });
+        }, gameplayMode);
       },
       () => {
         if (pauseMenuScreen) { pauseMenuScreen.destroy(); pauseMenuScreen = null }
@@ -794,6 +803,52 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
   }
 
   CollisionManager.init({ scene, syncList, sceneObjects: [] })
+
+  // ==================== CLICK TO RESUME OVERLAY (Common for all modes) ====================
+  const clickResumeOverlay = document.createElement('div')
+  clickResumeOverlay.id = 'simClickResumeOverlay'
+  clickResumeOverlay.style.cssText = `
+    position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+    background: rgba(0, 0, 0, 0.5); backdrop-filter: blur(2px);
+    display: none; justify-content: center; align-items: center;
+    z-index: 20000; pointer-events: auto; cursor: pointer;
+  `
+  const popupContent = document.createElement('div');
+  popupContent.style.cssText = `
+    background: #0a1a3d;
+    border: 2px solid #0066FF;
+    padding: 16px 32px;
+    color: #00FF00;
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    font-size: 18px;
+    font-weight: bold;
+    text-transform: uppercase;
+    box-shadow: 0 0 20px rgba(0, 102, 255, 0.6);
+    text-align: center;
+    animation: pulseResume 2s infinite ease-in-out;
+    letter-spacing: 2px;
+  `;
+  popupContent.innerHTML = '> CLICK TO RESUME <';
+
+  if (!document.getElementById('pulse-resume-style')) {
+    const style = document.createElement('style');
+    style.id = 'pulse-resume-style';
+    style.innerHTML = `
+      @keyframes pulseResume {
+        0% { transform: scale(1); box-shadow: 0 0 20px rgba(0, 102, 255, 0.5); }
+        50% { transform: scale(1.02); box-shadow: 0 0 40px rgba(0, 102, 255, 0.8); }
+        100% { transform: scale(1); box-shadow: 0 0 20px rgba(0, 102, 255, 0.5); }
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  clickResumeOverlay.appendChild(popupContent);
+  document.body.appendChild(clickResumeOverlay)
+
+  clickResumeOverlay.addEventListener('mousedown', () => {
+    lockCameraFromPauseResume(false)
+  })
 
   // ==================== UI WINDOWS (SIMULATOR MODE) ====================
   if (!gameplayMode) {
@@ -838,7 +893,6 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
     helpWindow.appendChild(helpBox)
     document.body.appendChild(helpWindow)
 
-    // Hints
     const helpHint = document.createElement('div')
     helpHint.id = 'simHelpHint'
     helpHint.innerHTML = '<b>H</b>'
@@ -849,6 +903,7 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
       font-size: 13px; opacity: 0; pointer-events: none;
     `
     document.body.appendChild(helpHint)
+
 
     const spawnHint = document.createElement('div')
     spawnHint.id = 'simSpawnHint'
@@ -1010,31 +1065,31 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
   }
 
 
-    const dynamicPrefabs = objects.filter(o => o.type === "dynamic")
-    const spawnableDynamicPrefabs = dynamicPrefabs.filter(o => o.excludeFromSimulationSpawn !== true)
-    const _activeTimeouts = new Set()
-    const _activeIntervals = new Set()
+  const dynamicPrefabs = objects.filter(o => o.type === "dynamic")
+  const spawnableDynamicPrefabs = dynamicPrefabs.filter(o => o.excludeFromSimulationSpawn !== true)
+  const _activeTimeouts = new Set()
+  const _activeIntervals = new Set()
 
-    // ==================== DIALOG GAMEPLAY ====================
-    if (gameplayMode) {
-      // Dialog 1: WASD + Space, after 3 seconds
-      const timeoutMove = setTimeout(() => {
-        if (controlGuideState.phase === 0) {
-          controlGuideUI.showDialog(SCENE1_CONTROL_GUIDES.move, 10)
-          controlGuideState.phase = 1
-        }
-      }, 3000)
-      _activeTimeouts.add(timeoutMove)
+  // ==================== DIALOG GAMEPLAY ====================
+  if (gameplayMode) {
+    // Dialog 1: WASD + Space, after 3 seconds
+    const timeoutMove = setTimeout(() => {
+      if (controlGuideState.phase === 0) {
+        controlGuideUI.showDialog(SCENE1_CONTROL_GUIDES.move, 10)
+        controlGuideState.phase = 1
+      }
+    }, 3000)
+    _activeTimeouts.add(timeoutMove)
 
-      // Dialog 2: Mouse + Scroll, after 13 seconds
-      const timeoutLook = setTimeout(() => {
-        if (controlGuideState.phase === 1) {
-          controlGuideUI.showDialog(SCENE1_CONTROL_GUIDES.look, 10)
-          controlGuideState.phase = 2
-        }
-      }, 13000)
-      _activeTimeouts.add(timeoutLook)
-    }
+    // Dialog 2: Mouse + Scroll, after 13 seconds
+    const timeoutLook = setTimeout(() => {
+      if (controlGuideState.phase === 1) {
+        controlGuideUI.showDialog(SCENE1_CONTROL_GUIDES.look, 10)
+        controlGuideState.phase = 2
+      }
+    }, 13000)
+    _activeTimeouts.add(timeoutLook)
+  }
 
   // Auto-spawn player
   if (gameplayMode && currentSceneGroup) {
@@ -1096,10 +1151,15 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
   // ==================== INPUT HANDLERS ====================
   function onKeyDown(e) {
     if (gameplayMode) {
-      if (isPauseMenuVisible() && e.code === "Escape") e.preventDefault()
       if (e.code === "Escape") {
+        if (document.getElementById('settingsScreen')) return
         e.preventDefault()
-        if (!isGameOverUIVisible()) enterPauseMenu()
+        if (isGameOverUIVisible()) return
+        if (isPauseMenuVisible()) {
+          lockCameraFromPauseResume(true) // fromEscape = true
+        } else {
+          enterPauseMenu()
+        }
       }
       return
     }
@@ -1126,6 +1186,10 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
   // ==================== POINTER LOCK ====================
   function onPointerLockChange() {
     const locked = document.pointerLockElement === renderer.domElement
+    if (locked) {
+      const overlay = document.getElementById('simClickResumeOverlay');
+      if (overlay) overlay.style.display = 'none';
+    }
     if (gameplayMode && locked) {
       if (isResumeRequested) {
         isResumeRequested = false
@@ -1164,12 +1228,25 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
   }
   document.addEventListener("pointerlockchange", onPointerLockChange)
 
+  document.addEventListener("pointerlockerror", () => {
+    if (gameplayMode && !isPauseMenuVisible() && !isGameOverUIVisible()) {
+      const overlay = document.getElementById('simClickResumeOverlay');
+      if (overlay) overlay.style.display = 'flex';
+    }
+  })
+
   // ==================== CLICK TO POSSESS ====================
   const raycaster = new THREE.Raycaster()
   const mouse = new THREE.Vector2()
 
   function onClick(event) {
-    if (gameplayMode) return
+    if (gameplayMode) {
+      // If we are not locked, and no menus are visible, click to lock pointer
+      if (document.pointerLockElement !== renderer.domElement && !isPauseMenuVisible() && !isGameOverUIVisible()) {
+        lockCameraFromPauseResume(false)
+      }
+      return
+    }
     mouse.x = (event.clientX / window.innerWidth) * 2 - 1
     mouse.y = -(event.clientY / window.innerHeight) * 2 + 1
     raycaster.setFromCamera(mouse, camera)
@@ -1272,112 +1349,112 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
 
   // ==================== ANIMATION LOOP ====================
   function animate() {
-                // --- Scene/asset ---
-                lastPerfStats.sceneName = currentSceneManager && currentSceneManager.sceneName ? currentSceneManager.sceneName : (typeof currentSceneGroup?.name === 'string' ? currentSceneGroup.name : '--')
-                lastPerfStats.assetName = currentSceneGroup && currentSceneGroup.name ? currentSceneGroup.name : '--'
-                lastPerfStats.prefabCount = Array.isArray(objects) ? objects.length : '--'
-                lastPerfStats.dynamicPrefabCount = Array.isArray(objects) ? objects.filter(o=>o.type==='dynamic').length : '--'
-                lastPerfStats.staticPrefabCount = Array.isArray(objects) ? objects.filter(o=>o.type==='static').length : '--'
-                lastPerfStats.kinematicPrefabCount = Array.isArray(objects) ? objects.filter(o=>o.type==='kinematic').length : '--'
-                // --- Object counts ---
-                lastPerfStats.syncDynamic = syncList ? syncList.filter(e=>e.type==='dynamic').length : '--'
-                lastPerfStats.syncStatic = syncList ? syncList.filter(e=>e.type==='static').length : '--'
-                lastPerfStats.syncKinematic = syncList ? syncList.filter(e=>e.type==='kinematic').length : '--'
-                lastPerfStats.sceneBodies = Array.isArray(sceneBodies) ? sceneBodies.length : '--'
-                // --- UI state ---
-                lastPerfStats.helpVisible = typeof helpVisible !== 'undefined' ? helpVisible : '--'
-                lastPerfStats.spawnMenuVisible = typeof spawnMenuVisible !== 'undefined' ? spawnMenuVisible : '--'
-                lastPerfStats.pauseMenuVisible = typeof pauseMenuScreen !== 'undefined' && pauseMenuScreen && pauseMenuScreen.isVisible ? 'ON' : 'OFF'
-                lastPerfStats.gameOverVisible = typeof gameOverScreen !== 'undefined' && gameOverScreen && gameOverScreen.isVisible ? 'ON' : 'OFF'
-                // --- System state ---
-                lastPerfStats.particleCount = particleManager && typeof particleManager.countAll === 'function' ? particleManager.countAll() : '--'
-                lastPerfStats.shadowCount = fakeShadowManager && typeof fakeShadowManager.countAll === 'function' ? fakeShadowManager.countAll() : '--'
-                lastPerfStats.physicsEventCount = physicsEventManager && typeof physicsEventManager.countAll === 'function' ? physicsEventManager.countAll() : '--'
-                // --- Table info ---
-                if (typeof currentSceneGroup?.getObjectByName === 'function') {
-                  const tableObj = currentSceneGroup.getObjectByName('Billiard Table')
-                  if (tableObj && tableObj.userData && tableObj.userData.tableDimensions) {
-                    lastPerfStats.tableColor = tableObj.userData.tableDimensions.clothColor || '--'
-                    lastPerfStats.tableSize = `${tableObj.userData.tableDimensions.width||''}x${tableObj.userData.tableDimensions.length||''}`
-                  }
-                }
-                // --- Portal/trigger ---
-                lastPerfStats.portalCount = syncList ? syncList.filter(e=>e.name&&e.name.includes('Portal')).length : '--'
-                lastPerfStats.triggerCount = syncList ? syncList.filter(e=>e.name&&e.name.includes('Trigger')).length : '--'
-                // --- Player ---
-                lastPerfStats.playerAlive = possessed && possessed.name==='Player' ? 'YES' : 'NO'
-                lastPerfStats.playerTime = possessed && possessed.name==='Player' && possessed.body && possessed.body.timeAlive ? possessed.body.timeAlive.toFixed(2) : '--'
-                lastPerfStats.playerSpawn = typeof playerMovement?.spawnCount !== 'undefined' ? playerMovement.spawnCount : '--'
-                lastPerfStats.playerDestroy = typeof playerMovement?.destroyCount !== 'undefined' ? playerMovement.destroyCount : '--'
-                // --- Light/fog/camera ---
-                lastPerfStats.fogType = scene && scene.fog ? (scene.fog.name || 'fog') : 'none'
-                lastPerfStats.lightCount = scene && scene.children ? scene.children.filter(c=>c.isLight).length : '--'
-                lastPerfStats.shadowMapSize = renderer && renderer.shadowMap ? renderer.shadowMap.width : '--'
-                lastPerfStats.cameraDist = cameraController && cameraController.distance ? cameraController.distance.toFixed(2) : '--'
-                lastPerfStats.spectator = cameraController && cameraController.isSpectator ? 'ON' : 'OFF'
-          // Section/phase: luôn đồng bộ section với sectionKey (camera)
-          if (cameraController && cameraController._activeSectionKey) {
-            const validSections = ['section1', 'section2', 'section3', 'section4'];
-            controlGuideState.section = validSections.includes(cameraController._activeSectionKey)
-              ? cameraController._activeSectionKey
-              : 'section1';
-          } else {
-            controlGuideState.section = 'section1';
-          }
-          lastPerfStats.section = controlGuideState.section;
-          lastPerfStats.phase = typeof controlGuideState !== 'undefined' && controlGuideState.phase !== undefined ? controlGuideState.phase : '--';
-              // Khi load scene mới, chỉ giữ lại section đang active, giải phóng mesh/object các section khác
-              // (giả sử mỗi section là một group con của currentSceneGroup, tên dạng 'section1', 'section2', ...)
-              let activeSectionKey = (cameraController && ['section1','section2','section3','section4'].includes(cameraController._activeSectionKey))
-                ? cameraController._activeSectionKey
-                : 'section1';
-              if (typeof currentSceneGroup?.children === 'object') {
-                currentSceneGroup.children.forEach(child => {
-                  if (child.name && child.name.startsWith('section')) {
-                    child.visible = (child.name === activeSectionKey);
-                    // Nếu không phải section active thì giải phóng mesh/material
-                    if (child.name !== activeSectionKey) {
-                      child.traverse(obj => {
-                        if (obj.geometry) { obj.geometry.dispose && obj.geometry.dispose(); obj.geometry = null; }
-                        if (obj.material) {
-                          if (Array.isArray(obj.material)) obj.material.forEach(mat => mat && mat.dispose && mat.dispose());
-                          else obj.material.dispose && obj.material.dispose();
-                          // Patch: assign fallback invisible material instead of null
-                          obj.material = new THREE.MeshBasicMaterial({ visible: false, color: 0x000000 });
-                        }
-                      });
-                    }
-                  }
-                });
+    // --- Scene/asset ---
+    lastPerfStats.sceneName = currentSceneManager && currentSceneManager.sceneName ? currentSceneManager.sceneName : (typeof currentSceneGroup?.name === 'string' ? currentSceneGroup.name : '--')
+    lastPerfStats.assetName = currentSceneGroup && currentSceneGroup.name ? currentSceneGroup.name : '--'
+    lastPerfStats.prefabCount = Array.isArray(objects) ? objects.length : '--'
+    lastPerfStats.dynamicPrefabCount = Array.isArray(objects) ? objects.filter(o => o.type === 'dynamic').length : '--'
+    lastPerfStats.staticPrefabCount = Array.isArray(objects) ? objects.filter(o => o.type === 'static').length : '--'
+    lastPerfStats.kinematicPrefabCount = Array.isArray(objects) ? objects.filter(o => o.type === 'kinematic').length : '--'
+    // --- Object counts ---
+    lastPerfStats.syncDynamic = syncList ? syncList.filter(e => e.type === 'dynamic').length : '--'
+    lastPerfStats.syncStatic = syncList ? syncList.filter(e => e.type === 'static').length : '--'
+    lastPerfStats.syncKinematic = syncList ? syncList.filter(e => e.type === 'kinematic').length : '--'
+    lastPerfStats.sceneBodies = Array.isArray(sceneBodies) ? sceneBodies.length : '--'
+    // --- UI state ---
+    lastPerfStats.helpVisible = typeof helpVisible !== 'undefined' ? helpVisible : '--'
+    lastPerfStats.spawnMenuVisible = typeof spawnMenuVisible !== 'undefined' ? spawnMenuVisible : '--'
+    lastPerfStats.pauseMenuVisible = typeof pauseMenuScreen !== 'undefined' && pauseMenuScreen && pauseMenuScreen.isVisible ? 'ON' : 'OFF'
+    lastPerfStats.gameOverVisible = typeof gameOverScreen !== 'undefined' && gameOverScreen && gameOverScreen.isVisible ? 'ON' : 'OFF'
+    // --- System state ---
+    lastPerfStats.particleCount = particleManager && typeof particleManager.countAll === 'function' ? particleManager.countAll() : '--'
+    lastPerfStats.shadowCount = fakeShadowManager && typeof fakeShadowManager.countAll === 'function' ? fakeShadowManager.countAll() : '--'
+    lastPerfStats.physicsEventCount = physicsEventManager && typeof physicsEventManager.countAll === 'function' ? physicsEventManager.countAll() : '--'
+    // --- Table info ---
+    if (typeof currentSceneGroup?.getObjectByName === 'function') {
+      const tableObj = currentSceneGroup.getObjectByName('Billiard Table')
+      if (tableObj && tableObj.userData && tableObj.userData.tableDimensions) {
+        lastPerfStats.tableColor = tableObj.userData.tableDimensions.clothColor || '--'
+        lastPerfStats.tableSize = `${tableObj.userData.tableDimensions.width || ''}x${tableObj.userData.tableDimensions.length || ''}`
+      }
+    }
+    // --- Portal/trigger ---
+    lastPerfStats.portalCount = syncList ? syncList.filter(e => e.name && e.name.includes('Portal')).length : '--'
+    lastPerfStats.triggerCount = syncList ? syncList.filter(e => e.name && e.name.includes('Trigger')).length : '--'
+    // --- Player ---
+    lastPerfStats.playerAlive = possessed && possessed.name === 'Player' ? 'YES' : 'NO'
+    lastPerfStats.playerTime = possessed && possessed.name === 'Player' && possessed.body && possessed.body.timeAlive ? possessed.body.timeAlive.toFixed(2) : '--'
+    lastPerfStats.playerSpawn = typeof playerMovement?.spawnCount !== 'undefined' ? playerMovement.spawnCount : '--'
+    lastPerfStats.playerDestroy = typeof playerMovement?.destroyCount !== 'undefined' ? playerMovement.destroyCount : '--'
+    // --- Light/fog/camera ---
+    lastPerfStats.fogType = scene && scene.fog ? (scene.fog.name || 'fog') : 'none'
+    lastPerfStats.lightCount = scene && scene.children ? scene.children.filter(c => c.isLight).length : '--'
+    lastPerfStats.shadowMapSize = renderer && renderer.shadowMap ? renderer.shadowMap.width : '--'
+    lastPerfStats.cameraDist = cameraController && cameraController.distance ? cameraController.distance.toFixed(2) : '--'
+    lastPerfStats.spectator = cameraController && cameraController.isSpectator ? 'ON' : 'OFF'
+    // Section/phase: luôn đồng bộ section với sectionKey (camera)
+    if (cameraController && cameraController._activeSectionKey) {
+      const validSections = ['section1', 'section2', 'section3', 'section4'];
+      controlGuideState.section = validSections.includes(cameraController._activeSectionKey)
+        ? cameraController._activeSectionKey
+        : 'section1';
+    } else {
+      controlGuideState.section = 'section1';
+    }
+    lastPerfStats.section = controlGuideState.section;
+    lastPerfStats.phase = typeof controlGuideState !== 'undefined' && controlGuideState.phase !== undefined ? controlGuideState.phase : '--';
+    // Khi load scene mới, chỉ giữ lại section đang active, giải phóng mesh/object các section khác
+    // (giả sử mỗi section là một group con của currentSceneGroup, tên dạng 'section1', 'section2', ...)
+    let activeSectionKey = (cameraController && ['section1', 'section2', 'section3', 'section4'].includes(cameraController._activeSectionKey))
+      ? cameraController._activeSectionKey
+      : 'section1';
+    if (typeof currentSceneGroup?.children === 'object') {
+      currentSceneGroup.children.forEach(child => {
+        if (child.name && child.name.startsWith('section')) {
+          child.visible = (child.name === activeSectionKey);
+          // Nếu không phải section active thì giải phóng mesh/material
+          if (child.name !== activeSectionKey) {
+            child.traverse(obj => {
+              if (obj.geometry) { obj.geometry.dispose && obj.geometry.dispose(); obj.geometry = null; }
+              if (obj.material) {
+                if (Array.isArray(obj.material)) obj.material.forEach(mat => mat && mat.dispose && mat.dispose());
+                else obj.material.dispose && obj.material.dispose();
+                // Patch: assign fallback invisible material instead of null
+                obj.material = new THREE.MeshBasicMaterial({ visible: false, color: 0x000000 });
               }
-          // Input state
-          if (cameraController && cameraController.moveState) {
-            lastPerfStats.moveState = Object.entries(cameraController.moveState).filter(([k,v])=>v).map(([k])=>k[0].toUpperCase()).join('') || '-'
+            });
           }
-          lastPerfStats.pointerLock = document.pointerLockElement ? 'ON' : 'OFF'
-          lastPerfStats.controlEnabled = cameraController && cameraController.isControlEnabled ? 'ON' : 'OFF'
-          // AI counts
-          lastPerfStats.aiGuy = guyAIControllers ? guyAIControllers.size : '--'
-          lastPerfStats.aiDude = dudeAIControllers ? dudeAIControllers.size : '--'
-          lastPerfStats.aiGuide = guideAIControllers ? guideAIControllers.size : '--'
-          lastPerfStats.aiDummy = dummyAIControllers ? dummyAIControllers.size : '--'
-          lastPerfStats.aiBall8 = ball8AIControllers ? ball8AIControllers.size : '--'
-          lastPerfStats.aiBowling = bowlingAIControllers ? bowlingAIControllers.size : '--'
-          lastPerfStats.aiCompune = compuneAIControllers ? compuneAIControllers.size : '--'
-          // Section key (camera)
-          lastPerfStats.sectionKey = (cameraController && ['section1','section2','section3','section4'].includes(cameraController._activeSectionKey))
-            ? cameraController._activeSectionKey
-            : 'section1';
-          // Phase AI (guy)
-          let phaseGuy = '--';
-          if (guyAIControllers && guyAIControllers.size > 0) {
-            for (const ai of guyAIControllers.values()) {
-              if (ai.currentPhase !== undefined) { phaseGuy = ai.currentPhase; break; }
-            }
-          }
-          lastPerfStats.phaseGuy = phaseGuy
-            // Last event (simple: lấy sự kiện keydown gần nhất)
-            if (window._lastSimEvent) lastPerfStats.lastEvent = window._lastSimEvent
+        }
+      });
+    }
+    // Input state
+    if (cameraController && cameraController.moveState) {
+      lastPerfStats.moveState = Object.entries(cameraController.moveState).filter(([k, v]) => v).map(([k]) => k[0].toUpperCase()).join('') || '-'
+    }
+    lastPerfStats.pointerLock = document.pointerLockElement ? 'ON' : 'OFF'
+    lastPerfStats.controlEnabled = cameraController && cameraController.isControlEnabled ? 'ON' : 'OFF'
+    // AI counts
+    lastPerfStats.aiGuy = guyAIControllers ? guyAIControllers.size : '--'
+    lastPerfStats.aiDude = dudeAIControllers ? dudeAIControllers.size : '--'
+    lastPerfStats.aiGuide = guideAIControllers ? guideAIControllers.size : '--'
+    lastPerfStats.aiDummy = dummyAIControllers ? dummyAIControllers.size : '--'
+    lastPerfStats.aiBall8 = ball8AIControllers ? ball8AIControllers.size : '--'
+    lastPerfStats.aiBowling = bowlingAIControllers ? bowlingAIControllers.size : '--'
+    lastPerfStats.aiCompune = compuneAIControllers ? compuneAIControllers.size : '--'
+    // Section key (camera)
+    lastPerfStats.sectionKey = (cameraController && ['section1', 'section2', 'section3', 'section4'].includes(cameraController._activeSectionKey))
+      ? cameraController._activeSectionKey
+      : 'section1';
+    // Phase AI (guy)
+    let phaseGuy = '--';
+    if (guyAIControllers && guyAIControllers.size > 0) {
+      for (const ai of guyAIControllers.values()) {
+        if (ai.currentPhase !== undefined) { phaseGuy = ai.currentPhase; break; }
+      }
+    }
+    lastPerfStats.phaseGuy = phaseGuy
+    // Last event (simple: lấy sự kiện keydown gần nhất)
+    if (window._lastSimEvent) lastPerfStats.lastEvent = window._lastSimEvent
     animationId = requestAnimationFrame(animate)
     const currentTime = performance.now()
     const rawDelta = (currentTime - lastTime) / 1000
@@ -1751,6 +1828,8 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
     if (spawnWindow && spawnWindow.parentNode) spawnWindow.parentNode.removeChild(spawnWindow)
     const spawnHint = document.getElementById('simSpawnHint')
     if (spawnHint && spawnHint.parentNode) spawnHint.parentNode.removeChild(spawnHint)
+    const clickOverlay = document.getElementById('simClickResumeOverlay')
+    if (clickOverlay && clickOverlay.parentNode) clickOverlay.parentNode.removeChild(clickOverlay)
     if (cameraController.dispose) cameraController.dispose()
     compuneAIControllers.forEach(compuneAI => compuneAI.cleanup())
     compuneAIControllers.clear()

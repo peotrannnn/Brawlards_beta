@@ -7,6 +7,7 @@ export const defaultSettings = {
     showFPS: false,
     invertY: false,
     mouseSensitivity: 1.0,
+    brightness: 1.0,
 };
 
 class SettingsManager {
@@ -43,6 +44,11 @@ class SettingsManager {
 
     set(key, value) {
         this.settings[key] = value;
+        this.save();
+    }
+
+    reset() {
+        this.settings = { ...defaultSettings };
         this.save();
     }
 

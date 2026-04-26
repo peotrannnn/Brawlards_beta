@@ -19,7 +19,8 @@ export class PauseMenuScreen {
       left: 0;
       width: 100%;
       height: 100%;
-      background: rgba(10, 26, 61, 0.85);
+      background: rgba(0, 0, 0, 0.4);
+      backdrop-filter: blur(8px);
       display: flex;
       flex-direction: column;
       justify-content: center;
@@ -161,9 +162,6 @@ export class PauseMenuScreen {
           selectedItem.action();
           setTimeout(() => { menuActive = true }, 100);
         }
-      } else if (e.code === 'Escape') {
-        e.preventDefault()
-        this.onResume()
       }
     }
 
