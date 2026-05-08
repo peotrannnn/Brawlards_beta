@@ -173,6 +173,13 @@ export class ThirdPersonCameraController {
     this._tmpOffset = new THREE.Vector3()
     this._tmpDirection = new THREE.Vector3()
     this._tmpSpectatorMovement = new THREE.Vector3()
+    this._tmpCinematicTarget = new THREE.Vector3()
+    this._tmpCinematicLookMatrix = new THREE.Matrix4()
+    this._tmpCinematicQuat = new THREE.Quaternion()
+    this._tmpCinematicUp = new THREE.Vector3(0, 1, 0)
+    this._tmpDesiredCameraPos = new THREE.Vector3()
+    this._cinematicFocusState = null
+    this._cinematicReleaseState = null
 
     // Keep stable listener references so dispose() can correctly remove them.
     this._boundOnPointerLockChange = this._onPointerLockChange.bind(this)
@@ -418,6 +425,10 @@ export class ThirdPersonCameraController {
   }
 
   _onKeyDown(e) {
+    if (this._cinematicFocusState?.active) {
+      return
+    }
+
     // ✨ Ignore input if focus is not on canvas
     if (document.activeElement !== this.renderer.domElement && document.activeElement !== document.body) {
       return;
@@ -446,6 +457,10 @@ export class ThirdPersonCameraController {
   }
 
   _onKeyUp(e) {
+    if (this._cinematicFocusState?.active) {
+      return
+    }
+
     // ✨ Ignore input if focus is not on canvas
     if (document.activeElement !== this.renderer.domElement && document.activeElement !== document.body) {
       return;
@@ -482,6 +497,8 @@ export class ThirdPersonCameraController {
   }
 
   _onMouseMove(e) {
+    if (this._cinematicFocusState?.active) return
+
     if (!this.isControlEnabled) return
     
     if (this.isMouseDown) {
@@ -515,6 +532,8 @@ export class ThirdPersonCameraController {
 
   _onWheel(e) {
     e.preventDefault()
+
+    if (this._cinematicFocusState?.active) return
 
     if (this.targetObject) {
       const zoomSpeed = CAMERA_CONFIG.ZOOM_SPEED
@@ -575,6 +594,30 @@ export class ThirdPersonCameraController {
   }
 
   _updateCameraPosition(delta = 0) {
+    if (this._cinematicFocusState?.active) {
+      const state = this._cinematicFocusState
+      const targetObject = state.targetObject
+      if (!targetObject?.parent) {
+        this.clearCinematicFocus()
+      } else {
+        state.elapsed += Math.max(0, delta)
+        const blendDuration = Math.max(0.001, state.blendDuration)
+        const blendT = THREE.MathUtils.smoothstep(Math.min(1, state.elapsed / blendDuration), 0, 1)
+
+        if (typeof state.getTargetPosition === 'function') {
+          state.getTargetPosition(this._tmpCinematicTarget)
+        } else {
+          targetObject.getWorldPosition(this._tmpCinematicTarget)
+        }
+
+        this.camera.position.copy(state.lockedPosition)
+        this._tmpCinematicLookMatrix.lookAt(this.camera.position, this._tmpCinematicTarget, this._tmpCinematicUp)
+        this._tmpCinematicQuat.setFromRotationMatrix(this._tmpCinematicLookMatrix)
+        this.camera.quaternion.slerpQuaternions(state.startQuaternion, this._tmpCinematicQuat, blendT)
+        return
+      }
+    }
+
     const maxRotationPerFrame = CAMERA_CONFIG.ROTATION_SPEED_LIMIT
     if (Math.abs(this.rotationDeltaX) > CAMERA_CONFIG.INERTIA_THRESHOLD || Math.abs(this.rotationDeltaY) > CAMERA_CONFIG.INERTIA_THRESHOLD) {
       const dx = Math.max(-maxRotationPerFrame, Math.min(maxRotationPerFrame, this.rotationDeltaX))
@@ -632,7 +675,8 @@ export class ThirdPersonCameraController {
           offset.multiplyScalar(finalDistance)
 
           this.camera.position.copy(cueWorldPos).add(offset)
-          this.camera.lookAt(cueWorldPos)
+          this._tmpDesiredCameraPos.copy(cueWorldPos).add(offset)
+          this._applyFollowCameraPose(this._tmpDesiredCameraPos, cueWorldPos, delta)
           // ✨ Apply dithering effect if camera is very close to target
           this._updateDithering(finalDistance, delta)
           return
@@ -661,7 +705,8 @@ export class ThirdPersonCameraController {
       offset.multiplyScalar(finalDistance)
 
       this.camera.position.copy(this.targetPosition).add(offset)
-      this.camera.lookAt(this.targetPosition)
+        this._tmpDesiredCameraPos.copy(this.targetPosition).add(offset)
+        this._applyFollowCameraPose(this._tmpDesiredCameraPos, this.targetPosition, delta)
       // ✨ Apply dithering effect if camera is very close to target
       this._updateDithering(finalDistance, delta)
     } else if (this.isSpectator) {
@@ -751,6 +796,8 @@ export class ThirdPersonCameraController {
   }
 
   clearFocus() {
+    if (this._cinematicFocusState?.active) return
+
     // ✨ In gameplay mode, don't allow clearing focus from player
     if (this.isGameplayMode) return
     
@@ -778,6 +825,66 @@ export class ThirdPersonCameraController {
    */
   disableControlOnly() {
     this.disableControl()
+  }
+
+  startCinematicFocus(targetObject, options = {}) {
+    if (!targetObject) return false
+
+    this._cinematicFocusState = {
+      active: true,
+      targetObject,
+      getTargetPosition: typeof options.getTargetPosition === 'function' ? options.getTargetPosition : null,
+      startPosition: this.camera.position.clone(),
+      lockedPosition: (options.lockedPosition || this.camera.position).clone(),
+      startQuaternion: this.camera.quaternion.clone(),
+      blendDuration: Math.max(0.05, options.blendDuration ?? 1.0),
+      elapsed: 0
+    }
+    this._cinematicReleaseState = null
+
+    this.rotationDeltaX = 0
+    this.rotationDeltaY = 0
+    this.crosshair.style.display = 'none'
+    return true
+  }
+
+  clearCinematicFocus(options = {}) {
+    if (!this._cinematicFocusState?.active) return
+    this._cinematicReleaseState = {
+      active: true,
+      startPosition: this.camera.position.clone(),
+      startQuaternion: this.camera.quaternion.clone(),
+      blendDuration: Math.max(0.05, options.blendDuration ?? 1.2),
+      elapsed: 0
+    }
+    this._cinematicFocusState = null
+    if (this.isControlEnabled) {
+      this.crosshair.style.display = 'block'
+    }
+  }
+
+  _applyFollowCameraPose(position, lookTarget, delta = 0) {
+    this._tmpCinematicLookMatrix.lookAt(position, lookTarget, this._tmpCinematicUp)
+    this._tmpCinematicQuat.setFromRotationMatrix(this._tmpCinematicLookMatrix)
+
+    const release = this._cinematicReleaseState
+    if (release?.active) {
+      release.elapsed += Math.max(0, delta)
+      const blendT = THREE.MathUtils.smoothstep(
+        Math.min(1, release.elapsed / Math.max(0.001, release.blendDuration)),
+        0,
+        1
+      )
+      this.camera.position.copy(release.startPosition).lerp(position, blendT)
+      this.camera.quaternion.slerpQuaternions(release.startQuaternion, this._tmpCinematicQuat, blendT)
+      if (blendT >= 1) {
+        this._cinematicReleaseState = null
+      }
+      return
+    }
+
+    this.camera.position.copy(position)
+    this.camera.quaternion.copy(this._tmpCinematicQuat)
   }
 
   /**
@@ -1155,6 +1262,7 @@ export class ThirdPersonCameraController {
     this._lastDitherAlpha = null
     this._collisionCheckAccumulator = this._effectiveCollisionCheckInterval
     this._collisionCacheAccumulator = this._effectiveCollisionCacheRefreshInterval
+    this._cinematicFocusState = null
     
     // ✨ Initialize camera state to default (pointer lock DISABLED)
     this.isControlEnabled = false
@@ -1173,6 +1281,7 @@ export class ThirdPersonCameraController {
   }
 
   dispose() {
+    this._cinematicFocusState = null
     document.removeEventListener('pointerlockchange', this._boundOnPointerLockChange)
     document.removeEventListener('pointerlockerror', this._boundOnPointerLockError)
     window.removeEventListener('keydown', this._boundOnKeyDown)

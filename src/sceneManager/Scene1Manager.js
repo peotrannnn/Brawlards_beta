@@ -132,7 +132,11 @@ const SCENE1_CONFIG = {
   section3EdgeTeleportHoldSec: 3.0,
   section3EdgePostTeleportDarkHoldSec: 3.0,
   section3EdgeRecoveryDurationSec: 5.0,
-  section3EyeDescentDurationSec: 300.0
+  section3EyeDescentDurationSec: 300.0,
+  section3SacrificeTriggerSec: 210.0,
+  section3SacrificeGuideNearPlayerDistance: 28.0,
+  section3SacrificeEyeNearPlayerDistance: 48.0,
+  section3SacrificeCameraBlendSec: 1.8
 }
 
 const SECTION_WARMUP_CONFIG = {
@@ -345,6 +349,15 @@ export class Scene1Manager {
     this._tmpVendingAnimQuat = new THREE.Quaternion()
     this._tmpFunHouseAnimPos = new THREE.Vector3()
     this._tmpFunHouseAnimQuat = new THREE.Quaternion()
+    this._tmpFunHouseTargetPos = new THREE.Vector3()
+    this._tmpFunHouseTargetQuat = new THREE.Quaternion()
+    this._tmpScaleSyncWorldPos = new THREE.Vector3()
+    this._tmpScaleSyncWorldQuat = new THREE.Quaternion()
+    this._tmpScaleSyncWorldScale = new THREE.Vector3()
+    this._tmpSection3SacrificeGuidePos = new THREE.Vector3()
+    this._tmpSection3SacrificeEyePos = new THREE.Vector3()
+    this._tmpSection3SacrificeTargetPos = new THREE.Vector3()
+    this._tmpSection3SacrificeCameraLockPos = new THREE.Vector3()
 
     // Reward coin on ordered sequence system
     this.sequenceSilverCoinAsset = null
@@ -384,6 +397,9 @@ export class Scene1Manager {
     this.section3EyeTransitionProgress = 0 // 0 to 1 for color transition
     this._section3PlatformBoundsCache = null
     this._section3WarmPrimeReady = false
+    this.section3SacrificeState = null
+    this.section3SacrificePedestal = null
+    this.section3SacrificePedestalTarget = null
     this.sectionGroups = this.sceneGroup?.userData?.sectionGroups || null
     this.baseSceneBackground = null
     this.activeSectionId = null
@@ -1433,6 +1449,7 @@ export class Scene1Manager {
     this._updateSection3TreeLod(syncList, delta, camera)
     this._updateSection3TreeDistanceScaling(syncList, delta)
     this._updateSection3GrassLod(syncList, delta, camera)
+    this._updateSection3GuideSacrifice(syncList, delta, camera)
     this._updateSection3EyeBot(syncList, delta)
     this._updateSection3EyeTransition(syncList, delta, camera)
     this._updateSection3EyeTracking(syncList, camera)
@@ -1536,9 +1553,11 @@ export class Scene1Manager {
   _ensureSection3HouseScaleRegistry(syncList) {
     if (!Array.isArray(syncList)) return
 
+    const syncEntrySet = new Set(syncList)
+
     const staleEntries = []
     this._section3HouseScaleRegistry.forEach((_, entry) => {
-      if (!entry || !syncList.includes(entry) || !entry.mesh || !entry.body || !entry.mesh.parent) {
+      if (!entry || !syncEntrySet.has(entry) || !entry.mesh || !entry.body || !entry.mesh.parent) {
         staleEntries.push(entry)
       }
     })
@@ -1731,23 +1750,179 @@ export class Scene1Manager {
     return this.section3EyeBot
   }
 
+  _ensureSection3SacrificePedestal() {
+    if (this.section3SacrificePedestal?.parent && this.section3SacrificePedestalTarget?.parent) {
+      return {
+        pedestal: this.section3SacrificePedestal,
+        target: this.section3SacrificePedestalTarget
+      }
+    }
+
+    const section3Group = this.sectionGroups?.section3 || null
+    const pedestal = section3Group?.userData?.section3SacrificePedestal
+      || this.sceneGroup?.getObjectByName('Section3 Sacrifice Pedestal')
+      || null
+    const target = section3Group?.userData?.section3SacrificePedestalTarget
+      || pedestal?.getObjectByName?.('Section3 Sacrifice Pedestal Target')
+      || null
+
+    this.section3SacrificePedestal = pedestal || null
+    this.section3SacrificePedestalTarget = target || null
+
+    return {
+      pedestal: this.section3SacrificePedestal,
+      target: this.section3SacrificePedestalTarget
+    }
+  }
+
+  _clearSection3Sacrifice(camera = null, options = {}) {
+    const { cancelGuide = true } = options
+    const guideEntry = this.section3SacrificeState?.guideEntry || null
+    const guideAI = guideEntry?.body?.userData?.guideAI || null
+    if (cancelGuide && guideAI?.isSacrificing?.()) {
+      guideAI.cancelSacrifice()
+    }
+
+    const cameraController = camera?.userData?.cameraController || this._lastWarmupCamera?.userData?.cameraController || null
+    if (cameraController?.clearCinematicFocus) {
+      cameraController.clearCinematicFocus()
+    }
+
+    this.section3SacrificeState = null
+  }
+
+  _findSection3SacrificeGuide(syncList, playerEntry) {
+    if (!Array.isArray(syncList) || !playerEntry?.mesh) return null
+
+    const maxDistSq = SCENE1_CONFIG.section3SacrificeGuideNearPlayerDistance * SCENE1_CONFIG.section3SacrificeGuideNearPlayerDistance
+    let loyalNearest = null
+    let loyalNearestDistSq = Infinity
+    let nearest = null
+    let nearestDistSq = Infinity
+
+    for (const entry of syncList) {
+      if (!entry?.mesh || !entry?.body) continue
+      if (entry.name !== 'Guide') continue
+
+      const guideAI = entry.body.userData?.guideAI
+      if (!guideAI?.hasGlowingLightStick?.()) continue
+      if (guideAI?.isSacrificing?.()) continue
+
+      const distSq = entry.mesh.position.distanceToSquared(playerEntry.mesh.position)
+      if (distSq > maxDistSq || distSq >= nearestDistSq) continue
+
+      if (guideAI?.loyalPlayerEntry === playerEntry && distSq < loyalNearestDistSq) {
+        loyalNearest = entry
+        loyalNearestDistSq = distSq
+      }
+
+      nearest = entry
+      nearestDistSq = distSq
+    }
+
+    return loyalNearest || nearest
+  }
+
+  _updateSection3GuideSacrifice(syncList, delta, camera = null) {
+    if (this.activeSectionId !== 'section3') {
+      if (this.section3SacrificeState) this._clearSection3Sacrifice(camera)
+      return
+    }
+
+    const eyeBot = this._ensureSection3EyeBot()
+    if (!eyeBot?._descentStarted || !Array.isArray(syncList)) return
+
+    const playerEntry = syncList.find((entry) => entry.name === 'Player' && entry.mesh) || null
+    if (!playerEntry?.mesh) return
+
+    const currentState = this.section3SacrificeState
+    if (currentState?.guideEntry && !syncList.includes(currentState.guideEntry)) {
+      this._clearSection3Sacrifice(camera)
+      return
+    }
+
+    const sacrificeWindowOpened = eyeBot._descentElapsed >= SCENE1_CONFIG.section3SacrificeTriggerSec
+
+    if (!currentState && sacrificeWindowOpened) {
+      const { target } = this._ensureSection3SacrificePedestal()
+      const guideEntry = this._findSection3SacrificeGuide(syncList, playerEntry)
+      const guideAI = guideEntry?.body?.userData?.guideAI || null
+      if (target && guideEntry && guideAI?.startSacrifice?.(target.getWorldPosition(this._tmpSection3SacrificeTargetPos))) {
+        this.section3SacrificeState = {
+          guideEntry,
+          cameraLocked: false,
+          eyeRedirectActive: true,
+          eyeFloatAnchorLocked: false,
+          eyeFixedTargetPosition: new THREE.Vector3()
+        }
+      }
+    }
+
+    const activeState = this.section3SacrificeState
+    if (!activeState?.guideEntry) return
+
+    const guideEntry = activeState.guideEntry
+    const guideAI = guideEntry.body?.userData?.guideAI || null
+    if (!guideAI?.isSacrificing?.()) {
+      this._clearSection3Sacrifice(camera)
+      return
+    }
+
+    if (guideAI.isSacrificeFloating?.() && !activeState.eyeFloatAnchorLocked && eyeBot?.eyeMesh) {
+      activeState.eyeFloatAnchorLocked = true
+      activeState.eyeFixedTargetPosition.copy(eyeBot.eyeMesh.position)
+      activeState.eyeFixedTargetPosition.y = guideEntry.mesh.position.y
+    }
+
+    if (!activeState.cameraLocked) {
+      const cameraController = camera?.userData?.cameraController || this._lastWarmupCamera?.userData?.cameraController || null
+      if (cameraController?.startCinematicFocus) {
+        activeState.cameraLocked = cameraController.startCinematicFocus(guideEntry.mesh, {
+          blendDuration: SCENE1_CONFIG.section3SacrificeCameraBlendSec,
+          lockedPosition: this._tmpSection3SacrificeCameraLockPos.copy(camera?.position || cameraController.camera.position),
+          getTargetPosition: (targetPos) => guideAI.getSacrificeFocusPosition?.(targetPos) || guideEntry.mesh.getWorldPosition(targetPos)
+        })
+      }
+    }
+  }
+
   _updateSection3EyeBot(syncList, delta) {
     const eyeBot = this._ensureSection3EyeBot()
     if (!eyeBot || !Array.isArray(syncList)) return
 
     const playerEntry = syncList.find((e) => e.name === 'Player' && e.mesh) || null
+    const redirectedGuideEntry = this.section3SacrificeState?.guideEntry || null
+    const guideAI = redirectedGuideEntry?.body?.userData?.guideAI || null
+    const allowGuideTouch = !redirectedGuideEntry || !!guideAI?.isSacrificeFloating?.()
+    const fixedTargetPosition = this.section3SacrificeState?.eyeFloatAnchorLocked
+      ? this.section3SacrificeState.eyeFixedTargetPosition
+      : null
     const eyeEntry = this._findSyncEntryForMesh(syncList, eyeBot.eyeMesh)
     const triggerEntry = this._findSyncEntryForMesh(syncList, eyeBot.triggerMesh)
 
     const result = eyeBot.update(delta, {
       playerEntry,
+      targetEntry: redirectedGuideEntry,
+      fixedTargetPosition,
+      allowPlayerTarget: !this.section3SacrificeState,
+      allowTargetTouch: redirectedGuideEntry ? allowGuideTouch : true,
       playerInSection3: this.activeSectionId === 'section3',
       eyeEntry,
       triggerEntry
     })
 
-    if (result?.touchedPlayer && playerEntry && this.destroySystem?.destroyCharacter) {
-      this.destroySystem.destroyCharacter(playerEntry)
+    if (result?.touchedTarget && result.targetEntry && this.destroySystem?.destroyCharacter) {
+      if (result.targetEntry.name === 'Guide') {
+        const guideAI = result.targetEntry.body?.userData?.guideAI || null
+        guideAI?.dropCarriedItem?.()
+        this._clearSection3Sacrifice(this._lastWarmupCamera, { cancelGuide: false })
+        this.destroySystem.destroyCharacter(result.targetEntry)
+        return
+      }
+
+      if (result.targetEntry === playerEntry) {
+        this.destroySystem.destroyCharacter(playerEntry)
+      }
     }
   }
 
@@ -1972,6 +2147,14 @@ export class Scene1Manager {
 
     const eyeLookUpdater = this.section3EyeSun?.userData?.updateLookAt
     if (typeof eyeLookUpdater !== 'function') return
+
+    const redirectedGuideEntry = this.section3SacrificeState?.eyeRedirectActive ? this.section3SacrificeState.guideEntry : null
+    const redirectedGuideAI = redirectedGuideEntry?.body?.userData?.guideAI || null
+    if (redirectedGuideEntry?.mesh && redirectedGuideAI?.getSacrificeFocusPosition) {
+      redirectedGuideAI.getSacrificeFocusPosition(this._tmpSection3EyeLookTarget)
+      eyeLookUpdater(this._tmpSection3EyeLookTarget)
+      return
+    }
 
     if (camera?.position) {
       this._tmpSection3EyeLookTarget.set(camera.position.x, camera.position.y, camera.position.z)
@@ -3015,6 +3198,10 @@ export class Scene1Manager {
     const ownerMesh = ownerEntry?.mesh
     if (!ownerMesh || !Array.isArray(syncList)) return
 
+    const worldPos = this._tmpScaleSyncWorldPos
+    const worldQuat = this._tmpScaleSyncWorldQuat
+    const worldScale = this._tmpScaleSyncWorldScale
+
     for (const entry of syncList) {
       const childMesh = entry?.mesh
       const body = entry?.body
@@ -3030,9 +3217,6 @@ export class Scene1Manager {
         }))
       }
 
-      const worldPos = new THREE.Vector3()
-      const worldQuat = new THREE.Quaternion()
-      const worldScale = new THREE.Vector3()
       childMesh.getWorldPosition(worldPos)
       childMesh.getWorldQuaternion(worldQuat)
       childMesh.getWorldScale(worldScale)
@@ -3120,8 +3304,8 @@ export class Scene1Manager {
       mesh,
       powerBox,
       triggerInfo,
-      target: targetInfo.target.clone(),
-      targetQuaternion: targetInfo.targetQuaternion.clone()
+      target: this._tmpFunHouseTargetPos.copy(targetInfo.target),
+      targetQuaternion: this._tmpFunHouseTargetQuat.copy(targetInfo.targetQuaternion)
     }
   }
 
@@ -3676,6 +3860,9 @@ export class Scene1Manager {
 
   _updateFunHousePowerBox(syncList, delta) {
     if (this.activeSectionId !== 'section3') return
+
+    const funHouse = this._ensureFunHouseEntry()
+    funHouse?.mesh?.userData?.update?.(delta)
 
     this._updateFunHouseLightStickInstallAnimation(delta)
     if (this.funHouseLightStickInstallState) return
@@ -5854,7 +6041,11 @@ export class Scene1Manager {
     this.section3EdgeRecoveryStartDarkness = 0
     this._section3PlatformBoundsCache = null
     this._section3WarmPrimeReady = false
+    this._lastWarmupCamera?.userData?.cameraController?.clearCinematicFocus?.()
     this.section3EyeBot = null
+    this.section3SacrificeState = null
+    this.section3SacrificePedestal = null
+    this.section3SacrificePedestalTarget = null
     this.dudeFogBlend = 0
     this.dudeFogSmoothedDistance = SCENE1_CONFIG.dudeFogMaxDistance
     this.dudeFogTargetBlend = 0

@@ -147,6 +147,51 @@ const SECTION3_TREE_LOD_LOW_QUALITY_OVERRIDES = {
 
 const cachedSection3GrassNoiseTextures = new Map()
 const cachedSection3GrassBladeMaskTextures = new Map()
+let cachedSection3PedestalStoneTexture = null
+
+function createSection3PedestalStoneTexture() {
+  if (cachedSection3PedestalStoneTexture) return cachedSection3PedestalStoneTexture
+
+  const canvas = document.createElement('canvas')
+  canvas.width = 512
+  canvas.height = 512
+  const ctx = canvas.getContext('2d')
+
+  ctx.fillStyle = '#76716b'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+  for (let i = 0; i < 2200; i++) {
+    const x = Math.random() * canvas.width
+    const y = Math.random() * canvas.height
+    const shade = 90 + Math.floor(Math.random() * 90)
+    const alpha = 0.05 + Math.random() * 0.18
+    ctx.fillStyle = `rgba(${shade}, ${shade}, ${shade + 8}, ${alpha})`
+    ctx.beginPath()
+    ctx.arc(x, y, 1 + Math.random() * 3.2, 0, Math.PI * 2)
+    ctx.fill()
+  }
+
+  ctx.strokeStyle = 'rgba(228, 228, 228, 0.16)'
+  ctx.lineWidth = 2
+  for (let i = 0; i < 24; i++) {
+    const startX = Math.random() * canvas.width
+    const startY = Math.random() * canvas.height
+    ctx.beginPath()
+    ctx.moveTo(startX, startY)
+    ctx.lineTo(startX + (Math.random() - 0.5) * 110, startY + (Math.random() - 0.5) * 110)
+    ctx.stroke()
+  }
+
+  const texture = new THREE.CanvasTexture(canvas)
+  texture.wrapS = THREE.RepeatWrapping
+  texture.wrapT = THREE.RepeatWrapping
+  texture.repeat.set(1.3, 1.3)
+  texture.colorSpace = THREE.SRGBColorSpace
+  texture.anisotropy = 8
+  texture.needsUpdate = true
+  cachedSection3PedestalStoneTexture = texture
+  return texture
+}
 
 function isSection3HighQualityMode() {
   if (typeof window === 'undefined') return true
@@ -1047,6 +1092,31 @@ export function createSection3(rootGroup) {
   platform.name = 'Section3 Platform'
   rootGroup.add(platform)
 
+  const pedestalTexture = createSection3PedestalStoneTexture()
+  const pedestalMaterial = new THREE.MeshStandardMaterial({
+    color: '#9a9389',
+    map: pedestalTexture,
+    roughness: 0.94,
+    metalness: 0.05
+  })
+  const pedestal = new THREE.Mesh(
+    new THREE.CylinderGeometry(4.1, 4.6, 0.18, 48, 1),
+    pedestalMaterial
+  )
+  pedestal.position.set(SECTION3_CENTER_X, SECTION3_CENTER_Y + 0.09, SECTION3_CENTER_Z)
+  pedestal.castShadow = false
+  pedestal.receiveShadow = true
+  pedestal.name = 'Section3 Sacrifice Pedestal'
+
+  const pedestalTarget = new THREE.Object3D()
+  pedestalTarget.name = 'Section3 Sacrifice Pedestal Target'
+  pedestalTarget.position.set(0, 0.24, 0)
+  pedestal.add(pedestalTarget)
+  rootGroup.add(pedestal)
+
+  rootGroup.userData.section3SacrificePedestal = pedestal
+  rootGroup.userData.section3SacrificePedestalTarget = pedestalTarget
+
   const section3GrassLod = createSection3GrassLayer(
     rootGroup,
     SECTION3_CENTER_X,
@@ -1210,6 +1280,14 @@ export function createSection3(rootGroup) {
       height: SECTION3_THICKNESS,
       segments: 24,
       offset: [SECTION3_CENTER_X, SECTION3_CENTER_Y - SECTION3_THICKNESS / 2, SECTION3_CENTER_Z]
+    })
+    rootGroup.userData.physics.shapes.push({
+      type: 'cylinder',
+      radiusTop: 4.1,
+      radiusBottom: 4.6,
+      height: 0.18,
+      segments: 24,
+      offset: [SECTION3_CENTER_X, SECTION3_CENTER_Y + 0.09, SECTION3_CENTER_Z]
     })
   }
 

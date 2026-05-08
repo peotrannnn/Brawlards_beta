@@ -922,6 +922,9 @@ function createFunHouseMesh(options = {}) {
   installedStickAnchor.rotation.y = Math.PI * 0.08
   powerBox.add(installedStickAnchor)
 
+  const tempInstalledStickTarget = new THREE.Vector3()
+  const tempInstalledStickQuaternion = new THREE.Quaternion()
+
   const installedLightStick = getLightStickAsset().factory()
   installedLightStick.name = 'Fun House Installed Light Stick'
   installedLightStick.scale.setScalar(FUN_HOUSE_CONFIG.powerBox.installedStickScale)
@@ -980,9 +983,10 @@ function createFunHouseMesh(options = {}) {
     setPowerBoxDoorOpenAmount(0)
     setFunHouseStateOverride(false)
 
-    const doorPanel = elevator.children.find((child) => child?.userData?.isDoorPanel)
-    const glowPlane = elevator.children.find((child) => child?.userData?.isGlowPlane)
-    const environmentLight = elevator.children.find((child) => child?.userData?.isEnvironmentLight)
+    const cachedParts = elevator.userData?.cachedParts || {}
+    const doorPanel = cachedParts.doorPanel
+    const glowPlane = cachedParts.glowPlane
+    const environmentLight = cachedParts.environmentLight
     if (doorPanel) {
       doorPanel.scale.z = 1
       doorPanel.position.z = 0
@@ -998,21 +1002,21 @@ function createFunHouseMesh(options = {}) {
       elevator.userData.animationState.isOpening = false
       elevator.userData.animationState.isOpen = false
       elevator.userData.animationState.openProgress = 0
-      elevator.userData.animationState.openStartTime = 0
+      elevator.userData.animationState.openElapsed = 0
     }
   }
 
-  root.userData.update = function updateFunHouse() {
+  root.userData.update = function updateFunHouse(delta = 1 / 60) {
     if (elevator?.userData?.updateAnimation) {
-      elevator.userData.updateAnimation()
+      elevator.userData.updateAnimation(delta)
     }
   }
   root.userData.funHouseApi = {
     setFunHousePowerBoxDoorOpenAmount: setPowerBoxDoorOpenAmount,
     getFunHousePowerBoxWorldTarget() {
       return {
-        target: installedStickAnchor.getWorldPosition(new THREE.Vector3()),
-        targetQuaternion: installedStickAnchor.getWorldQuaternion(new THREE.Quaternion())
+        target: installedStickAnchor.getWorldPosition(tempInstalledStickTarget),
+        targetQuaternion: installedStickAnchor.getWorldQuaternion(tempInstalledStickQuaternion)
       }
     },
     completeFunHouseLightStickInstallation: completeLightStickInstallation,

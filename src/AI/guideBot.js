@@ -27,6 +27,10 @@ const GUIDE_AI_CONFIG = {
   protectSpeedMultiplier: 1.25,
   collectScanIntervalSec: 1 / 18,
   glowUpdateIntervalSec: 1 / 30,
+  sacrificeSpeedMultiplier: 1.45,
+  sacrificeStopDistance: 0.32,
+  sacrificeWaitDuration: 1.0,
+  sacrificeRiseSpeed: 0.58,
 }
 
 const LIGHT_STICK_OFF_NAMES = new Set(['Light Stick Off'])
@@ -91,19 +95,88 @@ export class GuideAI {
     this._tmpLerpColor = new THREE.Color()
     this._tmpOffsetDir = new THREE.Vector3()
     this._tmpFollowPos = new THREE.Vector3()
+    this.sacrificeState = null
 
     this._setGuideMood('sad')
   }
 
   dispose() {
-    this._dropCarriedAsGlowing()
+    if (this.carried?.entry) {
+      this._dropCarriedAsGlowing()
+    }
     this.targetItemEntry = null
     this.loyalPlayerEntry = null
     this.protectTargetGuyEntry = null
+    this.sacrificeState = null
   }
 
   syncCarriedItem(delta) {
     this._updateCarriedAttachment(delta)
+  }
+
+  hasGlowingLightStick() {
+    if (!this.carried?.entry) return false
+    return (this.carried.glowTime || 0) >= (GUIDE_AI_CONFIG.glowTransitionDuration - 0.001)
+  }
+
+  isSacrificing() {
+    return !!this.sacrificeState
+  }
+
+  isSacrificeFloating() {
+    return this.sacrificeState?.phase === 'ascending'
+  }
+
+  dropCarriedItem() {
+    if (!this.carried?.entry) return null
+    const entry = this.carried.entry
+    this._dropCarriedAsGlowing()
+    return entry
+  }
+
+  getSacrificeFocusPosition(target = new THREE.Vector3()) {
+    if (!this.mesh) return target.set(0, 0, 0)
+
+    const state = this.sacrificeState
+    if (state?.phase === 'ascending' || state?.phase === 'waiting') {
+      return target.set(state.pedestalPosition.x, this.mesh.position.y + 1.35, state.pedestalPosition.z)
+    }
+
+    this.mesh.getWorldPosition(target)
+    target.y += 1.15
+    return target
+  }
+
+  startSacrifice(targetPosition) {
+    if (!targetPosition || !this.mesh || !this.body || !this.hasGlowingLightStick()) return false
+    if (this.sacrificeState) return true
+
+    this.sacrificeState = {
+      phase: 'moving',
+      elapsed: 0,
+      floatElapsed: 0,
+      pedestalPosition: targetPosition.clone(),
+      startY: 0
+    }
+    this.targetItemEntry = null
+    this.loyalPlayerEntry = null
+    this.protectTargetGuyEntry = null
+    return true
+  }
+
+  cancelSacrifice() {
+    if (!this.sacrificeState) return
+
+    if (this.body) {
+      this.body.type = CANNON.Body.DYNAMIC
+      this.body.collisionResponse = true
+      this.body.collisionFilterMask = -1
+      this.body.velocity.set(0, 0, 0)
+      this.body.angularVelocity.set(0, 0, 0)
+      this.body.aabbNeedsUpdate = true
+    }
+
+    this.sacrificeState = null
   }
 
   _setGuideMood(mood) {
@@ -712,7 +785,77 @@ export class GuideAI {
     return { targetYaw: this.bodyYaw, touchedGuy: null }
   }
 
+  _updateSacrificeState(delta) {
+    const state = this.sacrificeState
+    if (!state || !this.mesh || !this.body) return { targetYaw: this.bodyYaw, touchedGuy: null }
+
+    const pedestalPos = state.pedestalPosition
+
+    if (state.phase === 'moving') {
+      const targetYaw = this._moveTowardPosition(
+        pedestalPos,
+        GUIDE_AI_CONFIG.sacrificeSpeedMultiplier,
+        GUIDE_AI_CONFIG.sacrificeStopDistance
+      )
+
+      const dx = this.mesh.position.x - pedestalPos.x
+      const dz = this.mesh.position.z - pedestalPos.z
+      if ((dx * dx) + (dz * dz) <= (GUIDE_AI_CONFIG.sacrificeStopDistance * GUIDE_AI_CONFIG.sacrificeStopDistance)) {
+        state.phase = 'waiting'
+        state.elapsed = 0
+        this.body.position.set(pedestalPos.x, this.body.position.y, pedestalPos.z)
+        this.body.velocity.set(0, 0, 0)
+        this.body.angularVelocity.set(0, 0, 0)
+        this.body.aabbNeedsUpdate = true
+        this.mesh.position.set(pedestalPos.x, this.mesh.position.y, pedestalPos.z)
+      }
+
+      return { targetYaw, touchedGuy: null }
+    }
+
+    if (state.phase === 'waiting') {
+      state.elapsed += delta
+      this.body.velocity.set(0, 0, 0)
+      this.body.angularVelocity.set(0, 0, 0)
+      this.body.position.set(pedestalPos.x, this.body.position.y, pedestalPos.z)
+      this.body.aabbNeedsUpdate = true
+      this.mesh.position.set(pedestalPos.x, this.mesh.position.y, pedestalPos.z)
+
+      if (state.elapsed >= GUIDE_AI_CONFIG.sacrificeWaitDuration) {
+        state.phase = 'ascending'
+        state.floatElapsed = 0
+        state.startY = this.body.position.y
+      }
+
+      return { targetYaw: this._faceTowardPosition(pedestalPos), touchedGuy: null }
+    }
+
+    if (state.phase === 'ascending') {
+      state.floatElapsed += delta
+      const riseAmount = state.floatElapsed * GUIDE_AI_CONFIG.sacrificeRiseSpeed
+      const nextY = state.startY + riseAmount
+
+      this.body.type = CANNON.Body.KINEMATIC
+      this.body.collisionResponse = false
+      this.body.collisionFilterMask = 0
+      this.body.velocity.set(0, 0, 0)
+      this.body.angularVelocity.set(0, 0, 0)
+      this.body.position.set(pedestalPos.x, nextY, pedestalPos.z)
+      this.body.aabbNeedsUpdate = true
+      this.mesh.position.set(pedestalPos.x, nextY, pedestalPos.z)
+
+      return { targetYaw: this._faceTowardPosition(pedestalPos), touchedGuy: null }
+    }
+
+    return { targetYaw: this.bodyYaw, touchedGuy: null }
+  }
+
   update(delta, syncList) {
+    if (this.sacrificeState) {
+      this._updateCarriedAttachment(delta)
+      return this._updateSacrificeState(delta)
+    }
+
     this._collectScanAccumulator += delta
     if (this._collectScanAccumulator >= GUIDE_AI_CONFIG.collectScanIntervalSec) {
       this._collectScanAccumulator = 0
