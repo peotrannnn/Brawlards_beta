@@ -863,6 +863,14 @@ export class ThirdPersonCameraController {
     }
   }
 
+  isCinematicFocusActive() {
+    return !!this._cinematicFocusState?.active
+  }
+
+  isCinematicReleaseActive() {
+    return !!this._cinematicReleaseState?.active
+  }
+
   _applyFollowCameraPose(position, lookTarget, delta = 0) {
     this._tmpCinematicLookMatrix.lookAt(position, lookTarget, this._tmpCinematicUp)
     this._tmpCinematicQuat.setFromRotationMatrix(this._tmpCinematicLookMatrix)

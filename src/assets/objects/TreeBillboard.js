@@ -64,6 +64,42 @@ function getTreeMaterialController(treeIndex = 1) {
   return controller
 }
 
+export function ensureUniqueTreeMaterialController(tree) {
+  if (!tree) return null
+
+  if (tree.userData?.hasUniqueTreeMaterialController && tree.userData?.treeMaterialController?.material) {
+    return tree.userData.treeMaterialController
+  }
+
+  let mesh = null
+  tree.traverse((child) => {
+    if (!mesh && child?.isMesh && child.userData?.treeMaterialController?.material) {
+      mesh = child
+    }
+  })
+
+  const sourceController = mesh?.userData?.treeMaterialController || tree.userData?.treeMaterialController || null
+  if (!mesh || !sourceController?.material) return null
+
+  const material = sourceController.material.clone()
+  const controller = {
+    material,
+    opacity: sourceController.opacity ?? tree.userData?.opacity ?? 1.0,
+    brightness: sourceController.brightness ?? tree.userData?.brightness ?? 1.0
+  }
+
+  material.opacity = controller.opacity
+  if (material.color) {
+    material.color.setScalar(controller.brightness)
+  }
+
+  mesh.material = material
+  mesh.userData.treeMaterialController = controller
+  tree.userData.treeMaterialController = controller
+  tree.userData.hasUniqueTreeMaterialController = true
+  return controller
+}
+
 export function setTreeMaterialControllerOpacity(controller, opacity) {
   if (!controller?.material) return
   const clampedOpacity = Math.max(0, Math.min(1, opacity))

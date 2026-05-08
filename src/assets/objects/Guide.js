@@ -265,6 +265,9 @@ function createGuide() {
 
   // ----- Update Logic -----
   root.userData.update = function(delta) {
+    if (root.userData?.sacrificeFloatPoseActive) {
+      return
+    }
     // Keep character upright
     root.rotation.x = 0
     root.rotation.z = 0

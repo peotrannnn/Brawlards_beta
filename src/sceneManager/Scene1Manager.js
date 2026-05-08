@@ -36,9 +36,11 @@ import { getGuideAsset } from '../assets/objects/Guide.js'
 import { withShadow } from '../effects/shadows/shadowConfig.js'
 import { getPlayerAsset } from '../assets/objects/Player.js'
 import {
+  ensureUniqueTreeMaterialController,
   setTreeMaterialControllerBrightness,
   setTreeMaterialControllerOpacity,
   setTreeOpacity,
+  setTreeBrightness,
   updateBillboards
 } from '../assets/objects/TreeBillboard.js'
 
@@ -136,7 +138,11 @@ const SCENE1_CONFIG = {
   section3SacrificeTriggerSec: 210.0,
   section3SacrificeGuideNearPlayerDistance: 28.0,
   section3SacrificeEyeNearPlayerDistance: 48.0,
-  section3SacrificeCameraBlendSec: 1.8
+  section3SacrificeCameraBlendSec: 1.8,
+  section3CinematicTreeFadeRadius: 16.0,
+  section3CinematicTreeFullFadeRadius: 7.5,
+  section3CinematicTreeFadeDurationSec: 1.0,
+  section3CinematicTreeRestoreDurationSec: 1.0
 }
 
 const SECTION_WARMUP_CONFIG = {
@@ -358,6 +364,7 @@ export class Scene1Manager {
     this._tmpSection3SacrificeEyePos = new THREE.Vector3()
     this._tmpSection3SacrificeTargetPos = new THREE.Vector3()
     this._tmpSection3SacrificeCameraLockPos = new THREE.Vector3()
+    this._tmpSection3CinematicTreeCameraPos = new THREE.Vector3()
 
     // Reward coin on ordered sequence system
     this.sequenceSilverCoinAsset = null
@@ -1453,10 +1460,12 @@ export class Scene1Manager {
     this._updateSection3EyeBot(syncList, delta)
     this._updateSection3EyeTransition(syncList, delta, camera)
     this._updateSection3EyeTracking(syncList, camera)
+    this._updateSection3CinematicTreeOcclusion(camera, delta)
     this._updateSection2ReturnElevator(syncList, delta)
     this._updateDudeFogAndPenaltyState(syncList, delta)
     this._updateSection3EdgeAtmosphere(syncList, delta)
     this._updateFunHousePowerBox(syncList, delta)
+    this._checkFunHouseElevatorCollision(syncList)
     this._updateVendingMachineCollector(syncList, delta)
     this._updateCartonBoxInteraction(syncList, delta)
     this._updateChestInteraction(syncList, delta)
@@ -2093,19 +2102,15 @@ export class Scene1Manager {
   _updateSection3TreeOpacity(progress) {
     const section3 = this.sectionGroups?.section3
     const trees = section3?.userData?.section3Trees || []
-    const controllers = section3?.userData?.section3TreeMaterialControllers || []
     const clampedProgress = THREE.MathUtils.clamp(progress, 0, 1)
-
-    controllers.forEach((controller) => {
-      setTreeMaterialControllerOpacity(controller, clampedProgress)
-    })
 
     const shouldBeVisible = clampedProgress > 0.001
     if (section3?.userData?.section3TreesVisible !== shouldBeVisible) {
       trees.forEach((tree) => {
         if (tree?.userData) {
-          tree.userData.opacity = clampedProgress
-          tree.visible = shouldBeVisible && tree.userData.section3LodVisible !== false
+          tree.userData.section3BaseOpacity = clampedProgress
+          tree.userData.section3CameraFadeOpacity = tree.userData.section3CameraFadeOpacity ?? 1
+          this._applySection3TreeEffectiveOpacity(tree)
         }
       })
       if (section3?.userData) {
@@ -2115,7 +2120,11 @@ export class Scene1Manager {
     }
 
     trees.forEach((tree) => {
-      if (tree?.userData) tree.userData.opacity = clampedProgress
+      if (tree?.userData) {
+        tree.userData.section3BaseOpacity = clampedProgress
+        tree.userData.section3CameraFadeOpacity = tree.userData.section3CameraFadeOpacity ?? 1
+        this._applySection3TreeEffectiveOpacity(tree)
+      }
     })
   }
 
@@ -2134,8 +2143,71 @@ export class Scene1Manager {
     trees.forEach((tree) => {
       if (tree?.userData) {
         tree.userData.brightness = brightness
+        if (tree.userData.hasUniqueTreeMaterialController) {
+          setTreeBrightness(tree, brightness)
+        }
       }
     })
+  }
+
+  _applySection3TreeEffectiveOpacity(tree) {
+    if (!tree?.userData) return
+
+    const baseOpacity = THREE.MathUtils.clamp(tree.userData.section3BaseOpacity ?? tree.userData.opacity ?? 1, 0, 1)
+    const cameraFadeOpacity = THREE.MathUtils.clamp(tree.userData.section3CameraFadeOpacity ?? 1, 0, 1)
+    const effectiveOpacity = baseOpacity * cameraFadeOpacity
+
+    if (cameraFadeOpacity < 0.999) {
+      ensureUniqueTreeMaterialController(tree)
+    }
+
+    setTreeOpacity(tree, effectiveOpacity)
+  }
+
+  _updateSection3CinematicTreeOcclusion(camera = null, delta = 0) {
+    const section3 = this.sectionGroups?.section3 || null
+    const trees = section3?.userData?.section3Trees || []
+    if (!trees.length) return
+
+    const cameraController = camera?.userData?.cameraController || this._lastWarmupCamera?.userData?.cameraController || null
+    const shouldFadeNearCamera = this.activeSectionId === 'section3' && !!camera?.position && !!cameraController?.isCinematicFocusActive?.()
+
+    const fadeRadius = Math.max(1, SCENE1_CONFIG.section3CinematicTreeFadeRadius)
+    const fullFadeRadius = Math.min(fadeRadius - 0.001, Math.max(0.1, SCENE1_CONFIG.section3CinematicTreeFullFadeRadius))
+    const fadeDuration = Math.max(0.05, shouldFadeNearCamera
+      ? SCENE1_CONFIG.section3CinematicTreeFadeDurationSec
+      : SCENE1_CONFIG.section3CinematicTreeRestoreDurationSec)
+    const blendAlpha = THREE.MathUtils.clamp(delta / fadeDuration, 0, 1)
+
+    if (camera?.position) {
+      this._tmpSection3CinematicTreeCameraPos.copy(camera.position)
+    }
+
+    for (const tree of trees) {
+      if (!tree?.userData) continue
+
+      tree.userData.section3BaseOpacity = tree.userData.section3BaseOpacity ?? tree.userData.opacity ?? 1
+      const currentFadeOpacity = THREE.MathUtils.clamp(tree.userData.section3CameraFadeOpacity ?? 1, 0, 1)
+      let targetFadeOpacity = 1
+
+      if (shouldFadeNearCamera) {
+        const distance = tree.position.distanceTo(this._tmpSection3CinematicTreeCameraPos)
+        if (distance <= fullFadeRadius) {
+          targetFadeOpacity = 0
+        } else if (distance < fadeRadius) {
+          const t = THREE.MathUtils.clamp((distance - fullFadeRadius) / Math.max(0.001, fadeRadius - fullFadeRadius), 0, 1)
+          targetFadeOpacity = THREE.MathUtils.smoothstep(t, 0, 1)
+        }
+      }
+
+      const nextFadeOpacity = THREE.MathUtils.lerp(currentFadeOpacity, targetFadeOpacity, blendAlpha)
+      if (Math.abs(nextFadeOpacity - currentFadeOpacity) < 0.001 && Math.abs(nextFadeOpacity - targetFadeOpacity) < 0.001) {
+        continue
+      }
+
+      tree.userData.section3CameraFadeOpacity = nextFadeOpacity
+      this._applySection3TreeEffectiveOpacity(tree)
+    }
   }
 
   _updateSection3EyeTracking(syncList, camera = null) {
@@ -3882,6 +3954,30 @@ export class Scene1Manager {
     if (!lightStickEntry) return
 
     this._beginFunHouseLightStickInstall(lightStickEntry, targetInfo)
+  }
+
+  _checkFunHouseElevatorCollision(syncList) {
+    if (this.activeSectionId !== 'section3' || this.gameOver) return
+
+    const funHouse = this._ensureFunHouseEntry()
+    const elevator = funHouse?.mesh?.getObjectByName?.('Fun House Elevator') || null
+    const animState = elevator?.userData?.animationState
+    if (!elevator || !animState || animState.openProgress < 0.72) return
+
+    const playerEntry = syncList?.find((entry) => entry?.name === 'Player' && entry.mesh)
+    if (!playerEntry?.mesh) return
+
+    const elevatorWorldPos = elevator.getWorldPosition(this._tmpFunHouseAnimPos)
+    const collisionRadiusSq = 3.3 * 3.3
+    if (playerEntry.mesh.position.distanceToSquared(elevatorWorldPos) > collisionRadiusSq) return
+
+    if (this.destroySystem?.destroyCharacter) {
+      this.destroySystem.destroyCharacter(playerEntry)
+      return
+    }
+
+    this.gameOver = true
+    this.gameOverReason = 'death'
   }
 
   _findNearestCollectableSilverCoin(syncList, targetInfo) {

@@ -60,12 +60,12 @@ const RENDER_PERF_CONFIG = {
   maxDevicePixelRatio: 2.0,
   minScale: 0.25,
   maxScale: 1.0,
-  downshiftFps: 50,
-  upshiftFps: 58,
+  downshiftFps: 40,
+  upshiftFps: 45,
   sampleWindowSec: 1.0,
-  adjustCooldownSec: 0.5,
-  scaleStepDown: 0.05,
-  scaleStepUp: 0.02,
+  adjustCooldownSec: 0.1,
+  scaleStepDown: 0.2,
+  scaleStepUp: 0.1,
   startupDurationSec: 2.0,
   startupScale: 0.8,
   startupMaxScale: 1.0
@@ -572,7 +572,8 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
   let fpsAccumSec = 0, fpsFrameCount = 0, perfAdjustCooldownSec = 0, startupPerfTimer = 0
 
   const applyRenderResolution = (force = false) => {
-    const nextPixelRatio = Math.max(1.0, Math.min(basePixelRatio, basePixelRatio * renderScale))
+    const clampedScale = Math.max(RENDER_PERF_CONFIG.minScale, Math.min(RENDER_PERF_CONFIG.maxScale, renderScale))
+    const nextPixelRatio = Math.min(basePixelRatio, basePixelRatio * clampedScale)
     if (!force && Math.abs(nextPixelRatio - currentPixelRatio) < 0.01) return
     currentPixelRatio = nextPixelRatio
     renderer.setPixelRatio(currentPixelRatio)

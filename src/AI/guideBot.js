@@ -2,7 +2,7 @@ import * as THREE from 'three'
 import * as CANNON from 'cannon-es'
 
 const GUIDE_AI_CONFIG = {
-  baseMaxSpeed: 3,
+  baseMaxSpeed: 3.5,
   acceleration: 6.5,
   rotationSmooth: 3.0,
   fixedTimeStep: 1 / 60,
@@ -31,6 +31,14 @@ const GUIDE_AI_CONFIG = {
   sacrificeStopDistance: 0.32,
   sacrificeWaitDuration: 1.0,
   sacrificeRiseSpeed: 0.58,
+  sacrificeSpinSpeedMin: 0.5,
+  sacrificeSpinSpeedMax: 0.9,
+  sacrificeSpinAngleMin: 0.5,
+  sacrificeSpinAngleMax: 0.6,
+  sacrificeLegSwingSpeed: 5,
+  sacrificeLegSwingAngle: 0.42,
+  sacrificeFacePlayerBlendStartHeight: 1.25,
+  sacrificeFacePlayerBlendEndHeight: 3.6,
 }
 
 const LIGHT_STICK_OFF_NAMES = new Set(['Light Stick Off'])
@@ -95,6 +103,10 @@ export class GuideAI {
     this._tmpLerpColor = new THREE.Color()
     this._tmpOffsetDir = new THREE.Vector3()
     this._tmpFollowPos = new THREE.Vector3()
+    this._tmpSacrificeEuler = new THREE.Euler(0, 0, 0, 'YXZ')
+    this._tmpSacrificeFaceEuler = new THREE.Euler(0, 0, 0, 'YXZ')
+    this._tmpSacrificeFaceQuat = new THREE.Quaternion()
+    this._legRefs = null
     this.sacrificeState = null
 
     this._setGuideMood('sad')
@@ -156,11 +168,21 @@ export class GuideAI {
       elapsed: 0,
       floatElapsed: 0,
       pedestalPosition: targetPosition.clone(),
-      startY: 0
+      startY: 0,
+      spinPhaseX: Math.random() * Math.PI * 2,
+      spinPhaseY: Math.random() * Math.PI * 2,
+      spinPhaseZ: Math.random() * Math.PI * 2,
+      spinSpeedX: THREE.MathUtils.lerp(GUIDE_AI_CONFIG.sacrificeSpinSpeedMin, GUIDE_AI_CONFIG.sacrificeSpinSpeedMax, Math.random()),
+      spinSpeedY: THREE.MathUtils.lerp(GUIDE_AI_CONFIG.sacrificeSpinSpeedMin, GUIDE_AI_CONFIG.sacrificeSpinSpeedMax, Math.random()),
+      spinSpeedZ: THREE.MathUtils.lerp(GUIDE_AI_CONFIG.sacrificeSpinSpeedMin, GUIDE_AI_CONFIG.sacrificeSpinSpeedMax, Math.random()),
+      spinAngleX: THREE.MathUtils.lerp(GUIDE_AI_CONFIG.sacrificeSpinAngleMin, GUIDE_AI_CONFIG.sacrificeSpinAngleMax, Math.random()),
+      spinAngleY: THREE.MathUtils.lerp(GUIDE_AI_CONFIG.sacrificeSpinAngleMin, GUIDE_AI_CONFIG.sacrificeSpinAngleMax, Math.random()),
+      spinAngleZ: THREE.MathUtils.lerp(GUIDE_AI_CONFIG.sacrificeSpinAngleMin, GUIDE_AI_CONFIG.sacrificeSpinAngleMax, Math.random())
     }
     this.targetItemEntry = null
     this.loyalPlayerEntry = null
     this.protectTargetGuyEntry = null
+    this.mesh.userData.sacrificeFloatPoseActive = false
     return true
   }
 
@@ -176,7 +198,82 @@ export class GuideAI {
       this.body.aabbNeedsUpdate = true
     }
 
+    this._setSacrificeLegSwing(0)
+    if (this.mesh) {
+      this.mesh.userData.sacrificeFloatPoseActive = false
+      this.mesh.rotation.x = 0
+      this.mesh.rotation.z = 0
+      if (typeof this.bodyYaw === 'number') {
+        this.mesh.rotation.y = this.bodyYaw
+      }
+    }
+
     this.sacrificeState = null
+  }
+
+  _ensureLegRefs() {
+    if (Array.isArray(this._legRefs) && this._legRefs.every((leg) => leg?.parent)) {
+      return this._legRefs
+    }
+
+    this._legRefs = []
+    this.mesh?.traverse?.((child) => {
+      if (child?.userData?.isLeg) {
+        this._legRefs.push(child)
+      }
+    })
+    return this._legRefs
+  }
+
+  _setSacrificeLegSwing(floatElapsed = 0) {
+    const legs = this._ensureLegRefs()
+    if (!legs.length) return
+
+    const swing = Math.sin(floatElapsed * GUIDE_AI_CONFIG.sacrificeLegSwingSpeed) * GUIDE_AI_CONFIG.sacrificeLegSwingAngle
+    legs.forEach((leg, index) => {
+      if (!leg) return
+      leg.rotation.x = index % 2 === 0 ? swing : -swing
+      leg.rotation.y = 0
+      leg.rotation.z = 0
+    })
+  }
+
+  _applySacrificeFloatPose(state, playerEntry = null) {
+    if (!state || !this.mesh || !this.body) return
+
+    const elapsed = state.floatElapsed || 0
+    const euler = this._tmpSacrificeEuler
+    euler.set(
+      Math.sin(elapsed * state.spinSpeedX + state.spinPhaseX) * state.spinAngleX,
+      Math.sin(elapsed * state.spinSpeedY + state.spinPhaseY) * state.spinAngleY,
+      Math.cos(elapsed * state.spinSpeedZ + state.spinPhaseZ) * state.spinAngleZ,
+      'YXZ'
+    )
+    this._tmpQuat.setFromEuler(euler)
+
+    const currentRise = Math.max(0, this.mesh.position.y - (state.startY || 0))
+    const blendStartHeight = GUIDE_AI_CONFIG.sacrificeFacePlayerBlendStartHeight
+    const blendEndHeight = Math.max(blendStartHeight + 0.001, GUIDE_AI_CONFIG.sacrificeFacePlayerBlendEndHeight)
+    const faceBlend = THREE.MathUtils.smoothstep(
+      THREE.MathUtils.clamp((currentRise - blendStartHeight) / (blendEndHeight - blendStartHeight), 0, 1),
+      0,
+      1
+    )
+
+    if (faceBlend > 0.001 && playerEntry?.mesh?.position) {
+      const faceDir = this._tmpOffsetDir.subVectors(playerEntry.mesh.position, this.mesh.position)
+      faceDir.y = 0
+      if (faceDir.lengthSq() > 0.0001) {
+        const faceYaw = Math.atan2(faceDir.x, faceDir.z)
+        this._tmpSacrificeFaceEuler.set(0, faceYaw, 0, 'YXZ')
+        this._tmpSacrificeFaceQuat.setFromEuler(this._tmpSacrificeFaceEuler)
+        this._tmpQuat.slerp(this._tmpSacrificeFaceQuat, faceBlend)
+      }
+    }
+
+    this.body.quaternion.set(this._tmpQuat.x, this._tmpQuat.y, this._tmpQuat.z, this._tmpQuat.w)
+    this.mesh.quaternion.copy(this._tmpQuat)
+    this._setSacrificeLegSwing(elapsed)
   }
 
   _setGuideMood(mood) {
@@ -785,13 +882,14 @@ export class GuideAI {
     return { targetYaw: this.bodyYaw, touchedGuy: null }
   }
 
-  _updateSacrificeState(delta) {
+  _updateSacrificeState(delta, syncList = null) {
     const state = this.sacrificeState
     if (!state || !this.mesh || !this.body) return { targetYaw: this.bodyYaw, touchedGuy: null }
 
     const pedestalPos = state.pedestalPosition
 
     if (state.phase === 'moving') {
+      this._setSacrificeLegSwing(0)
       const targetYaw = this._moveTowardPosition(
         pedestalPos,
         GUIDE_AI_CONFIG.sacrificeSpeedMultiplier,
@@ -815,6 +913,7 @@ export class GuideAI {
 
     if (state.phase === 'waiting') {
       state.elapsed += delta
+      this._setSacrificeLegSwing(0)
       this.body.velocity.set(0, 0, 0)
       this.body.angularVelocity.set(0, 0, 0)
       this.body.position.set(pedestalPos.x, this.body.position.y, pedestalPos.z)
@@ -834,6 +933,12 @@ export class GuideAI {
       state.floatElapsed += delta
       const riseAmount = state.floatElapsed * GUIDE_AI_CONFIG.sacrificeRiseSpeed
       const nextY = state.startY + riseAmount
+      const playerEntry = this._isEntryAlive(syncList, this.loyalPlayerEntry) && this._isValidPlayerEntry(this.loyalPlayerEntry)
+        ? this.loyalPlayerEntry
+        : this._acquireNearestPlayer(syncList || [])
+      if (playerEntry) {
+        this.loyalPlayerEntry = playerEntry
+      }
 
       this.body.type = CANNON.Body.KINEMATIC
       this.body.collisionResponse = false
@@ -843,8 +948,10 @@ export class GuideAI {
       this.body.position.set(pedestalPos.x, nextY, pedestalPos.z)
       this.body.aabbNeedsUpdate = true
       this.mesh.position.set(pedestalPos.x, nextY, pedestalPos.z)
+      this.mesh.userData.sacrificeFloatPoseActive = true
+      this._applySacrificeFloatPose(state, playerEntry)
 
-      return { targetYaw: this._faceTowardPosition(pedestalPos), touchedGuy: null }
+      return { targetYaw: this.bodyYaw, touchedGuy: null }
     }
 
     return { targetYaw: this.bodyYaw, touchedGuy: null }
@@ -853,7 +960,7 @@ export class GuideAI {
   update(delta, syncList) {
     if (this.sacrificeState) {
       this._updateCarriedAttachment(delta)
-      return this._updateSacrificeState(delta)
+      return this._updateSacrificeState(delta, syncList)
     }
 
     this._collectScanAccumulator += delta
