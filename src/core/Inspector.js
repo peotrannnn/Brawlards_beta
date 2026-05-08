@@ -13,7 +13,7 @@ import { getElevatorDoorAsset } from "../assets/objects/ElevatorDoor.js"
 import { getVendingMachineAsset } from "../assets/objects/VendingMachine.js"
 import { getCartonBoxAsset } from "../assets/objects/CartonBox.js"
 import { getChestAsset } from "../assets/objects/Chest.js"
-import { getHouseAsset } from "../assets/objects/House.js"
+import { getFunHouseAsset, getHouseAsset } from "../assets/objects/House.js"
 import { getBabyOilAsset } from "../assets/items/babyOil.js"
 import { getLightStickAsset } from "../assets/items/lightStick.js"
 import { getLightStickOffAsset } from "../assets/items/lightStickOff.js"
@@ -221,6 +221,7 @@ export function createInspector(renderer, onBack) {
     getCartonBoxAsset(),
     getChestAsset(),
     getHouseAsset(),
+    getFunHouseAsset(),
     getLightStickAsset(),
     getLightStickOffAsset(),
     getBabyOilAsset(),

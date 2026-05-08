@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { CollisionManager } from '../../utils/collisionManager.js'
 import { BALL8_AI_CONFIG } from '../objects/BallFactory.js'
+import { DEFAULT_PLAYER_CUSTOMIZATION, PLAYER_EAR_TYPES, normalizePlayerCustomization } from '../../utils/playerCustomization.js'
 
 const PLAYER_CONFIG = {
   PHYSICS_MASS: 0.01,
@@ -15,6 +16,11 @@ const PLAYER_CONFIG = {
   BODY_COLOR: '#DDDDDD',
   FACE_COLOR: '#000000',
   EAR_RADIUS: 0.06,
+  POINTY_EAR_RADIUS: 0.08,
+  POINTY_EAR_HEIGHT: 0.12,
+  POINTY_EAR_X_OFFSET: 0.16,
+  POINTY_EAR_Y_OFFSET: 0,
+  POINTY_EAR_Z_OFFSET: 0.1,
   EAR_SEGMENTS: 32,
   EAR_Z_SCALE: 0.6,
   EAR_X_OFFSET: 0.16,
@@ -33,6 +39,8 @@ const PLAYER_CONFIG = {
   CUE_Z_OFFSET: -0.05,
   CUE_MIN_LENGTH: 0.25
 }
+
+const PLAYER_DEFAULT_CUSTOMIZATION = normalizePlayerCustomization(DEFAULT_PLAYER_CUSTOMIZATION)
 
 const playerPhysicsDef = {
   type: 'dynamic',
@@ -91,14 +99,14 @@ function createBodyGeometry() {
 /**
  * Create face canvas
  */
-function createFaceCanvas() {
+function createFaceCanvas(customization) {
   const canvas = document.createElement("canvas")
   canvas.width = 256
   canvas.height = 256
   const ctx = canvas.getContext("2d")
 
   // Eyes
-  ctx.fillStyle = "#000000"
+  ctx.fillStyle = customization.eyeColor
   ctx.beginPath()
   ctx.arc(90, 120, 12, 0, Math.PI * 2)
   ctx.fill()
@@ -121,23 +129,35 @@ function createFaceCanvas() {
 /**
  * Create ears
  */
-function createEars(bodyCenterY, meshLift, limbMaterial) {
-  const earGeometry = new THREE.SphereGeometry(
-    PLAYER_CONFIG.EAR_RADIUS, 
-    PLAYER_CONFIG.EAR_SEGMENTS, 
-    PLAYER_CONFIG.EAR_SEGMENTS
-  )
+function createEars(bodyCenterY, meshLift, limbMaterial, earType) {
+  const usePointyEars = earType === PLAYER_EAR_TYPES.POINTY
+  const earGeometry = usePointyEars
+    ? new THREE.ConeGeometry(PLAYER_CONFIG.POINTY_EAR_RADIUS, PLAYER_CONFIG.POINTY_EAR_HEIGHT, 3)
+    : new THREE.SphereGeometry(
+        PLAYER_CONFIG.EAR_RADIUS,
+        PLAYER_CONFIG.EAR_SEGMENTS,
+        PLAYER_CONFIG.EAR_SEGMENTS
+      )
 
   const leftEar = new THREE.Mesh(earGeometry, limbMaterial)
   const rightEar = new THREE.Mesh(earGeometry, limbMaterial)
 
-  leftEar.scale.set(1, 1, PLAYER_CONFIG.EAR_Z_SCALE)
-  rightEar.scale.set(1, 1, PLAYER_CONFIG.EAR_Z_SCALE)
+  if (usePointyEars) {
+    leftEar.rotation.x = Math.PI / 3
+    rightEar.rotation.x = Math.PI / 3
+  } else {
+    leftEar.scale.set(1, 1, PLAYER_CONFIG.EAR_Z_SCALE)
+    rightEar.scale.set(1, 1, PLAYER_CONFIG.EAR_Z_SCALE)
+  }
 
-  const earY = PLAYER_CONFIG.BODY_HEIGHT + PLAYER_CONFIG.BODY_RADIUS + PLAYER_CONFIG.EAR_Y_OFFSET - bodyCenterY + meshLift
+  const earY = usePointyEars
+    ? PLAYER_CONFIG.BODY_HEIGHT + PLAYER_CONFIG.BODY_RADIUS + PLAYER_CONFIG.POINTY_EAR_Y_OFFSET - bodyCenterY + meshLift
+    : PLAYER_CONFIG.BODY_HEIGHT + PLAYER_CONFIG.BODY_RADIUS + PLAYER_CONFIG.EAR_Y_OFFSET - bodyCenterY + meshLift
+  const earXOffset = usePointyEars ? PLAYER_CONFIG.POINTY_EAR_X_OFFSET : PLAYER_CONFIG.EAR_X_OFFSET
+  const earZOffset = usePointyEars ? PLAYER_CONFIG.POINTY_EAR_Z_OFFSET : PLAYER_CONFIG.EAR_Z_OFFSET
 
-  leftEar.position.set(-PLAYER_CONFIG.EAR_X_OFFSET, earY, PLAYER_CONFIG.EAR_Z_OFFSET)
-  rightEar.position.set(PLAYER_CONFIG.EAR_X_OFFSET, earY, PLAYER_CONFIG.EAR_Z_OFFSET)
+  leftEar.position.set(-earXOffset, earY, earZOffset)
+  rightEar.position.set(earXOffset, earY, earZOffset)
 
   return { leftEar, rightEar }
 }
@@ -145,18 +165,41 @@ function createEars(bodyCenterY, meshLift, limbMaterial) {
 /**
  * Create a leg
  */
-function createLeg(offsetX, bodyCenterY, meshLift, limbMaterial) {
+function createLeg(offsetX, bodyCenterY, meshLift, limbMaterial, customization) {
   const pivot = new THREE.Group()
-  const legGeo = new THREE.CylinderGeometry(
-    PLAYER_CONFIG.LEG_RADIUS, 
-    PLAYER_CONFIG.LEG_RADIUS, 
-    PLAYER_CONFIG.LEG_HEIGHT, 
-    PLAYER_CONFIG.LEG_SEGMENTS
-  )
-  
-  const leg = new THREE.Mesh(legGeo, limbMaterial)
-  leg.position.y = -PLAYER_CONFIG.LEG_HEIGHT / 2
-  pivot.add(leg)
+  if (!customization.socksEnabled) {
+    const legGeo = new THREE.CylinderGeometry(
+      PLAYER_CONFIG.LEG_RADIUS,
+      PLAYER_CONFIG.LEG_RADIUS,
+      PLAYER_CONFIG.LEG_HEIGHT,
+      PLAYER_CONFIG.LEG_SEGMENTS
+    )
+
+    const leg = new THREE.Mesh(legGeo, limbMaterial)
+    leg.position.y = -PLAYER_CONFIG.LEG_HEIGHT / 2
+    pivot.add(leg)
+  } else {
+    const halfHeight = PLAYER_CONFIG.LEG_HEIGHT / 2
+    const legSegmentGeo = new THREE.CylinderGeometry(
+      PLAYER_CONFIG.LEG_RADIUS,
+      PLAYER_CONFIG.LEG_RADIUS,
+      halfHeight,
+      PLAYER_CONFIG.LEG_SEGMENTS
+    )
+    const sockMaterial = new THREE.MeshPhysicalMaterial({
+      color: customization.sockColor,
+      roughness: 0.8,
+      metalness: 0.02
+    })
+
+    const upperLeg = new THREE.Mesh(legSegmentGeo, limbMaterial)
+    upperLeg.position.y = -halfHeight / 2
+    pivot.add(upperLeg)
+
+    const lowerLeg = new THREE.Mesh(legSegmentGeo, sockMaterial)
+    lowerLeg.position.y = -halfHeight * 1.5
+    pivot.add(lowerLeg)
+  }
 
   pivot.position.set(offsetX, -bodyCenterY + meshLift, 0)
   pivot.userData.isLeg = true
@@ -206,7 +249,8 @@ function createCue(bodyCenterY, meshLift) {
 
 // ==================== MAIN FACTORY ====================
 
-function createPlayer() {
+function createPlayer(customizationOptions = PLAYER_DEFAULT_CUSTOMIZATION) {
+  const customization = normalizePlayerCustomization(customizationOptions)
   const root = new THREE.Group()
   root.name = "Player"
   // Always define HP for player
@@ -215,7 +259,7 @@ function createPlayer() {
 
   // Materials
   const bodyMaterial = new THREE.MeshPhysicalMaterial({
-    color: PLAYER_CONFIG.BODY_COLOR,
+    color: customization.bodyColor,
     roughness: 0.8,
     metalness: 0.001,
     clearcoat: 0,
@@ -236,7 +280,7 @@ function createPlayer() {
   root.add(bodyMesh)
 
   // ----- Face (via shader injection) -----
-  const faceTexture = createFaceCanvas()
+  const faceTexture = createFaceCanvas(customization)
 
   bodyMesh.material.onBeforeCompile = (shader) => {
     shader.uniforms.faceTexture = { value: faceTexture }
@@ -257,13 +301,13 @@ function createPlayer() {
   }
 
   // ----- Ears -----
-  const { leftEar, rightEar } = createEars(bodyCenterY, PLAYER_CONFIG.MESH_LIFT, limbMaterial)
+  const { leftEar, rightEar } = createEars(bodyCenterY, PLAYER_CONFIG.MESH_LIFT, limbMaterial, customization.earType)
   root.add(leftEar)
   root.add(rightEar)
 
   // ----- Legs -----
-  root.add(createLeg(-PLAYER_CONFIG.LEG_X_OFFSET, bodyCenterY, PLAYER_CONFIG.MESH_LIFT, limbMaterial))
-  root.add(createLeg(PLAYER_CONFIG.LEG_X_OFFSET, bodyCenterY, PLAYER_CONFIG.MESH_LIFT, limbMaterial))
+  root.add(createLeg(-PLAYER_CONFIG.LEG_X_OFFSET, bodyCenterY, PLAYER_CONFIG.MESH_LIFT, limbMaterial, customization))
+  root.add(createLeg(PLAYER_CONFIG.LEG_X_OFFSET, bodyCenterY, PLAYER_CONFIG.MESH_LIFT, limbMaterial, customization))
 
   // ----- Cue (dynamic creation) -----
   root.userData.createCue = function() {
@@ -291,7 +335,8 @@ function createPlayer() {
   // Use BALL8_AI_CONFIG.groupingMinDistance as inner trigger mesh radius (0.6)
   // Same threshold used for Ball 8 grouping behavior
   root.userData.triggerRadius = BALL8_AI_CONFIG.groupingMinDistance
-  root.userData.mainColor = new THREE.Color(PLAYER_CONFIG.BODY_COLOR)
+  root.userData.mainColor = new THREE.Color(customization.bodyColor)
+  root.userData.playerCustomization = customization
 
   // Add trigger zones
   CollisionManager.addCharacterTriggerZones(root)
@@ -301,11 +346,13 @@ function createPlayer() {
 
 // ==================== EXPORT ====================
 
-export function getPlayerAsset() {
+export function getPlayerAsset(customization = PLAYER_DEFAULT_CUSTOMIZATION) {
+  const normalizedCustomization = normalizePlayerCustomization(customization)
+
   return {
     name: "Player",
     description: "Sẽ có cue dài (cây CƠ dài), only when you take control... (Bro tui muốn chèn joke tiếng việt mà giờ phải dịch tiếng Anh.",
-    factory: () => createPlayer(),
+    factory: () => createPlayer(normalizedCustomization),
     physics: playerPhysicsDef
   }
 }

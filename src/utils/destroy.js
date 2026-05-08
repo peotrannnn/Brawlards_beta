@@ -2,7 +2,7 @@ import * as THREE from "three"
 import { returnObjectToPool } from "./spawner.js"
 
 const DESTROY_SYSTEM_CONFIG = {
-  destroyTimeout: 3000, // ms
+  destroyTimeout: 3000,
   maxDestroyPerFrame: 6,
   clothKillOffset: 0.1,
   playerFallEnterOffset: 0.05,
@@ -28,26 +28,20 @@ export class DestroySystem {
     this.tableOffset = null;
     this.tableSize = { w: 0, d: 0 };
     
-    // Track destroyed characters để tránh multiple destroy attempts
     this.destroyedCharacters = new Set();
-    
-    // Track if player has fallen to prevent spawning multiple guys
     this.playerFallTracking = new Set();
     this.playerFallState = new Map();
     this.playerFallSpawnCooldownUntil = new Map();
     
-    // Track timers for EACH Guy (Map<GuyEntry, timeSeconds>)
     this.guyTimers = new Map();
     this.GUY_NO_PLAYER_TIMEOUT = 10.0;
     
-    // Track timers for EACH Compune in disconnecting state (Map<CompuneEntry, timeSeconds>)
     this.compuneTimers = new Map();
     this.COMPUNE_DISCONNECT_TIMEOUT = 10.0;
 
     this.destroyQueue = [];
     this.destroyQueueSet = new Set();
 
-    // Reuse vectors in hot-path checks.
     this._tmpGuyPos = new THREE.Vector3();
     this._tmpPlayerPos = new THREE.Vector3();
     this._tmpBall8Pos = new THREE.Vector3();
@@ -99,22 +93,6 @@ export class DestroySystem {
         this.hbManager.setDestructionPlane(this.planeY, width, depth);
       }
     }
-    this._debugLog('[destroy] setPlaneHeight', this.planeY, width, depth);
-  }
-
-  _formatEntryName(entry) {
-    if (!entry || !entry.name) return '<unknown>'
-    const name = entry.name
-    if (name === 'Cue Ball') return 'Cue Ball'
-    if (name === 'Bowling Ball') return 'Bowling Ball'
-    if (name.startsWith('Ball ')) {
-      const num = parseInt(name.slice(5), 10)
-      if (!isNaN(num)) {
-        const type = num >= 9 ? 'stripe' : 'solid'
-        return `Ball ${num} (${type})`
-      }
-    }
-    return name
   }
 
   _scheduleDestroy(entry) {
@@ -133,38 +111,60 @@ export class DestroySystem {
 
   _destroyEntry(entry) {
     if (!entry) return;
-    // Clear any pending timeout if it exists
     if (this.pending.has(entry)) {
       clearTimeout(this.pending.get(entry));
       this.pending.delete(entry);
     }
     this.destroyQueueSet.delete(entry);
-    // Remove hitbox if needed
+
+    // --- FIX: Deep Cleanup Mesh Children ---
+    // Xóa sạch các helper visual thừa (do CollisionManager tạo ra) trước khi remove mesh
+    if (entry.mesh) {
+        const toRemove = [];
+        entry.mesh.traverse(c => {
+            if (c.isLineSegments || c.isLineLoop || c.userData?.isDebugHelper) {
+                toRemove.push(c);
+            }
+        });
+        toRemove.forEach(c => {
+            if(c.parent) c.parent.remove(c);
+            if(c.geometry) c.geometry.dispose();
+            if(c.material) c.material.dispose();
+        });
+        
+        if (this.hbManager && this.hbManager.removeHitboxForObject) {
+            this.hbManager.removeHitboxForObject(entry);
+        }
+    }
+    // --- END FIX ---
+
     if (this.hbManager && this.hbManager.removeHitboxForObject) {
       this.hbManager.removeHitboxForObject(entry);
     }
-    // Remove from syncList if present
+    
     const idx = this.syncList.indexOf(entry);
     if (idx !== -1) this.syncList.splice(idx, 1);
-    if (this.guyTimers.has(entry)) this.guyTimers.delete(entry); // Cleanup timer
+    
+    if (this.guyTimers.has(entry)) this.guyTimers.delete(entry);
     if (this.destroyedCharacters.has(entry)) this.destroyedCharacters.delete(entry);
+    
     if (entry && entry.name === 'Player') {
       this.playerFallTracking.delete(entry);
       this.playerFallState.delete(entry);
       this.playerFallSpawnCooldownUntil.delete(entry);
     }
-    // Remove all timers and pending timeouts for this entry
+    
     if (this.compuneTimers.has(entry)) this.compuneTimers.delete(entry);
     if (this.pending.has(entry)) {
       clearTimeout(this.pending.get(entry));
       this.pending.delete(entry);
     }
-    // Clean up Ball8AI trigger mesh if exists
+    
     if (entry.body?.userData?.ball8AI) {
       const ball8AI = entry.body.userData.ball8AI;
       if (ball8AI.dispose) ball8AI.dispose();
     }
-    // Xóa Trigger Body đi kèm nếu có
+    
     if (entry.body?.userData?.triggerBody) {
       const tb = entry.body.userData.triggerBody;
       this.world.removeBody(tb);
@@ -172,7 +172,7 @@ export class DestroySystem {
         this.hbManager.removeHitboxForObject({ body: tb });
       }
     }
-    // Trả object về pool thay vì xóa hoàn toàn
+
     returnObjectToPool(entry, this.scene, this.world);
     if (this.onDestroyCallback) {
       try { this.onDestroyCallback(entry); } catch (e) { }
@@ -180,15 +180,13 @@ export class DestroySystem {
   }
 
   update() {
-    // Calculate delta from last update
-    const now = performance.now() / 1000; // Convert to seconds
+    const now = performance.now() / 1000;
     let delta = 0;
     if (this.lastUpdateTime !== null) {
       delta = now - this.lastUpdateTime;
     }
     this.lastUpdateTime = now;
 
-    // Check character destroy conditions (Player vs Guy)
     this.checkCharacterDestroyConditions(delta, now);
     this._flushDestroyQueue();
 
@@ -205,40 +203,33 @@ export class DestroySystem {
     }
 
     if (this.planeY == null || isNaN(this.planeY)) {
-      if (isNaN(this.planeY)) {
-
-        this.planeY = null;
-      }
+      if (isNaN(this.planeY)) this.planeY = null;
       return;
     }
 
-    // Check balls - destroy immediately if below plane (no 3s delay)
-    // Except Ball 8 which is only destroyed by cue stroke
+    // Check balls
     this.syncList.forEach(entry => {
       if (!entry || !entry.body) return;
       const name = entry.name || ''
       if (!name.includes('Ball')) return
-      if (name === 'Ball 8') return  // Ball 8 despawns via cue stroke only
+      if (name === 'Ball 8') return
       if (entry.mesh?.userData?.isBowlingBall || name === 'Bowling Ball' || name.includes('BowlingBall')) return
 
       if (entry.body.position.y < this.planeY) {
-        // Destroy immediately (no 3 second delay like other objects)
         this._queueDestroy(entry);
       }
     })
 
-    // Check player - spawn a guy when player falls below plane
+    // Check player fall
     const players = this.syncList.filter(e => e && e.name === 'Player' && !this.destroyedCharacters.has(e));
     players.forEach(player => {
       if (!player || !player.body) return;
-
       const y = player.body.position.y;
       const enterThreshold = this.planeY - DESTROY_SYSTEM_CONFIG.playerFallEnterOffset;
       const exitThreshold = this.planeY + DESTROY_SYSTEM_CONFIG.playerFallExitOffset;
       const wasBelow = this.playerFallState.get(player) || false;
 
       if (wasBelow) {
-        // Player climbed above safe threshold => allow next fall to spawn again.
         if (y > exitThreshold) {
           this.playerFallState.set(player, false);
           this.playerFallTracking.delete(player);
@@ -246,26 +237,16 @@ export class DestroySystem {
         return;
       }
 
-      // Trigger only on downward crossing into kill zone.
       if (y < enterThreshold && !this.playerFallTracking.has(player)) {
         this.playerFallTracking.add(player);
         this.playerFallState.set(player, true);
 
         const cooldownUntil = this.playerFallSpawnCooldownUntil.get(player) || 0;
-        if (now < cooldownUntil) {
-          const remaining = (cooldownUntil - now).toFixed(1);
-          this._debugLog(`[destroy] Player crossed kill plane but spawn is on cooldown (${remaining}s left)`);
-          return;
-        }
+        if (now < cooldownUntil) return;
 
         this.playerFallSpawnCooldownUntil.set(player, now + DESTROY_SYSTEM_CONFIG.playerFallSpawnCooldownSec);
-        this._debugLog('[destroy] Player crossed below kill plane - spawning guy at water leak');
         if (this.spawnCallback) {
-          try {
-            this.spawnCallback(player);
-          } catch (e) {
-
-          }
+          try { this.spawnCallback(player); } catch (e) {}
         }
       }
     })
@@ -305,80 +286,67 @@ export class DestroySystem {
     this.spawnCallback = typeof cb === 'function' ? cb : null;
   }
 
-  /**
-   * Set particle manager để spawn effects khi destroy
-   */
   setParticleManager(pm) {
     this.particleManager = pm;
   }
 
-  /**
-   * ✨ NEW: Public method to destroy an object immediately (used by Scene1Manager for ball reset)
-   * @param {Object} entry - The syncList entry to destroy
-   */
   destroyObject(entry) {
     if (!entry) return;
     this._queueDestroy(entry);
   }
 
-  /**
-   * Check character destroy conditions:
-   * - Player destroyed: Small trigger chạm small trigger của Guy
-   * - Guy destroyed: Không có Player trong vòng large trigger của Guy trong 10 giây
-   */
-  /**
-   * Kiểm tra điều kiện destroy và xử lý HP cho Player
-   * @param {number} delta - delta time (s)
-   * @param {number} now - current time (s)
-   */
-  checkCharacterDestroyConditions(delta = 0, now = performance.now() / 1000) {
-      // 5. Bowling Ball: trừ máu liên tục khi chạm (dùng hitbox/body, không dùng trigger zone)
-      // (Moved up to ensure bowlingBalls is initialized before use)
+    checkCharacterDestroyConditions(delta = 0, now = performance.now() / 1000) {
+      // OPTIMIZATION: Filter lists ONCE instead of inside nested loops
       const bowlingBalls = this.syncList.filter(e => (e.name === 'Bowling Ball' || e.mesh?.userData?.isBowlingBall) && !this.destroyedCharacters.has(e));
-            // --- Bowling Ball destroys dynamic objects (except player) on hitbox collision ---
-            // For each bowling ball, check collision with all dynamic objects (not player, not itself)
-            // If hitbox overlaps, destroy the object immediately
-            for (const bowling of bowlingBalls) {
-              if (!bowling.body) continue;
-              let bowlingPos = bowling.body.position;
-              let bowlingRadius = bowling.body.shapes?.[0]?.radius || 0.5;
-              for (const entry of this.syncList) {
-                if (!entry || entry === bowling || this.destroyedCharacters.has(entry)) continue;
-                if (entry.name === 'Player') continue; // Don't destroy player here
-                if (!entry.body || entry.body === bowling.body) continue;
-                if (entry.type !== 'dynamic') continue;
-                let entryPos = entry.body.position;
-                let entryRadius = entry.body.shapes?.[0]?.radius || 0.5;
-                if (!entryPos) continue;
-                const dist = bowlingPos.distanceTo(entryPos);
-                if (dist < (bowlingRadius + entryRadius)) {
-                  this.destroyCharacter(entry);
+      const dynamicEntries = this.syncList.filter(e => e.type === 'dynamic' && !this.destroyedCharacters.has(e));
+
+      // --- Bowling Ball Logic (Fixed: Cannon.js Vec3 does not have distanceToSquared) ---
+      for (const bowling of bowlingBalls) {
+        if (!bowling.body) continue;
+        const bowlingPos = bowling.body.position;
+        const bowlingRadius = bowling.body.shapes?.[0]?.radius || 0.5;
+
+        for (const entry of dynamicEntries) {
+            if (entry === bowling || entry.name === 'Player') continue;
+            if (!entry.body || !entry.body.position) continue;
+            
+            const entryPos = entry.body.position;
+            const entryRadius = entry.body.shapes?.[0]?.radius || 0.5;
+
+            // 1. AABB Check (Axis-Aligned Bounding Box) - Lọc nhanh
+            const dx = Math.abs(bowlingPos.x - entryPos.x);
+            const dy = Math.abs(bowlingPos.y - entryPos.y);
+            const dz = Math.abs(bowlingPos.z - entryPos.z);
+            const limit = bowlingRadius + entryRadius + 0.1; // Buffer nhỏ
+            
+            if (dx < limit && dy < limit && dz < limit) {
+                // 2. Exact Distance Check (Sử dụng toán học thủ công thay vì .distanceToSquared vì đây là CANNON.Vec3)
+                const distSq = dx*dx + dy*dy + dz*dz;
+                const limitSq = limit * limit;
+                
+                if (distSq < limitSq) {
+                    this.destroyCharacter(entry);
                 }
-              }
             }
-    // Lọc danh sách tất cả Player, Guy, và Compune hiện có (chưa bị destroy)
+        }
+      }
+
     const players = this.syncList.filter(e => e.name === 'Player' && !this.destroyedCharacters.has(e));
     const guys = this.syncList.filter(e => e.name === 'Guy' && !this.destroyedCharacters.has(e));
     const compunes = this.syncList.filter(e => e.name === 'Compune' && !this.destroyedCharacters.has(e));
 
-    this._debugLog(`[destroy] checkCharacterDestroyConditions: ${players.length} players, ${guys.length} guys, ${compunes.length} compunes`);
-
-    // 1. Guy gây sát thương liên tục khi chạm Player (trừ 1 HP mỗi frame nếu còn chạm)
+    // 1. Guy Damage Player
     for (const guy of guys) {
       const guySmallTrigger = guy.mesh?.children.find(c => c.name === 'TriggerZone_Small');
       if (!guySmallTrigger) continue;
-
       const guyPos = this._tmpGuyPos;
       guySmallTrigger.getWorldPosition(guyPos);
       const guyRadius = guySmallTrigger.geometry?.parameters?.radius || 1.5;
 
       for (const player of players) {
         if (this.destroyedCharacters.has(player)) continue;
-
-        // Lấy vị trí và bán kính của Player (ưu tiên dùng trigger nếu có)
         let playerPos = player.mesh.position;
-        let playerRadius = 0.5; // Default radius
-
+        let playerRadius = 0.5;
         const playerSmallTrigger = player.mesh?.children.find(c => c.name === 'TriggerZone_Small');
         if (playerSmallTrigger) {
           const pPos = this._tmpPlayerPos;
@@ -389,87 +357,53 @@ export class DestroySystem {
 
         const dist = playerPos.distanceTo(guyPos);
         if (dist < (guyRadius + playerRadius)) {
-          // --- HP logic ---
-          // Ensure HP fields are always numbers
           if (typeof player.hp !== 'number' || isNaN(player.hp)) player.hp = 100;
           if (typeof player.maxHP !== 'number' || isNaN(player.maxHP)) player.maxHP = 100;
-          player.hp -= 1 * delta * 60; // Trừ 1 HP mỗi frame (giả định 60fps, scale theo delta)
+          player.hp -= 1 * delta * 60;
           player._lastDamageTime = performance.now();
-          // Update HP bar nếu có UIManager
-          if (typeof window !== 'undefined' && window.uiManager) {
-            window.uiManager.updateHPBar(player.hp, player.maxHP);
-          }
+          if (typeof window !== 'undefined' && window.uiManager) window.uiManager.updateHPBar(player.hp, player.maxHP);
           if (player.hp <= 0) {
             player.hp = 0;
-            if (typeof window !== 'undefined' && window.uiManager) {
-              window.uiManager.updateHPBar(player.hp, player.maxHP);
-            }
+            if (typeof window !== 'undefined' && window.uiManager) window.uiManager.updateHPBar(player.hp, player.maxHP);
             this.destroyCharacter(player);
           }
         }
       }
     }
 
-    // 2. Guy Auto-Despawn: Guy despawn nếu không có Player trong large trigger trong 10 giây
+    // 2. Guy Auto-Despawn
     for (const guy of guys) {
-      // Get Guy's large trigger zone
       const guyLargeTrigger = guy.mesh?.children.find(c => c.name === 'TriggerZone_Large');
       if (!guyLargeTrigger) continue;
-
       const guyPos = this._tmpGuyPos;
       guyLargeTrigger.getWorldPosition(guyPos);
       const guyLargeRadius = guyLargeTrigger.geometry?.parameters?.radius || 40;
 
-      // Check if any Player is within large trigger range
       let playerInRange = false;
       for (const player of players) {
         if (this.destroyedCharacters.has(player)) continue;
-
-        const playerPos = player.mesh.position;
-        const dist = playerPos.distanceTo(guyPos);
-        
+        const dist = player.mesh.position.distanceTo(guyPos);
         if (dist < guyLargeRadius) {
           playerInRange = true;
           break;
         }
       }
 
-      // Khởi tạo timer nếu chưa có
-      if (!this.guyTimers.has(guy)) {
-        this.guyTimers.set(guy, 0);
-        this._debugLog('[destroy] Guy spawned, timer initialized');
-      }
-
-      // Nếu có Player trong range: reset timer (keep waiting)
-      // Nếu không có Player: tăng timer, khi >= 10s thì despawn
+      if (!this.guyTimers.has(guy)) this.guyTimers.set(guy, 0);
       let newTime = this.guyTimers.get(guy);
-      
-      if (playerInRange) {
-        // Reset timer vì Player đã xuất hiện trong range
-        newTime = 0;
-      } else {
-        // Tăng timer vì không có Player
-        newTime += delta;
-      }
-      
+      newTime = playerInRange ? 0 : newTime + delta;
       this.guyTimers.set(guy, newTime);
 
-      // Despawn sau 10 giây không có Player
-      if (newTime >= this.GUY_NO_PLAYER_TIMEOUT) {
-        this._debugLog(`[destroy] Guy despawning after ${newTime.toFixed(2)}s without player`);
-        this.destroyCharacter(guy);
-      }
+      if (newTime >= this.GUY_NO_PLAYER_TIMEOUT) this.destroyCharacter(guy);
     }
 
-    // 3. Ball 8 Logic: Nếu 3+ Ball 8s chạm vào Player, trừ 1 HP mỗi frame (liên tục)
+    // 3. Ball 8 Logic
     const ball8s = this.syncList.filter(e => e.name === 'Ball 8' && !this.destroyedCharacters.has(e));
     for (const player of players) {
       if (this.destroyedCharacters.has(player)) continue;
-
       let playerPos = player.mesh.position;
       let playerRadius = 0.5;
-
-      const playerSmallTrigger = player.mesh?.children?.find(c => c.name === 'TriggerZone_Small');
+      const playerSmallTrigger = player.mesh?.children.find(c => c.name === 'TriggerZone_Small');
       if (playerSmallTrigger) {
         const pPos = this._tmpPlayerPos;
         playerSmallTrigger.getWorldPosition(pPos);
@@ -477,46 +411,34 @@ export class DestroySystem {
         playerRadius = playerSmallTrigger.geometry?.parameters?.radius || 1.5;
       }
 
-      // Count all Ball 8s touching Player's trigger zone
       let ball8sInTrigger = 0;
       for (const ball8 of ball8s) {
         const ball8SmallTrigger = ball8.mesh?.children?.find(c => c.name === 'TriggerZone_Small');
         if (!ball8SmallTrigger) continue;
-
         const ball8Pos = this._tmpBall8Pos;
         ball8SmallTrigger.getWorldPosition(ball8Pos);
         const ball8Radius = ball8SmallTrigger.geometry?.parameters?.radius || 0.5;
-
-        const dist = playerPos.distanceTo(ball8Pos);
-        if (dist < (ball8Radius + playerRadius)) {
-          ball8sInTrigger++;
-        }
+        if (playerPos.distanceTo(ball8Pos) < (ball8Radius + playerRadius)) ball8sInTrigger++;
       }
 
       if (ball8sInTrigger >= 3) {
-        player.hp -= 1 * delta * 60; // Trừ 1 HP mỗi frame (giả định 60fps, scale theo delta)
+        player.hp -= 1 * delta * 60;
         player._lastDamageTime = performance.now();
-        if (typeof window !== 'undefined' && window.uiManager) {
-          window.uiManager.updateHPBar(player.hp, player.maxHP);
-        }
+        if (typeof window !== 'undefined' && window.uiManager) window.uiManager.updateHPBar(player.hp, player.maxHP);
         if (player.hp <= 0) {
           player.hp = 0;
-          if (typeof window !== 'undefined' && window.uiManager) {
-            window.uiManager.updateHPBar(player.hp, player.maxHP);
-          }
-          this._debugLog(`[destroy] Ball 8s attacking! ${ball8sInTrigger} Ball 8s in player trigger - destroying player`);
+          if (typeof window !== 'undefined' && window.uiManager) window.uiManager.updateHPBar(player.hp, player.maxHP);
           this.destroyCharacter(player);
         }
       }
     }
-    // 5. Bowling Ball: trừ máu liên tục khi chạm (giống Guy/Ball 8, không cooldown)
+
+    // 4. Bowling Ball Damage Player
     for (const player of players) {
       if (this.destroyedCharacters.has(player)) continue;
-
-      // Lấy vị trí và bán kính của Player (ưu tiên dùng trigger nếu có)
       let playerPos = player.mesh.position;
       let playerRadius = 0.5;
-      const playerSmallTrigger = player.mesh?.children?.find(c => c.name === 'TriggerZone_Small');
+      const playerSmallTrigger = player.mesh?.children.find(c => c.name === 'TriggerZone_Small');
       if (playerSmallTrigger) {
         const pPos = this._tmpPlayerPos;
         playerSmallTrigger.getWorldPosition(pPos);
@@ -525,12 +447,11 @@ export class DestroySystem {
       }
 
       for (const bowling of bowlingBalls) {
-        // Lấy vị trí và bán kính của Bowling Ball (ưu tiên dùng trigger nếu có)
         let bowlingPos = bowling.mesh?.position;
         let bowlingRadius = 0.5;
         const bowlingSmallTrigger = bowling.mesh?.children?.find(c => c.name === 'TriggerZone_Small');
         if (bowlingSmallTrigger) {
-          const bPos = this._tmpBall8Pos; // reuse temp vector
+          const bPos = this._tmpBall8Pos;
           bowlingSmallTrigger.getWorldPosition(bPos);
           bowlingPos = bPos;
           bowlingRadius = bowlingSmallTrigger.geometry?.parameters?.radius || 1.5;
@@ -538,75 +459,46 @@ export class DestroySystem {
         if (!bowlingPos) continue;
         const dist = playerPos.distanceTo(bowlingPos);
         if (dist < (bowlingRadius + playerRadius)) {
-          // Ensure HP fields are always numbers
           if (typeof player.hp !== 'number' || isNaN(player.hp)) player.hp = 100;
           if (typeof player.maxHP !== 'number' || isNaN(player.maxHP)) player.maxHP = 100;
-          // Trừ máu liên tục khi chạm (giống Guy, 1 HP mỗi frame ở 60fps)
           player.hp -= 1 * delta * 60;
           player._lastDamageTime = performance.now();
-          if (typeof window !== 'undefined' && window.uiManager) {
-            window.uiManager.updateHPBar(player.hp, player.maxHP);
-          }
+          if (typeof window !== 'undefined' && window.uiManager) window.uiManager.updateHPBar(player.hp, player.maxHP);
           if (player.hp <= 0) {
             player.hp = 0;
-            if (typeof window !== 'undefined' && window.uiManager) {
-              window.uiManager.updateHPBar(player.hp, player.maxHP);
-            }
+            if (typeof window !== 'undefined' && window.uiManager) window.uiManager.updateHPBar(player.hp, player.maxHP);
             this.destroyCharacter(player);
           }
         }
       }
     }
 
-    // 4. Compune Auto-Despawn: Check CompuneAI shouldDespawn flag
-    // CompuneAI handles its own timeout logic (finished or disconnecting)
-    // DestroySystem just removes the object when CompuneAI says it's time
+    // 5. Compune Auto-Despawn
     for (const compune of compunes) {
       const compuneAI = compune.body?.userData?.compuneAI;
       if (!compuneAI) continue;
-
-      // Check if CompuneAI has set shouldDespawn flag
-      if (compuneAI.shouldDespawn) {
-        this._debugLog(`[destroy] Compune shouldDespawn flag set (state: ${compuneAI.state}) - despawning`);
-        this.destroyCharacter(compune);
-      }
+      if (compuneAI.shouldDespawn) this.destroyCharacter(compune);
     }
   }
 
-  /**
-   * Destroy một character - spawn smoke effect và remove khỏi scene
-   */
   destroyCharacter(character) {
     if (!character || this.destroyedCharacters.has(character)) return;
-
-    const characterName = character.name;
     this.destroyedCharacters.add(character);
     
-    // Remove from player fall tracking if it's a player
-    if (characterName === 'Player') {
+    if (character.name === 'Player') {
       this.playerFallTracking.delete(character);
-      // Đặt HP về 0 khi destroy
       character.hp = 0;
     }
     
-    // Clean up all AI controller references if present on this system
-    if (this.guyAIControllers && this.guyAIControllers.has(character)) {
-      this.guyAIControllers.delete(character);
-    }
-    if (this.dudeAIControllers && this.dudeAIControllers.has(character)) {
-      this.dudeAIControllers.delete(character);
-    }
+    if (this.guyAIControllers && this.guyAIControllers.has(character)) this.guyAIControllers.delete(character);
+    if (this.dudeAIControllers && this.dudeAIControllers.has(character)) this.dudeAIControllers.delete(character);
     if (this.guideAIControllers && this.guideAIControllers.has(character)) {
       const guideAI = this.guideAIControllers.get(character);
       if (guideAI && typeof guideAI.dispose === 'function') guideAI.dispose();
       this.guideAIControllers.delete(character);
     }
-    if (this.dummyAIControllers && this.dummyAIControllers.has(character)) {
-      this.dummyAIControllers.delete(character);
-    }
-    if (this.ball8AIControllers && this.ball8AIControllers.has(character)) {
-      this.ball8AIControllers.delete(character);
-    }
+    if (this.dummyAIControllers && this.dummyAIControllers.has(character)) this.dummyAIControllers.delete(character);
+    if (this.ball8AIControllers && this.ball8AIControllers.has(character)) this.ball8AIControllers.delete(character);
     if (this.bowlingAIControllers && this.bowlingAIControllers.has(character)) {
       const bowlingAI = this.bowlingAIControllers.get(character);
       if (bowlingAI && typeof bowlingAI.dispose === 'function') bowlingAI.dispose();
@@ -618,31 +510,21 @@ export class DestroySystem {
       this.compuneAIControllers.delete(character);
     }
 
-    // Cleanup CompuneAI if it exists
-    if (characterName === 'Compune') {
+    if (character.name === 'Compune') {
       const compuneAI = character.body?.userData?.compuneAI;
-      if (compuneAI && typeof compuneAI.cleanup === 'function') {
-        compuneAI.cleanup();
-      }
+      if (compuneAI && typeof compuneAI.cleanup === 'function') compuneAI.cleanup();
       this.compuneTimers.delete(character);
     }
 
-    // Spawn smoke effect tại vị trí nhân vật
     if (this.particleManager && character.mesh && !character._destroyFxSpawned) {
       const spawnPos = character.mesh.position.clone();
       this.particleManager.spawn('smoke', spawnPos, { color: 0x999999 });
       character._destroyFxSpawned = true;
     }
 
-    // Queue destroy to spread expensive cleanup over frames.
     this._queueDestroy(character);
-    
-
   }
 
-  /**
-   * Reset destroy state (khi spawn scene mới)
-   */
   resetCharacterDestroyState() {
     this.destroyedCharacters.clear();
     this.playerFallTracking.clear();

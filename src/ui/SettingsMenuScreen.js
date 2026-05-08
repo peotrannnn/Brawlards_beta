@@ -2,6 +2,76 @@ import { IT_STYLE } from '../main.js';
 import { settingsManager } from '../core/SettingsManager.js';
 
 export function createSettingsScreen(onBack, isGameplayMode = false) {
+        if (!document.getElementById('settings-slider-style')) {
+                const style = document.createElement('style');
+                style.id = 'settings-slider-style';
+                style.textContent = `
+            .settings-slider-shell {
+                position: relative;
+                width: 100%;
+                height: 14px;
+                background: #001a4d;
+                border-top: 1px solid #0066FF;
+                overflow: hidden;
+                box-shadow: inset 0 0 12px rgba(0, 0, 0, 0.45);
+            }
+            .settings-slider-fill {
+                position: absolute;
+                inset: 0 auto 0 0;
+                width: 0%;
+                background: linear-gradient(90deg, #0066FF, #00FF00);
+                box-shadow: 0 0 15px rgba(0, 255, 0, 0.8);
+                pointer-events: none;
+            }
+            .settings-slider-input {
+                position: absolute;
+                inset: -6px 0;
+                width: 100%;
+                margin: 0;
+                background: transparent;
+                -webkit-appearance: none;
+                appearance: none;
+                cursor: pointer;
+            }
+            .settings-slider-input:focus {
+                outline: none;
+            }
+            .settings-slider-input::-webkit-slider-runnable-track {
+                height: 14px;
+                background: transparent;
+                border: none;
+            }
+            .settings-slider-input::-webkit-slider-thumb {
+                -webkit-appearance: none;
+                appearance: none;
+                width: 14px;
+                height: 14px;
+                margin-top: 0;
+                border: 1px solid #0b1322;
+                background: #d7f6ff;
+                box-shadow: 0 0 0 2px rgba(0, 102, 255, 0.4), 0 0 10px rgba(0, 255, 0, 0.45);
+            }
+            .settings-slider-input::-moz-range-track {
+                height: 14px;
+                background: transparent;
+                border: none;
+            }
+            .settings-slider-input::-moz-range-progress {
+                height: 14px;
+                background: transparent;
+            }
+            .settings-slider-input::-moz-range-thumb {
+                width: 14px;
+                height: 14px;
+                border: 1px solid #0b1322;
+                border-radius: 0;
+                background: #d7f6ff;
+                box-shadow: 0 0 0 2px rgba(0, 102, 255, 0.4), 0 0 10px rgba(0, 255, 0, 0.45);
+            }
+        `;
+                document.head.appendChild(style);
+        }
+
     const container = document.createElement('div');
     container.id = 'settingsScreen';
     container.style.position = 'fixed';
@@ -19,28 +89,31 @@ export function createSettingsScreen(onBack, isGameplayMode = false) {
 
     const settingsBox = document.createElement('div');
     IT_STYLE.applyToElement(settingsBox, 'box');
-    settingsBox.style.width = '420px';
+    settingsBox.style.width = '460px';
     settingsBox.style.maxWidth = '90vw';
     settingsBox.style.display = 'flex';
     settingsBox.style.flexDirection = 'column';
-    settingsBox.style.gap = '15px';
-    settingsBox.style.boxShadow = '0 0 30px rgba(0, 102, 255, 0.8), inset 0 0 15px rgba(0, 102, 255, 0.4)';
+    settingsBox.style.gap = '18px';
+    settingsBox.style.padding = '18px';
+    settingsBox.style.background = 'linear-gradient(180deg, rgba(10, 26, 61, 0.98), rgba(4, 12, 28, 0.98))';
+    settingsBox.style.boxShadow = '0 0 34px rgba(0, 102, 255, 0.55), inset 0 0 18px rgba(0, 102, 255, 0.18)';
+    settingsBox.style.border = '1px solid rgba(0, 102, 255, 0.8)';
 
     const title = document.createElement('div');
     title.textContent = 'SETTINGS';
     IT_STYLE.applyToElement(title, 'header');
     title.style.textAlign = 'center';
-    title.style.marginBottom = '10px';
+    title.style.marginBottom = '2px';
     title.style.fontSize = '16px';
     settingsBox.appendChild(title);
 
     const contentArea = document.createElement('div');
     contentArea.style.display = 'flex';
     contentArea.style.flexDirection = 'column';
-    contentArea.style.gap = '16px';
+    contentArea.style.gap = '18px';
     contentArea.style.maxHeight = '65vh';
     contentArea.style.overflowY = 'auto';
-    contentArea.style.paddingRight = '10px';
+    contentArea.style.paddingRight = '8px';
 
     // Customize scrollbar for contentArea
     contentArea.style.scrollbarWidth = 'thin';
@@ -50,22 +123,45 @@ export function createSettingsScreen(onBack, isGameplayMode = false) {
         const wrap = document.createElement('div');
         wrap.style.display = 'flex';
         wrap.style.flexDirection = 'column';
-        wrap.style.gap = '8px';
+        wrap.style.gap = '10px';
+        wrap.style.padding = '10px 12px';
+        wrap.style.background = 'rgba(0, 15, 38, 0.55)';
+        wrap.style.border = '1px solid rgba(0, 102, 255, 0.22)';
+        wrap.style.boxShadow = 'inset 0 0 10px rgba(0, 102, 255, 0.06)';
 
         const topRow = document.createElement('div');
         topRow.style.display = 'flex';
         topRow.style.justifyContent = 'space-between';
+        topRow.style.alignItems = 'baseline';
+        topRow.style.gap = '12px';
 
         const labelEl = document.createElement('span');
         labelEl.textContent = label;
         labelEl.style.color = IT_STYLE.colors.neonGreen;
+        labelEl.style.letterSpacing = '0.8px';
+        labelEl.style.fontSize = '11px';
+        labelEl.style.textTransform = 'uppercase';
 
         const valEl = document.createElement('span');
         valEl.textContent = settingsManager.get(key);
         valEl.style.color = '#fff';
+        valEl.style.fontWeight = 'bold';
+        valEl.style.minWidth = '40px';
+        valEl.style.textAlign = 'right';
+
+        const valueBadge = document.createElement('span');
+        valueBadge.style.display = 'inline-flex';
+        valueBadge.style.alignItems = 'center';
+        valueBadge.style.justifyContent = 'center';
+        valueBadge.style.minWidth = '52px';
+        valueBadge.style.padding = '3px 8px';
+        valueBadge.style.border = `1px solid ${IT_STYLE.colors.borderBlue}`;
+        valueBadge.style.background = 'rgba(0, 26, 77, 0.85)';
+        valueBadge.style.boxShadow = 'inset 0 0 8px rgba(0, 102, 255, 0.12)';
+        valueBadge.appendChild(valEl);
 
         topRow.appendChild(labelEl);
-        topRow.appendChild(valEl);
+        topRow.appendChild(valueBadge);
 
         const input = document.createElement('input');
         input.type = 'range';
@@ -73,18 +169,32 @@ export function createSettingsScreen(onBack, isGameplayMode = false) {
         input.max = max;
         input.step = step;
         input.value = settingsManager.get(key);
-        input.style.width = '100%';
-        input.style.accentColor = IT_STYLE.colors.accentBlue;
-        input.style.cursor = 'pointer';
+        input.className = 'settings-slider-input';
+
+        const sliderShell = document.createElement('div');
+        sliderShell.className = 'settings-slider-shell';
+        const sliderFill = document.createElement('div');
+        sliderFill.className = 'settings-slider-fill';
+        sliderShell.appendChild(sliderFill);
+        sliderShell.appendChild(input);
+
+        const updateSliderFill = (value) => {
+            const numericValue = Number(value);
+            const percentage = ((numericValue - Number(min)) / (Number(max) - Number(min))) * 100;
+            sliderFill.style.width = `${Math.max(0, Math.min(100, percentage))}%`;
+        };
 
         input.oninput = (e) => {
             const val = parseFloat(e.target.value);
             valEl.textContent = val;
             settingsManager.set(key, val);
+            updateSliderFill(val);
         };
 
+        updateSliderFill(input.value);
+
         wrap.appendChild(topRow);
-        wrap.appendChild(input);
+        wrap.appendChild(sliderShell);
         return wrap;
     };
 
@@ -93,10 +203,16 @@ export function createSettingsScreen(onBack, isGameplayMode = false) {
         wrap.style.display = 'flex';
         wrap.style.justifyContent = 'space-between';
         wrap.style.alignItems = 'center';
+        wrap.style.padding = '10px 12px';
+        wrap.style.background = 'rgba(0, 15, 38, 0.55)';
+        wrap.style.border = '1px solid rgba(0, 102, 255, 0.22)';
 
         const labelEl = document.createElement('span');
         labelEl.textContent = label;
         labelEl.style.color = IT_STYLE.colors.neonGreen;
+        labelEl.style.fontSize = '11px';
+        labelEl.style.letterSpacing = '0.8px';
+        labelEl.style.textTransform = 'uppercase';
 
         const input = document.createElement('input');
         input.type = 'checkbox';
@@ -121,19 +237,28 @@ export function createSettingsScreen(onBack, isGameplayMode = false) {
         wrap.style.display = 'flex';
         wrap.style.justifyContent = 'space-between';
         wrap.style.alignItems = 'center';
+        wrap.style.gap = '12px';
+        wrap.style.padding = '10px 12px';
+        wrap.style.background = 'rgba(0, 15, 38, 0.55)';
+        wrap.style.border = '1px solid rgba(0, 102, 255, 0.22)';
 
         const labelEl = document.createElement('span');
         labelEl.textContent = label;
         labelEl.style.color = IT_STYLE.colors.neonGreen;
+        labelEl.style.fontSize = '11px';
+        labelEl.style.letterSpacing = '0.8px';
+        labelEl.style.textTransform = 'uppercase';
 
         const select = document.createElement('select');
         select.style.background = IT_STYLE.colors.darkBg;
         select.style.color = '#fff';
         select.style.border = `1px solid ${IT_STYLE.colors.borderBlue}`;
-        select.style.padding = '6px 10px';
+        select.style.padding = '8px 10px';
         select.style.fontFamily = 'inherit';
         select.style.cursor = 'pointer';
         select.style.outline = 'none';
+        select.style.minWidth = '120px';
+        select.style.boxShadow = 'inset 0 0 8px rgba(0, 102, 255, 0.12)';
 
         options.forEach(opt => {
             const optionEl = document.createElement('option');
@@ -161,8 +286,8 @@ export function createSettingsScreen(onBack, isGameplayMode = false) {
         header.style.color = IT_STYLE.colors.accentBlue;
         header.style.textAlign = 'center';
         header.style.fontWeight = 'bold';
-        header.style.marginTop = '10px';
-        header.style.marginBottom = '5px';
+        header.style.marginTop = '6px';
+        header.style.marginBottom = '0';
         header.style.letterSpacing = '2px';
         return header;
     };

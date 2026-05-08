@@ -47,6 +47,9 @@ const PLAYER_CONFIG = {
     dropStabilizeMs: 260,
     dropStabilizeAngularDamping: 0.92,
     dropMaxAngularSpeed: 2.1,
+    dropProbePadding: 0.08,
+    dropRetryStep: 0.42,
+    dropRetryHeightStep: 0.18,
     shuffleCameraPassthroughMs: 450,
     uncollectedItemMarkerScale: 0.42,
     uncollectedItemMarkerBobAmplitude: 0.05,
@@ -412,7 +415,11 @@ export class PlayerMovementController {
         }
 
         const cameraDir = new THREE.Vector3();
-        this.camera.getWorldDirection(cameraDir);
+        if (this.cameraController && typeof this.cameraController.getControlWorldDirection === 'function') {
+            this.cameraController.getControlWorldDirection(cameraDir)
+        } else {
+            this.camera.getWorldDirection(cameraDir)
+        }
         cameraDir.y = 0
         cameraDir.normalize()
 
@@ -488,7 +495,11 @@ export class PlayerMovementController {
         if (!cuePivot) return
 
         const cameraDir = new THREE.Vector3();
-        this.camera.getWorldDirection(cameraDir);
+        if (this.cameraController && typeof this.cameraController.getControlWorldDirection === 'function') {
+            this.cameraController.getControlWorldDirection(cameraDir)
+        } else {
+            this.camera.getWorldDirection(cameraDir)
+        }
 
         const bodyMatrix = new THREE.Matrix4().makeRotationY(this.bodyYaw);
         const invBody = bodyMatrix.clone().invert()
@@ -845,6 +856,112 @@ export class PlayerMovementController {
         }
     }
 
+    _isDropCandidateBlocked(candidatePos, probeRadius, droppedEntry, playerMesh) {
+        if (!Array.isArray(this.syncList)) return false
+
+        const tmpPoint = new THREE.Vector3()
+        const tmpQuat = new THREE.Quaternion()
+        const diff = new THREE.Vector3()
+        const right = new THREE.Vector3()
+        const up = new THREE.Vector3()
+        const forward = new THREE.Vector3()
+
+        for (const entry of this.syncList) {
+            if (!entry?.body) continue
+            if (entry === droppedEntry) continue
+            if (entry.mesh === playerMesh) continue
+            if (entry.type === 'trigger') continue
+            if (entry.mesh?.userData?.isTriggerBox) continue
+            if (this._isEntryCarried(entry)) continue
+
+            const shape = entry.body.shapes?.[0]
+            if (!shape) continue
+
+            if (shape instanceof CANNON.Sphere) {
+                const center = new THREE.Vector3(entry.body.position.x, entry.body.position.y, entry.body.position.z)
+                const radius = (shape.radius || 0) + probeRadius + PLAYER_CONFIG.dropProbePadding
+                if (candidatePos.distanceToSquared(center) <= radius * radius) {
+                    return true
+                }
+                continue
+            }
+
+            if (entry.mesh) {
+                entry.mesh.getWorldPosition(tmpPoint)
+                entry.mesh.getWorldQuaternion(tmpQuat)
+            } else {
+                tmpPoint.set(entry.body.position.x, entry.body.position.y, entry.body.position.z)
+                tmpQuat.set(entry.body.quaternion.x, entry.body.quaternion.y, entry.body.quaternion.z, entry.body.quaternion.w)
+            }
+
+            up.set(0, 1, 0).applyQuaternion(tmpQuat).normalize()
+            forward.set(0, 0, 1).applyQuaternion(tmpQuat).normalize()
+            right.set(1, 0, 0).applyQuaternion(tmpQuat).normalize()
+            diff.copy(candidatePos).sub(tmpPoint)
+
+            if (shape instanceof CANNON.Box) {
+                const he = shape.halfExtents
+                const localX = diff.dot(right)
+                const localY = diff.dot(up)
+                const localZ = diff.dot(forward)
+                if (
+                    Math.abs(localX) <= Math.abs(he.x) + probeRadius + PLAYER_CONFIG.dropProbePadding &&
+                    Math.abs(localY) <= Math.abs(he.y) + probeRadius + PLAYER_CONFIG.dropProbePadding &&
+                    Math.abs(localZ) <= Math.abs(he.z) + probeRadius + PLAYER_CONFIG.dropProbePadding
+                ) {
+                    return true
+                }
+                continue
+            }
+
+            if (shape instanceof CANNON.Cylinder) {
+                const radius = Math.max(shape.radiusTop || 0, shape.radiusBottom || 0) + probeRadius + PLAYER_CONFIG.dropProbePadding
+                const halfHeight = (shape.height || shape.length || 0) * 0.5 + probeRadius + PLAYER_CONFIG.dropProbePadding
+                const localY = diff.dot(up)
+                const localX = diff.dot(right)
+                const localZ = diff.dot(forward)
+                if ((localX * localX + localZ * localZ) <= radius * radius && Math.abs(localY) <= halfHeight) {
+                    return true
+                }
+            }
+        }
+
+        return false
+    }
+
+    _findSafeDropPosition(mesh, carried, forward) {
+        const body = carried?.entry?.body
+        const probeRadius = this._getBodyApproxRadius(body)
+        const baseY = this._getPlayerBodyTop(mesh) + PLAYER_CONFIG.dropUpwardOffset
+        const right = new THREE.Vector3(forward.z, 0, -forward.x).normalize()
+        const step = PLAYER_CONFIG.dropRetryStep
+        const lift = PLAYER_CONFIG.dropRetryHeightStep
+        const candidateOffsets = [
+            { forward: PLAYER_CONFIG.dropForwardOffset, right: 0, up: 0 },
+            { forward: PLAYER_CONFIG.dropForwardOffset + step * 0.35, right: 0, up: lift },
+            { forward: step * 0.4, right: step, up: 0 },
+            { forward: step * 0.4, right: -step, up: 0 },
+            { forward: 0, right: step * 1.2, up: lift * 0.5 },
+            { forward: 0, right: -step * 1.2, up: lift * 0.5 },
+            { forward: -step * 0.45, right: 0, up: lift },
+            { forward: 0, right: 0, up: lift * 1.8 }
+        ]
+
+        for (const offset of candidateOffsets) {
+            const candidate = new THREE.Vector3(
+                mesh.position.x + (forward.x * offset.forward) + (right.x * offset.right),
+                baseY + offset.up,
+                mesh.position.z + (forward.z * offset.forward) + (right.z * offset.right)
+            )
+
+            if (!this._isDropCandidateBlocked(candidate, probeRadius, carried.entry, mesh)) {
+                return candidate
+            }
+        }
+
+        return new THREE.Vector3(mesh.position.x, baseY + lift * 2.1, mesh.position.z)
+    }
+
     _setMeshCarriedFlag(itemMesh, isCarried) {
     if (!itemMesh) return
     if (itemMesh.userData?._cachedCarriedFlag === isCarried) return
@@ -1150,11 +1267,7 @@ export class PlayerMovementController {
         }
 
         const forward = new THREE.Vector3(Math.sin(this.bodyYaw), 0, Math.cos(this.bodyYaw)).normalize()
-        const dropPos = new THREE.Vector3(
-            mesh.position.x + forward.x * PLAYER_CONFIG.dropForwardOffset,
-            this._getPlayerBodyTop(mesh) + PLAYER_CONFIG.dropUpwardOffset,
-            mesh.position.z + forward.z * PLAYER_CONFIG.dropForwardOffset
-        )
+        const dropPos = this._findSafeDropPosition(mesh, carried, forward)
 
         body.position.set(dropPos.x, dropPos.y, dropPos.z)
         body.quaternion.set(

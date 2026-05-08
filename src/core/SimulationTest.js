@@ -72,7 +72,7 @@ const RENDER_PERF_CONFIG = {
 }
 
 // ==================== MAIN EXPORT ====================
-export function startSimulationTest(renderer, onBack, gameplayMode = false, sceneIndex = 0) {
+export function startSimulationTest(renderer, onBack, gameplayMode = false, sceneIndex = 0, options = {}) {
   document.body.style.margin = "0"
   document.body.style.overflow = "hidden"
   // ==================== CONTROL GUIDE UI ====================
@@ -651,7 +651,9 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
   let currentSceneManager = null
   let lastTime = performance.now()
   const syncList = []
-  const objects = createAllGameObjects(renderer)
+  const objects = createAllGameObjects(renderer, {
+    playerCustomization: options.playerCustomization
+  })
   const destroySystem = new DestroySystem({ syncList, world, scene })
   const particleManager = new ParticleManager(scene)
   destroySystem.setParticleManager(particleManager)
@@ -729,6 +731,8 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
 
   function isGameOverUIVisible() { return !!(gameOverScreen && gameOverScreen.isVisible) }
   function isPauseMenuVisible() { return !!(pauseMenuScreen && pauseMenuScreen.isVisible) }
+  function isSettingsVisible() { return !!document.getElementById('settingsScreen') }
+  function isGameplayModalVisible() { return isPauseMenuVisible() || isSettingsVisible() }
   function stopPlayerMovementForPause() {
     playerMovement.disableInput()
     if (possessed && possessed.body) {
@@ -787,6 +791,7 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
       () => { if (!isGameOverUIVisible()) lockCameraFromPauseResume() },
       () => {
         // onSettings
+        stopPlayerMovementForPause()
         createSettingsScreen(() => {
           // When settings screen is closed, show pause menu again
           if (pauseMenuScreen && !pauseMenuScreen.isVisible) {
@@ -1152,9 +1157,9 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
   function onKeyDown(e) {
     if (gameplayMode) {
       if (e.code === "Escape") {
-        if (document.getElementById('settingsScreen')) return
         e.preventDefault()
         if (isGameOverUIVisible()) return
+        if (isSettingsVisible()) return
         if (isPauseMenuVisible()) {
           lockCameraFromPauseResume(true) // fromEscape = true
         } else {
@@ -1199,7 +1204,7 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
         playerMovement.enableInput()
         return
       }
-      if (isPauseMenuVisible()) {
+      if (isGameplayModalVisible()) {
         cameraController.disableControlOnly()
         stopPlayerMovementForPause()
         return
@@ -1215,7 +1220,7 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
         stopPlayerMovementForPause()
         return
       }
-      if (!isGameOverUIVisible() && !isPauseMenuVisible()) {
+      if (!isGameOverUIVisible() && !isGameplayModalVisible()) {
         if (isResumeRequested) isResumeRequested = false
         enterPauseMenu()
       } else if (!isGameOverUIVisible()) {
@@ -1229,7 +1234,7 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
   document.addEventListener("pointerlockchange", onPointerLockChange)
 
   document.addEventListener("pointerlockerror", () => {
-    if (gameplayMode && !isPauseMenuVisible() && !isGameOverUIVisible()) {
+    if (gameplayMode && !isGameplayModalVisible() && !isGameOverUIVisible()) {
       const overlay = document.getElementById('simClickResumeOverlay');
       if (overlay) overlay.style.display = 'flex';
     }
@@ -1242,7 +1247,7 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
   function onClick(event) {
     if (gameplayMode) {
       // If we are not locked, and no menus are visible, click to lock pointer
-      if (document.pointerLockElement !== renderer.domElement && !isPauseMenuVisible() && !isGameOverUIVisible()) {
+      if (document.pointerLockElement !== renderer.domElement && !isGameplayModalVisible() && !isGameOverUIVisible()) {
         lockCameraFromPauseResume(false)
       }
       return
@@ -1533,7 +1538,7 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
       renderer.render(scene, cameraController.camera)
       return
     }
-    if (gameplayMode && isPauseMenuVisible() && !isGameOverUIVisible()) {
+    if (gameplayMode && isGameplayModalVisible() && !isGameOverUIVisible()) {
       cleanupPlayerChargeUI()
       renderer.render(scene, cameraController.camera)
       return

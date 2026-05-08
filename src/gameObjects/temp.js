@@ -75,9 +75,9 @@ function createBody(physDef, physicsMaterials) {
  * @param {THREE.WebGLRenderer} renderer
  * @returns {Array<object>} Danh sách các asset prefabs.
  */
-export function createAllGameObjects(renderer) {
+export function createAllGameObjects(renderer, options = {}) {
     const ballAssets = getBallAssets(renderer);
-    const playerAsset = getPlayerAsset();
+    const playerAsset = getPlayerAsset(options.playerCustomization);
     const guideAsset = getGuideAsset();
     const guyAsset = getGuyAsset();
     const dudeAsset = getDudeAsset();

@@ -92,12 +92,17 @@ const SCENE1_CONFIG = {
   vendingInsertUpOffset: 10,
   vendingDropForwardExtra: 0.32,
   vendingDropLift: 0.38,
+  funHousePowerBoxOpenDuration: 0.34,
+  funHouseLightStickInsertDuration: 0.9,
+  funHousePowerBoxCloseDuration: 0.36,
+  funHouseLightStickInsertArcLift: 0.18,
   cartonOpenDelay: 1.0,
   cartonOpenDuration: 0.8,
   chestOilApplyDuration: 1.5,
   chestLatchOpenDuration: 0.45,
   chestOpenDuration: 1.2,
   chestCollectScanIntervalSec: 1 / 15,
+  funHouseCollectScanIntervalSec: 1 / 18,
   vendingCollectScanIntervalSec: 1 / 18,
   sequenceSilverCoinSpawnHeight: 7,
   sequenceSilverCoinSpawnSpread: 0.7,
@@ -133,7 +138,10 @@ const SCENE1_CONFIG = {
 const SECTION_WARMUP_CONFIG = {
   overlayFrameBudgetMs: 4.5,
   backgroundFrameBudgetMs: 2.5,
-  overlayMinVisibleMs: 900
+  overlayMinVisibleMs: 900,
+  overlayBatchSize: 10,
+  backgroundBatchSize: 3,
+  silentCompileDelayMs: 32
 }
 
 const SECTION_STREAMING_CONFIG = {
@@ -317,6 +325,9 @@ export class Scene1Manager {
     // Chest interaction system
     this.chestEntry = null
     this.chestState = null
+    this.funHouseEntry = null
+    this.funHouseLightStickInstallState = null
+    this._funHouseCollectScanAccumulator = 0
 
     // Reusable vectors for hot-path distance checks.
     this._tmpDudeTriggerWorldPos = new THREE.Vector3()
@@ -332,6 +343,8 @@ export class Scene1Manager {
     this._tmpChestAnimQuat = new THREE.Quaternion()
     this._tmpVendingAnimPos = new THREE.Vector3()
     this._tmpVendingAnimQuat = new THREE.Quaternion()
+    this._tmpFunHouseAnimPos = new THREE.Vector3()
+    this._tmpFunHouseAnimQuat = new THREE.Quaternion()
 
     // Reward coin on ordered sequence system
     this.sequenceSilverCoinAsset = null
@@ -370,6 +383,7 @@ export class Scene1Manager {
     this.section3EyeTransitionStartTime = -1 // Time when 30s delay ended (60s transition starts)
     this.section3EyeTransitionProgress = 0 // 0 to 1 for color transition
     this._section3PlatformBoundsCache = null
+    this._section3WarmPrimeReady = false
     this.sectionGroups = this.sceneGroup?.userData?.sectionGroups || null
     this.baseSceneBackground = null
     this.activeSectionId = null
@@ -413,7 +427,7 @@ export class Scene1Manager {
     // Force-refresh grass LOD immediately when entering section3 so blades appear right away.
     // Defer grass/tree LOD forceRefresh to the next frame so the teleport frame itself
     // doesn't carry both section visibility toggle + full LOD rebuild on the same tick.
-    if (sectionId === 'section3' && (this.section3GrassLodUpdater || this.section3TreeLodUpdater)) {
+    if (sectionId === 'section3' && !this._section3WarmPrimeReady && (this.section3GrassLodUpdater || this.section3TreeLodUpdater)) {
       const grassUpdater = this.section3GrassLodUpdater
       const treeUpdater = this.section3TreeLodUpdater
       const defaultPos = this._section3DefaultFocusPos
@@ -606,6 +620,32 @@ export class Scene1Manager {
     return true
   }
 
+  _primeSection3StreamingState(sectionGroup = null) {
+    const group = sectionGroup || this.sectionGroups?.section3 || null
+    if (!group) return
+
+    const focusPos = this._getSection3CenterSpawnPosition(0)
+    const grassUpdater = group.userData?.section3GrassLod || this.section3GrassLodUpdater
+    const treeUpdater = group.userData?.section3TreeLod || this.section3TreeLodUpdater
+
+    if (grassUpdater) {
+      grassUpdater.forceRefresh(focusPos)
+      this.section3GrassLodUpdater = grassUpdater
+    }
+
+    if (treeUpdater) {
+      treeUpdater.forceRefresh(focusPos)
+      this.section3TreeLodUpdater = treeUpdater
+    }
+
+    this._ensureSection3TreeScaleRegistry()
+    if (Array.isArray(this.syncList)) {
+      this._ensureSection3HouseScaleRegistry(this.syncList)
+    }
+
+    this._section3WarmPrimeReady = true
+  }
+
   _processPendingTeleport() {
     const request = this.pendingTeleportRequest
     if (!request) return
@@ -685,6 +725,9 @@ export class Scene1Manager {
     state.loading = true
     if (job.forceReload) {
       state.ready = false
+      if (job.sectionId === 'section3') {
+        this._section3WarmPrimeReady = false
+      }
     }
 
 
@@ -764,7 +807,6 @@ export class Scene1Manager {
       })
     }
 
-    const BATCH_SIZE = 10; // Số mesh xử lý mỗi frame (có thể điều chỉnh)
     const total = Math.max(1, meshes.length)
     let index = 0
     const warmStartTime = performance.now()
@@ -772,6 +814,9 @@ export class Scene1Manager {
     const frameBudgetMs = showOverlay
       ? SECTION_WARMUP_CONFIG.overlayFrameBudgetMs
       : SECTION_WARMUP_CONFIG.backgroundFrameBudgetMs
+    const batchSize = showOverlay
+      ? SECTION_WARMUP_CONFIG.overlayBatchSize
+      : SECTION_WARMUP_CONFIG.backgroundBatchSize
     const minVisibleMs = showOverlay ? SECTION_WARMUP_CONFIG.overlayMinVisibleMs : 0
 
     if (showOverlay) {
@@ -793,11 +838,15 @@ export class Scene1Manager {
 
     const step = () => {
       const startTime = performance.now()
-      let batchCount = 0;
-      while (index < meshes.length && batchCount < BATCH_SIZE) {
+      let batchCount = 0
+      while (
+        index < meshes.length &&
+        batchCount < batchSize &&
+        (performance.now() - startTime) < frameBudgetMs
+      ) {
         const mesh = meshes[index]
         index += 1
-        batchCount++;
+        batchCount += 1
 
         mesh.updateMatrixWorld(true)
 
@@ -881,6 +930,9 @@ export class Scene1Manager {
           // Ensure all mesh materials are defined and valid before compiling
           let invalidMeshes = [];
           patchMaterials(this.mainScene);
+          if (job.sectionId === 'section3') {
+            this._primeSection3StreamingState(group)
+          }
           // Không còn bất kỳ filter hoặc truy cập .isReady nào với section3TreeMaterialControllers hoặc section3Trees
           // Không làm gì ở đây nữa để tránh bug cây biến mất hoặc lỗi .isReady
           // Remove compileAsync entirely; only use compile if available
@@ -900,7 +952,15 @@ export class Scene1Manager {
         }
       }
 
-      compileSceneForSection().finally(compileAndFinalize)
+      const finalizeSectionWarmup = () => {
+        compileSceneForSection().finally(compileAndFinalize)
+      }
+
+      if (job.silent) {
+        setTimeout(finalizeSectionWarmup, SECTION_WARMUP_CONFIG.silentCompileDelayMs)
+      } else {
+        finalizeSectionWarmup()
+      }
       return
     }
 
@@ -1379,6 +1439,7 @@ export class Scene1Manager {
     this._updateSection2ReturnElevator(syncList, delta)
     this._updateDudeFogAndPenaltyState(syncList, delta)
     this._updateSection3EdgeAtmosphere(syncList, delta)
+    this._updateFunHousePowerBox(syncList, delta)
     this._updateVendingMachineCollector(syncList, delta)
     this._updateCartonBoxInteraction(syncList, delta)
     this._updateChestInteraction(syncList, delta)
@@ -1573,6 +1634,10 @@ export class Scene1Manager {
         body.updateBoundingRadius()
       }
       body.aabbNeedsUpdate = true
+
+      if (mesh.userData?.isFunHouse) {
+        this._syncScaledStaticChildPhysics(entry, syncList)
+      }
     })
   }
 
@@ -2791,6 +2856,30 @@ export class Scene1Manager {
     return vending
   }
 
+  _ensureFunHouseEntry() {
+    if (this.funHouseEntry?.mesh?.parent) return this.funHouseEntry
+
+    let mesh = this.sceneGroup?.getObjectByName('Section3 Fun House')
+      || this.sceneGroup?.getObjectByName('Fun House')
+      || null
+
+    if (!mesh && this.sceneGroup?.traverse) {
+      this.sceneGroup.traverse((child) => {
+        if (!mesh && child?.userData?.getFunHousePowerBoxWorldTarget) {
+          mesh = child
+        }
+      })
+    }
+
+    if (!mesh) {
+      this.funHouseEntry = null
+      return null
+    }
+
+    this.funHouseEntry = { mesh }
+    return this.funHouseEntry
+  }
+
   _ensureStaticSceneObjectEntry(objectName, entryKey) {
     const cached = entryKey ? this[entryKey] : null
     if (cached?.mesh?.parent) return cached
@@ -2816,19 +2905,29 @@ export class Scene1Manager {
     const sx = Math.abs(shape.size[0] || 0)
     const sy = Math.abs(shape.size[1] || 0)
     const sz = Math.abs(shape.size[2] || 0)
-    const scaleX = Math.abs(mesh.scale?.x || 1)
-    const scaleY = Math.abs(mesh.scale?.y || 1)
-    const scaleZ = Math.abs(mesh.scale?.z || 1)
+    const worldScale = new THREE.Vector3()
+    const worldPosition = new THREE.Vector3()
+    const worldQuaternion = new THREE.Quaternion()
+    mesh.getWorldScale(worldScale)
+    mesh.getWorldPosition(worldPosition)
+    mesh.getWorldQuaternion(worldQuaternion)
+    const scaleX = Math.abs(worldScale.x || 1)
+    const scaleY = Math.abs(worldScale.y || 1)
+    const scaleZ = Math.abs(worldScale.z || 1)
 
     const halfX = (sx * scaleX) * 0.5
     const halfY = (sy * scaleY) * 0.5
     const halfZ = (sz * scaleZ) * 0.5
 
     const localOffset = shape.offset || [0, 0, 0]
-    const center = mesh.position.clone().add(
-      new THREE.Vector3(localOffset[0] || 0, localOffset[1] || 0, localOffset[2] || 0).applyQuaternion(mesh.quaternion)
+    const center = worldPosition.clone().add(
+      new THREE.Vector3(
+        (localOffset[0] || 0) * scaleX,
+        (localOffset[1] || 0) * scaleY,
+        (localOffset[2] || 0) * scaleZ
+      ).applyQuaternion(worldQuaternion)
     )
-    const quat = mesh.quaternion.clone()
+    const quat = worldQuaternion.clone()
     const up = new THREE.Vector3(0, 1, 0).applyQuaternion(quat).normalize()
     const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(quat).normalize()
     const right = new THREE.Vector3(1, 0, 0).applyQuaternion(quat).normalize()
@@ -2883,9 +2982,15 @@ export class Scene1Manager {
 
     if (!Number.isFinite(minX) || !Number.isFinite(maxX)) return null
 
-    const scaleX = Math.abs(mesh.scale?.x || 1)
-    const scaleY = Math.abs(mesh.scale?.y || 1)
-    const scaleZ = Math.abs(mesh.scale?.z || 1)
+    const worldScale = new THREE.Vector3()
+    const worldPosition = new THREE.Vector3()
+    const worldQuaternion = new THREE.Quaternion()
+    mesh.getWorldScale(worldScale)
+    mesh.getWorldPosition(worldPosition)
+    mesh.getWorldQuaternion(worldQuaternion)
+    const scaleX = Math.abs(worldScale.x || 1)
+    const scaleY = Math.abs(worldScale.y || 1)
+    const scaleZ = Math.abs(worldScale.z || 1)
 
     const centerOffset = new THREE.Vector3(
       ((minX + maxX) * 0.5) * scaleX,
@@ -2897,13 +3002,68 @@ export class Scene1Manager {
     const halfY = ((maxY - minY) * 0.5) * scaleY
     const halfZ = ((maxZ - minZ) * 0.5) * scaleZ
 
-    const center = mesh.position.clone().add(centerOffset.applyQuaternion(mesh.quaternion))
-    const quat = mesh.quaternion.clone()
+    const center = worldPosition.clone().add(centerOffset.applyQuaternion(worldQuaternion))
+    const quat = worldQuaternion.clone()
     const up = new THREE.Vector3(0, 1, 0).applyQuaternion(quat).normalize()
     const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(quat).normalize()
     const right = new THREE.Vector3(1, 0, 0).applyQuaternion(quat).normalize()
 
     return { mesh, shape: null, center, forward, up, right, halfX, halfY, halfZ }
+  }
+
+  _syncScaledStaticChildPhysics(ownerEntry, syncList) {
+    const ownerMesh = ownerEntry?.mesh
+    if (!ownerMesh || !Array.isArray(syncList)) return
+
+    for (const entry of syncList) {
+      const childMesh = entry?.mesh
+      const body = entry?.body
+      if (!childMesh || !body || childMesh === ownerMesh) continue
+      if (!ownerMesh.getObjectById(childMesh.id)) continue
+      if (!childMesh.userData?.physics?.shapes?.length || !body.shapes?.length) continue
+
+      body.userData = body.userData || {}
+      if (!body.userData.scaleSyncBase) {
+        body.userData.scaleSyncBase = childMesh.userData.physics.shapes.map((shape) => ({
+          type: shape.type,
+          size: Array.isArray(shape.size) ? [...shape.size] : null
+        }))
+      }
+
+      const worldPos = new THREE.Vector3()
+      const worldQuat = new THREE.Quaternion()
+      const worldScale = new THREE.Vector3()
+      childMesh.getWorldPosition(worldPos)
+      childMesh.getWorldQuaternion(worldQuat)
+      childMesh.getWorldScale(worldScale)
+
+      body.position.set(worldPos.x, worldPos.y, worldPos.z)
+      body.quaternion.set(worldQuat.x, worldQuat.y, worldQuat.z, worldQuat.w)
+
+      const baseShapes = body.userData.scaleSyncBase
+      for (let index = 0; index < body.shapes.length; index++) {
+        const cannonShape = body.shapes[index]
+        const shapeDef = baseShapes[index]
+        if (!cannonShape || !shapeDef?.size || !cannonShape.halfExtents) continue
+
+        cannonShape.halfExtents.set(
+          Math.abs(shapeDef.size[0] * worldScale.x) * 0.5,
+          Math.abs(shapeDef.size[1] * worldScale.y) * 0.5,
+          Math.abs(shapeDef.size[2] * worldScale.z) * 0.5
+        )
+        if (typeof cannonShape.updateConvexPolyhedronRepresentation === 'function') {
+          cannonShape.updateConvexPolyhedronRepresentation()
+        }
+        if (typeof cannonShape.updateBoundingSphereRadius === 'function') {
+          cannonShape.updateBoundingSphereRadius()
+        }
+      }
+
+      if (typeof body.updateBoundingRadius === 'function') {
+        body.updateBoundingRadius()
+      }
+      body.aabbNeedsUpdate = true
+    }
   }
 
   _getVendingWorldShapeInfo(role = null) {
@@ -2944,6 +3104,25 @@ export class Scene1Manager {
       .addScaledVector(info.up, SCENE1_CONFIG.vendingInsertUpOffset)
 
     return { ...info, target, dropTarget: baseTarget }
+  }
+
+  _getFunHouseCollectTarget() {
+    const funHouse = this._ensureFunHouseEntry()
+    const mesh = funHouse?.mesh
+    const powerBox = mesh?.getObjectByName?.('Fun House Power Box') || null
+    if (!mesh?.userData?.getFunHousePowerBoxWorldTarget || !powerBox) return null
+
+    const triggerInfo = this._getWorldShapeInfo(powerBox, 'funHouseLightStickTrigger')
+    const targetInfo = mesh.userData.getFunHousePowerBoxWorldTarget()
+    if (!targetInfo?.target || !targetInfo?.targetQuaternion) return null
+
+    return {
+      mesh,
+      powerBox,
+      triggerInfo,
+      target: targetInfo.target.clone(),
+      targetQuaternion: targetInfo.targetQuaternion.clone()
+    }
   }
 
   _ensureCartonBoxEntry() {
@@ -3326,6 +3505,196 @@ export class Scene1Manager {
 
     this._applyChestLatchPose(state.latchProgress)
     this._applyChestLidPose(state.openProgress)
+  }
+
+  _findTriggeredFunHouseLightStick(syncList, triggerInfo) {
+    if (!Array.isArray(syncList) || !triggerInfo) return null
+
+    let nearest = null
+    let minDistSq = Infinity
+
+    for (const entry of syncList) {
+      if (!entry?.mesh || !entry?.body) continue
+      if (entry.name !== 'Light Stick' || entry.type !== 'dynamic') continue
+      if (entry.body.userData?.isCollectedItem || entry.body.userData?.lockedByFunHouse) continue
+      if (entry.mesh.userData?.isCarriedItem || entry.body.userData?.isCarriedItem) continue
+      if (!this._isPointInsideOrientedBox(entry.mesh.position, triggerInfo, 0.18)) continue
+
+      const distSq = entry.mesh.position.distanceToSquared(triggerInfo.center)
+      if (distSq >= minDistSq) continue
+
+      minDistSq = distSq
+      nearest = entry
+    }
+
+    return nearest
+  }
+
+  _beginFunHouseLightStickInstall(entry, targetInfo) {
+    if (!entry?.body || !entry?.mesh || !targetInfo?.mesh || !targetInfo?.target || !targetInfo?.targetQuaternion) {
+      return false
+    }
+
+    const body = entry.body
+    body.userData = body.userData || {}
+    body.userData.isCollectedItem = true
+    body.userData.lockedByFunHouse = true
+    body.type = CANNON.Body.KINEMATIC
+    body.collisionResponse = false
+    body.collisionFilterMask = 0
+    body.velocity.set(0, 0, 0)
+    body.angularVelocity.set(0, 0, 0)
+
+    targetInfo.mesh.userData.setFunHousePowerBoxDoorOpenAmount?.(0)
+
+    this.funHouseLightStickInstallState = {
+      entry,
+      houseMesh: targetInfo.mesh,
+      phase: 'opening',
+      elapsed: 0,
+      startPos: entry.mesh.position.clone(),
+      startQuat: entry.mesh.quaternion.clone(),
+      targetPos: targetInfo.target.clone(),
+      targetQuat: targetInfo.targetQuaternion.clone(),
+      originalType: body.type,
+      originalCollisionResponse: body.collisionResponse,
+      originalCollisionFilterMask: body.collisionFilterMask,
+      visualCommitted: false
+    }
+
+    return true
+  }
+
+  _updateFunHouseLightStickInstallAnimation(delta) {
+    const installState = this.funHouseLightStickInstallState
+    if (!installState) return 'idle'
+
+    const houseMesh = installState.houseMesh
+    if (!houseMesh?.parent) {
+      this.funHouseLightStickInstallState = null
+      return 'cancelled'
+    }
+
+    const setDoorAmount = houseMesh.userData?.setFunHousePowerBoxDoorOpenAmount
+    const entryAlive = !!(installState.entry && this.syncList?.includes(installState.entry) && installState.entry.mesh && installState.entry.body)
+
+    if (!entryAlive && !installState.visualCommitted) {
+      setDoorAmount?.(0)
+      this.funHouseLightStickInstallState = null
+      return 'cancelled'
+    }
+
+    installState.elapsed += delta
+
+    if (installState.phase === 'opening') {
+      const t = THREE.MathUtils.smoothstep(
+        THREE.MathUtils.clamp(installState.elapsed / SCENE1_CONFIG.funHousePowerBoxOpenDuration, 0, 1),
+        0,
+        1
+      )
+      installState.entry.body.position.set(
+        installState.startPos.x,
+        installState.startPos.y,
+        installState.startPos.z
+      )
+      installState.entry.body.quaternion.set(
+        installState.startQuat.x,
+        installState.startQuat.y,
+        installState.startQuat.z,
+        installState.startQuat.w
+      )
+      installState.entry.body.aabbNeedsUpdate = true
+      installState.entry.mesh.position.copy(installState.startPos)
+      installState.entry.mesh.quaternion.copy(installState.startQuat)
+      setDoorAmount?.(t)
+
+      if (t >= 1) {
+        installState.phase = 'inserting'
+        installState.elapsed = 0
+      }
+
+      return 'running'
+    }
+
+    if (installState.phase === 'inserting' && entryAlive) {
+      const entry = installState.entry
+      const body = entry.body
+      const mesh = entry.mesh
+      const t = THREE.MathUtils.smoothstep(
+        THREE.MathUtils.clamp(installState.elapsed / SCENE1_CONFIG.funHouseLightStickInsertDuration, 0, 1),
+        0,
+        1
+      )
+
+      const curPos = this._tmpFunHouseAnimPos.copy(installState.startPos).lerp(installState.targetPos, t)
+      curPos.y += Math.sin(t * Math.PI) * SCENE1_CONFIG.funHouseLightStickInsertArcLift
+      const curQuat = this._tmpFunHouseAnimQuat.copy(installState.startQuat).slerp(installState.targetQuat, t)
+
+      body.type = CANNON.Body.KINEMATIC
+      body.collisionResponse = false
+      body.collisionFilterMask = 0
+      body.velocity.set(0, 0, 0)
+      body.angularVelocity.set(0, 0, 0)
+      body.position.set(curPos.x, curPos.y, curPos.z)
+      body.quaternion.set(curQuat.x, curQuat.y, curQuat.z, curQuat.w)
+      body.aabbNeedsUpdate = true
+      mesh.position.copy(curPos)
+      mesh.quaternion.copy(curQuat)
+      setDoorAmount?.(1)
+
+      if (t >= 1) {
+        if (!installState.visualCommitted) {
+          houseMesh.userData.completeFunHouseLightStickInstallation?.()
+          this._despawnEntry(entry)
+          installState.visualCommitted = true
+          installState.entry = null
+        }
+        installState.phase = 'closing'
+        installState.elapsed = 0
+      }
+
+      return 'running'
+    }
+
+    if (installState.phase === 'closing') {
+      const t = THREE.MathUtils.smoothstep(
+        THREE.MathUtils.clamp(installState.elapsed / SCENE1_CONFIG.funHousePowerBoxCloseDuration, 0, 1),
+        0,
+        1
+      )
+      setDoorAmount?.(1 - t)
+
+      if (t >= 1) {
+        setDoorAmount?.(0)
+        this.funHouseLightStickInstallState = null
+        return 'completed'
+      }
+    }
+
+    return 'running'
+  }
+
+  _updateFunHousePowerBox(syncList, delta) {
+    if (this.activeSectionId !== 'section3') return
+
+    this._updateFunHouseLightStickInstallAnimation(delta)
+    if (this.funHouseLightStickInstallState) return
+
+    const targetInfo = this._getFunHouseCollectTarget()
+    const triggerInfo = targetInfo?.triggerInfo
+    if (!targetInfo?.mesh || !triggerInfo) return
+    if (targetInfo.mesh.userData?.hasFunHouseStateOverride?.() || targetInfo.mesh.userData?.isFunHouseLightStickInstalled?.()) {
+      return
+    }
+
+    this._funHouseCollectScanAccumulator += delta
+    if (this._funHouseCollectScanAccumulator < SCENE1_CONFIG.funHouseCollectScanIntervalSec) return
+    this._funHouseCollectScanAccumulator = 0
+
+    const lightStickEntry = this._findTriggeredFunHouseLightStick(syncList, triggerInfo)
+    if (!lightStickEntry) return
+
+    this._beginFunHouseLightStickInstall(lightStickEntry, targetInfo)
   }
 
   _findNearestCollectableSilverCoin(syncList, targetInfo) {
@@ -5329,7 +5698,7 @@ export class Scene1Manager {
 
     // Get positions
     const playerPos = playerEntry.mesh.position
-    const doorPos = this.elevatorDoor.position
+    const doorPos = this.elevatorDoor.getWorldPosition(new THREE.Vector3())
 
     // Calculate distance between player and door center
     const distance = playerPos.distanceTo(doorPos)
@@ -5484,6 +5853,7 @@ export class Scene1Manager {
     this.section3EdgeRecoveryTimer = 0
     this.section3EdgeRecoveryStartDarkness = 0
     this._section3PlatformBoundsCache = null
+    this._section3WarmPrimeReady = false
     this.section3EyeBot = null
     this.dudeFogBlend = 0
     this.dudeFogSmoothedDistance = SCENE1_CONFIG.dudeFogMaxDistance
@@ -5495,6 +5865,9 @@ export class Scene1Manager {
     this.vendingMachineEntry = null
     this.vendingCoinCollectState = null
     this.vendingBabyOilAsset = null
+    this.funHouseEntry = null
+    this.funHouseLightStickInstallState = null
+    this._funHouseCollectScanAccumulator = 0
     this.cartonBoxEntry = null
     this.cartonBoxState = null
     this.cartonDummyAsset = null
@@ -5506,6 +5879,9 @@ export class Scene1Manager {
     this.chestOilApplyState = null
     this.sequenceSilverCoinAsset = null
     this.correctOrderedBallsSinceLastCoin = 0
+
+    const funHouseMesh = this.sceneGroup?.getObjectByName('Section3 Fun House') || this.sceneGroup?.getObjectByName('Fun House')
+    funHouseMesh?.userData?.resetFunHouseState?.()
     
     // ✨ NEW: Reset sweat effects
     this.activeSweatEffects = []

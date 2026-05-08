@@ -1,4 +1,6 @@
 import * as THREE from 'three'
+import { getElevatorDoorAsset } from './ElevatorDoor.js'
+import { getLightStickAsset } from '../items/lightStick.js'
 
 const HOUSE_CONFIG = {
   size: 8,
@@ -22,6 +24,44 @@ const HOUSE_CONFIG = {
   fenceColor: '#f4f4f4'
 }
 
+const FUN_HOUSE_CONFIG = {
+  width: HOUSE_CONFIG.size,
+  height: HOUSE_CONFIG.wallHeight + HOUSE_CONFIG.roofHeight,
+  depth: HOUSE_CONFIG.size * 0.92,
+  stripeWhite: '#ffffff',
+  stripeBlue: '#1e63ff',
+  stripeCount: 8,
+  elevatorScale: HOUSE_CONFIG.doorHeight / 5.0,
+  elevatorGold: {
+    frameColor: '#d6b54a',
+    frameEmissive: '#bc9d54',
+    doorColor: '#b88a21',
+    doorEmissive: '#c4944c'
+  },
+  powerBox: {
+    width: 0.92,
+    height: 0.58,
+    depth: 0.22,
+    wallThickness: 0.05,
+    doorThickness: 0.028,
+    offsetX: -1.55,
+    centerY: 0.78,
+    insetZ: 0.095,
+    doorOpenAngle: Math.PI * 0.78,
+    triggerForward: 0.42,
+    triggerCenterYOffset: -0.24,
+    triggerSize: [1.28, 1.58, 1.2],
+    boxColor: '#0a0b0f',
+    boxEmissive: '#0e1218',
+    doorFrameColor: '#171b22',
+    glassColor: '#d7f1ff',
+    glassEmissive: '#4d8fb6',
+    indicatorOff: '#612121',
+    indicatorOn: '#79ff7a',
+    installedStickScale: 0.96
+  }
+}
+
 const goreTextureLoader = new THREE.TextureLoader()
 let cachedGoreTexture = null
 let cachedRoofTileTexture = null
@@ -41,6 +81,8 @@ let cachedLowCostEdgeTrimMaterial = null
 let cachedLowCostGableMaterial = null
 let cachedLowCostRidgeMaterial = null
 let cachedLowCostWindowMaterial = null
+let cachedFunHouseStripeTexture = null
+let cachedFunHouseMaterial = null
 
 // Material caches for normal houses
 let cachedNormalWallMaterial = null
@@ -378,6 +420,19 @@ function clonePhysicsDef(source) {
   }
 }
 
+function setInstalledLightStickVisible(lightStick, visible) {
+  if (!lightStick) return
+
+  lightStick.visible = visible
+  lightStick.traverse((child) => {
+    if (!child?.isPointLight) return
+    if (child.userData.baseIntensity == null) {
+      child.userData.baseIntensity = child.intensity
+    }
+    child.intensity = visible ? child.userData.baseIntensity : 0
+  })
+}
+
 function getMainColliderBaseY(physicsDef) {
   const shapes = physicsDef?.shapes || []
   const mainBox = shapes.find((shape) => shape?.role === 'houseMain' && shape?.type === 'box')
@@ -581,6 +636,395 @@ function getLowCostWindowMaterial() {
   return cachedLowCostWindowMaterial
 }
 
+function createFunHouseStripeTexture() {
+  if (cachedFunHouseStripeTexture) return cachedFunHouseStripeTexture
+
+  const canvas = document.createElement('canvas')
+  canvas.width = 256
+  canvas.height = 256
+  const ctx = canvas.getContext('2d')
+  const stripeHeight = canvas.height / FUN_HOUSE_CONFIG.stripeCount
+
+  for (let index = 0; index < FUN_HOUSE_CONFIG.stripeCount; index++) {
+    ctx.fillStyle = index % 2 === 0 ? FUN_HOUSE_CONFIG.stripeWhite : FUN_HOUSE_CONFIG.stripeBlue
+    ctx.fillRect(0, index * stripeHeight, canvas.width, stripeHeight)
+  }
+
+  const texture = new THREE.CanvasTexture(canvas)
+  texture.wrapS = THREE.RepeatWrapping
+  texture.wrapT = THREE.RepeatWrapping
+  texture.repeat.set(1, 1)
+  texture.colorSpace = THREE.SRGBColorSpace
+  texture.needsUpdate = true
+  cachedFunHouseStripeTexture = texture
+  return texture
+}
+
+function getFunHouseMaterial() {
+  if (cachedFunHouseMaterial) return cachedFunHouseMaterial
+  cachedFunHouseMaterial = new THREE.MeshStandardMaterial({
+    color: '#ffffff',
+    map: createFunHouseStripeTexture(),
+    roughness: 0.82,
+    metalness: 0.02
+  })
+  return cachedFunHouseMaterial
+}
+
+function addHouseWindows(root, openingMaterial, frontZ, portalEffectEnabled = true) {
+  const portalWindows = []
+  const lowCostWindowMaterial = getLowCostWindowMaterial()
+
+  ;[-1, 1].forEach((side, index) => {
+    const centerX = side * HOUSE_CONFIG.windowGapFromCenter
+
+    const windowBase = new THREE.Mesh(
+      new THREE.BoxGeometry(HOUSE_CONFIG.windowWidth, HOUSE_CONFIG.windowHeight, HOUSE_CONFIG.windowDepth),
+      openingMaterial
+    )
+    windowBase.position.set(centerX, HOUSE_CONFIG.windowBottomY + HOUSE_CONFIG.windowHeight * 0.5, frontZ)
+    windowBase.castShadow = true
+    windowBase.receiveShadow = true
+    windowBase.name = index === 0 ? 'House Window Left' : 'House Window Right'
+    root.add(windowBase)
+
+    let portalMaterial = lowCostWindowMaterial
+    let portalUniforms = null
+    if (portalEffectEnabled) {
+      const portalData = createWindowPortalMaterial()
+      portalMaterial = portalData.material
+      portalUniforms = portalData.uniforms
+    }
+
+    const portal = new THREE.Mesh(
+      new THREE.PlaneGeometry(HOUSE_CONFIG.windowWidth * 0.78, HOUSE_CONFIG.windowHeight * 0.78),
+      portalMaterial
+    )
+    portal.position.set(centerX, HOUSE_CONFIG.windowBottomY + HOUSE_CONFIG.windowHeight * 0.5, frontZ + 0.05)
+    portal.name = index === 0 ? 'House Window Left Portal' : 'House Window Right Portal'
+    root.add(portal)
+
+    if (portalUniforms) portalWindows.push({ mesh: portal, uniforms: portalUniforms })
+  })
+
+  if (portalWindows.length > 0) {
+    const resolutionTmp = new THREE.Vector2()
+    root.userData.update = function updateHousePortal(deltaSeconds, timeSeconds) {
+      const tNow = typeof timeSeconds === 'number' ? timeSeconds : (performance.now() * 0.001)
+      portalWindows.forEach((entry) => {
+        if (entry && entry.uniforms) entry.uniforms.uTime.value = tNow
+      })
+    }
+
+    portalWindows.forEach((entry) => {
+      entry.mesh.onBeforeRender = (renderer) => {
+        const pixelRatio = renderer.getPixelRatio ? renderer.getPixelRatio() : 1
+        renderer.getSize(resolutionTmp)
+        entry.uniforms.uResolution.value.set(
+          Math.max(1, resolutionTmp.x * pixelRatio),
+          Math.max(1, resolutionTmp.y * pixelRatio)
+        )
+        entry.uniforms.uTime.value = performance.now() * 0.001
+      }
+    })
+  }
+}
+
+function createFunHouseMesh(options = {}) {
+  const root = new THREE.Group()
+  root.name = 'Fun House Mesh'
+
+  const bodyMaterial = getFunHouseMaterial()
+  const openingMaterial = getNormalOpeningMaterial()
+  const powerBoxBodyMaterial = new THREE.MeshStandardMaterial({
+    color: FUN_HOUSE_CONFIG.powerBox.boxColor,
+    emissive: FUN_HOUSE_CONFIG.powerBox.boxEmissive,
+    emissiveIntensity: 0.08,
+    roughness: 0.72,
+    metalness: 0.35
+  })
+  const powerBoxDoorFrameMaterial = new THREE.MeshStandardMaterial({
+    color: FUN_HOUSE_CONFIG.powerBox.doorFrameColor,
+    roughness: 0.42,
+    metalness: 0.76
+  })
+  const powerBoxGlassMaterial = new THREE.MeshPhysicalMaterial({
+    color: FUN_HOUSE_CONFIG.powerBox.glassColor,
+    emissive: FUN_HOUSE_CONFIG.powerBox.glassEmissive,
+    emissiveIntensity: 0.08,
+    roughness: 0.12,
+    metalness: 0.05,
+    transparent: true,
+    opacity: 0.42,
+    transmission: 0.08
+  })
+  const powerBoxIndicatorMaterial = new THREE.MeshStandardMaterial({
+    color: FUN_HOUSE_CONFIG.powerBox.indicatorOff,
+    emissive: FUN_HOUSE_CONFIG.powerBox.indicatorOff,
+    emissiveIntensity: 0.24,
+    roughness: 0.35,
+    metalness: 0.2
+  })
+
+  const body = new THREE.Mesh(
+    new THREE.BoxGeometry(FUN_HOUSE_CONFIG.width, FUN_HOUSE_CONFIG.height, FUN_HOUSE_CONFIG.depth),
+    bodyMaterial
+  )
+  body.position.y = FUN_HOUSE_CONFIG.height * 0.5
+  body.castShadow = true
+  body.receiveShadow = true
+  body.name = 'Fun House Body'
+  root.add(body)
+
+  const frontZ = (FUN_HOUSE_CONFIG.depth * 0.5) + 0.001
+  addHouseWindows(root, openingMaterial, frontZ, options.portalEffect !== false)
+
+  const elevator = getElevatorDoorAsset().factory()
+  elevator.name = 'Fun House Elevator'
+  elevator.rotation.y = Math.PI / 2
+  elevator.scale.setScalar(FUN_HOUSE_CONFIG.elevatorScale)
+  elevator.traverse((child) => {
+    if (!child?.isMesh || !child.material) return
+    if (child.userData?.isGlowPlane || child.userData?.isDisplayBg || child.userData?.isDisplayPanel) return
+
+    const material = child.material.clone()
+    const isDoorPanel = !!child.userData?.isDoorPanel
+    material.color = new THREE.Color(
+      isDoorPanel ? FUN_HOUSE_CONFIG.elevatorGold.doorColor : FUN_HOUSE_CONFIG.elevatorGold.frameColor
+    )
+    material.emissive = new THREE.Color(
+      isDoorPanel ? FUN_HOUSE_CONFIG.elevatorGold.doorEmissive : FUN_HOUSE_CONFIG.elevatorGold.frameEmissive
+    )
+    material.emissiveIntensity = isDoorPanel ? 0.2 : 0.12
+    material.metalness = isDoorPanel ? 0.92 : 1.0
+    material.roughness = isDoorPanel ? 0.28 : 0.22
+    child.material = material
+  })
+  elevator.position.set(0, HOUSE_CONFIG.doorHeight * 0.5, frontZ)
+  root.add(elevator)
+
+  const powerBox = new THREE.Group()
+  powerBox.name = 'Fun House Power Box'
+  powerBox.position.set(
+    FUN_HOUSE_CONFIG.powerBox.offsetX,
+    FUN_HOUSE_CONFIG.powerBox.centerY,
+    frontZ - FUN_HOUSE_CONFIG.powerBox.insetZ
+  )
+  powerBox.userData.physics = {
+    type: 'static',
+    material: 'table',
+    shapes: [
+      {
+        type: 'box',
+        role: 'funHouseLightStickTrigger',
+        isTrigger: true,
+        debugColor: '#ffffff',
+        size: [...FUN_HOUSE_CONFIG.powerBox.triggerSize],
+        offset: [
+          0,
+          FUN_HOUSE_CONFIG.powerBox.triggerCenterYOffset,
+          FUN_HOUSE_CONFIG.powerBox.triggerForward
+        ]
+      }
+    ]
+  }
+
+  const powerBoxBody = new THREE.Mesh(
+    new THREE.BoxGeometry(
+      FUN_HOUSE_CONFIG.powerBox.width,
+      FUN_HOUSE_CONFIG.powerBox.height,
+      FUN_HOUSE_CONFIG.powerBox.depth
+    ),
+    powerBoxBodyMaterial
+  )
+  powerBoxBody.castShadow = true
+  powerBoxBody.receiveShadow = true
+  powerBoxBody.name = 'Fun House Power Box Body'
+  powerBox.add(powerBoxBody)
+
+  const powerBoxInner = new THREE.Mesh(
+    new THREE.BoxGeometry(
+      FUN_HOUSE_CONFIG.powerBox.width - (FUN_HOUSE_CONFIG.powerBox.wallThickness * 1.2),
+      FUN_HOUSE_CONFIG.powerBox.height - (FUN_HOUSE_CONFIG.powerBox.wallThickness * 1.2),
+      FUN_HOUSE_CONFIG.powerBox.depth * 0.42
+    ),
+    new THREE.MeshStandardMaterial({
+      color: '#030405',
+      emissive: '#071115',
+      emissiveIntensity: 0.15,
+      roughness: 0.9,
+      metalness: 0.05
+    })
+  )
+  powerBoxInner.position.z = -(FUN_HOUSE_CONFIG.powerBox.depth * 0.12)
+  powerBoxInner.receiveShadow = true
+  powerBoxInner.name = 'Fun House Power Box Interior'
+  powerBox.add(powerBoxInner)
+
+  const powerBoxDoorPivot = new THREE.Group()
+  powerBoxDoorPivot.name = 'Fun House Power Box Door Pivot'
+  powerBoxDoorPivot.position.set(
+    -FUN_HOUSE_CONFIG.powerBox.width * 0.5,
+    0,
+    FUN_HOUSE_CONFIG.powerBox.depth * 0.5 + FUN_HOUSE_CONFIG.powerBox.doorThickness * 0.5
+  )
+  powerBox.add(powerBoxDoorPivot)
+
+  const powerBoxDoorFrame = new THREE.Mesh(
+    new THREE.BoxGeometry(
+      FUN_HOUSE_CONFIG.powerBox.width,
+      FUN_HOUSE_CONFIG.powerBox.height,
+      FUN_HOUSE_CONFIG.powerBox.doorThickness
+    ),
+    powerBoxDoorFrameMaterial
+  )
+  powerBoxDoorFrame.position.x = FUN_HOUSE_CONFIG.powerBox.width * 0.5
+  powerBoxDoorFrame.castShadow = true
+  powerBoxDoorFrame.receiveShadow = true
+  powerBoxDoorFrame.name = 'Fun House Power Box Door Frame'
+  powerBoxDoorPivot.add(powerBoxDoorFrame)
+
+  const powerBoxGlass = new THREE.Mesh(
+    new THREE.BoxGeometry(
+      FUN_HOUSE_CONFIG.powerBox.width - (FUN_HOUSE_CONFIG.powerBox.wallThickness * 1.35),
+      FUN_HOUSE_CONFIG.powerBox.height - (FUN_HOUSE_CONFIG.powerBox.wallThickness * 1.35),
+      FUN_HOUSE_CONFIG.powerBox.doorThickness * 0.72
+    ),
+    powerBoxGlassMaterial
+  )
+  powerBoxGlass.position.set(
+    FUN_HOUSE_CONFIG.powerBox.width * 0.5,
+    0,
+    FUN_HOUSE_CONFIG.powerBox.doorThickness * 0.18
+  )
+  powerBoxGlass.castShadow = true
+  powerBoxGlass.receiveShadow = true
+  powerBoxGlass.name = 'Fun House Power Box Glass Door'
+  powerBoxDoorPivot.add(powerBoxGlass)
+
+  const powerBoxIndicator = new THREE.Mesh(
+    new THREE.SphereGeometry(0.04, 16, 16),
+    powerBoxIndicatorMaterial
+  )
+  powerBoxIndicator.position.set(
+    FUN_HOUSE_CONFIG.powerBox.width * 0.35,
+    FUN_HOUSE_CONFIG.powerBox.height * 0.33,
+    FUN_HOUSE_CONFIG.powerBox.depth * 0.52
+  )
+  powerBoxIndicator.castShadow = true
+  powerBoxIndicator.name = 'Fun House Power Box Indicator'
+  powerBox.add(powerBoxIndicator)
+
+  const installedStickAnchor = new THREE.Group()
+  installedStickAnchor.name = 'Fun House Power Box Light Stick Anchor'
+  installedStickAnchor.position.set(0, 0, -FUN_HOUSE_CONFIG.powerBox.depth * 0.08)
+  installedStickAnchor.rotation.z = Math.PI * 0.5
+  installedStickAnchor.rotation.y = Math.PI * 0.08
+  powerBox.add(installedStickAnchor)
+
+  const installedLightStick = getLightStickAsset().factory()
+  installedLightStick.name = 'Fun House Installed Light Stick'
+  installedLightStick.scale.setScalar(FUN_HOUSE_CONFIG.powerBox.installedStickScale)
+  delete installedLightStick.userData.physics
+  installedLightStick.traverse((child) => {
+    if (child?.isMesh) {
+      child.castShadow = true
+      child.receiveShadow = true
+    }
+    if (child?.isPointLight) {
+      child.distance = Math.max(2.5, child.distance * 0.75)
+    }
+  })
+  setInstalledLightStickVisible(installedLightStick, false)
+  installedStickAnchor.add(installedLightStick)
+
+  root.add(powerBox)
+
+  const funHouseState = {
+    doorOpenAmount: 0,
+    isLightStickInstalled: false,
+    hasStateOverride: false
+  }
+
+  const setPowerBoxDoorOpenAmount = (amount) => {
+    const clamped = THREE.MathUtils.clamp(amount, 0, 1)
+    funHouseState.doorOpenAmount = clamped
+    powerBoxDoorPivot.rotation.y = -FUN_HOUSE_CONFIG.powerBox.doorOpenAngle * clamped
+  }
+
+  const setFunHouseStateOverride = (enabled) => {
+    funHouseState.hasStateOverride = !!enabled
+    powerBoxBodyMaterial.emissiveIntensity = enabled ? 0.28 : 0.08
+    powerBoxGlassMaterial.emissiveIntensity = enabled ? 0.22 : 0.08
+    powerBoxIndicatorMaterial.color.set(enabled ? FUN_HOUSE_CONFIG.powerBox.indicatorOn : FUN_HOUSE_CONFIG.powerBox.indicatorOff)
+    powerBoxIndicatorMaterial.emissive.set(enabled ? FUN_HOUSE_CONFIG.powerBox.indicatorOn : FUN_HOUSE_CONFIG.powerBox.indicatorOff)
+    powerBoxIndicatorMaterial.emissiveIntensity = enabled ? 1.1 : 0.24
+
+    if (enabled && elevator?.userData?.openDoor) {
+      elevator.userData.openDoor()
+    }
+  }
+
+  const completeLightStickInstallation = () => {
+    if (funHouseState.isLightStickInstalled) return false
+    funHouseState.isLightStickInstalled = true
+    setInstalledLightStickVisible(installedLightStick, true)
+    setFunHouseStateOverride(true)
+    return true
+  }
+
+  const resetFunHouseState = () => {
+    funHouseState.isLightStickInstalled = false
+    funHouseState.hasStateOverride = false
+    setInstalledLightStickVisible(installedLightStick, false)
+    setPowerBoxDoorOpenAmount(0)
+    setFunHouseStateOverride(false)
+
+    const doorPanel = elevator.children.find((child) => child?.userData?.isDoorPanel)
+    const glowPlane = elevator.children.find((child) => child?.userData?.isGlowPlane)
+    const environmentLight = elevator.children.find((child) => child?.userData?.isEnvironmentLight)
+    if (doorPanel) {
+      doorPanel.scale.z = 1
+      doorPanel.position.z = 0
+      if (doorPanel.material) doorPanel.material.opacity = 1
+    }
+    if (glowPlane?.material) {
+      glowPlane.material.emissiveIntensity = 0
+    }
+    if (environmentLight) {
+      environmentLight.intensity = 0
+    }
+    if (elevator.userData?.animationState) {
+      elevator.userData.animationState.isOpening = false
+      elevator.userData.animationState.isOpen = false
+      elevator.userData.animationState.openProgress = 0
+      elevator.userData.animationState.openStartTime = 0
+    }
+  }
+
+  root.userData.update = function updateFunHouse() {
+    if (elevator?.userData?.updateAnimation) {
+      elevator.userData.updateAnimation()
+    }
+  }
+  root.userData.funHouseApi = {
+    setFunHousePowerBoxDoorOpenAmount: setPowerBoxDoorOpenAmount,
+    getFunHousePowerBoxWorldTarget() {
+      return {
+        target: installedStickAnchor.getWorldPosition(new THREE.Vector3()),
+        targetQuaternion: installedStickAnchor.getWorldQuaternion(new THREE.Quaternion())
+      }
+    },
+    completeFunHouseLightStickInstallation: completeLightStickInstallation,
+    setFunHouseStateOverride,
+    resetFunHouseState,
+    hasFunHouseStateOverride: () => funHouseState.hasStateOverride,
+    isFunHouseLightStickInstalled: () => funHouseState.isLightStickInstalled
+  }
+
+  return root
+}
+
 function createHouseMesh(options = {}) {
   const root = new THREE.Group()
   root.name = 'House Mesh'
@@ -730,78 +1174,30 @@ function createHouseMesh(options = {}) {
   door.name = 'House Main Door'
   root.add(door)
 
-  const portalWindows = []
-  const lowCostWindowMaterial = getLowCostWindowMaterial()
-  ;[-1, 1].forEach((side, index) => {
-    const centerX = side * HOUSE_CONFIG.windowGapFromCenter
-
-    const windowBase = new THREE.Mesh(
-      new THREE.BoxGeometry(HOUSE_CONFIG.windowWidth, HOUSE_CONFIG.windowHeight, HOUSE_CONFIG.windowDepth),
-      openingMaterial
-    )
-    windowBase.position.set(centerX, HOUSE_CONFIG.windowBottomY + HOUSE_CONFIG.windowHeight * 0.5, frontZ)
-    windowBase.castShadow = true
-    windowBase.receiveShadow = true
-    windowBase.name = index === 0 ? 'House Window Left' : 'House Window Right'
-    root.add(windowBase)
-
-    let portalMaterial = lowCostWindowMaterial
-    let portalUniforms = null
-    if (portalEffectEnabled) {
-      const portalData = createWindowPortalMaterial()
-      portalMaterial = portalData.material
-      portalUniforms = portalData.uniforms
-    }
-
-    const portal = new THREE.Mesh(
-      new THREE.PlaneGeometry(HOUSE_CONFIG.windowWidth * 0.78, HOUSE_CONFIG.windowHeight * 0.78),
-      portalMaterial
-    )
-    portal.position.set(centerX, HOUSE_CONFIG.windowBottomY + HOUSE_CONFIG.windowHeight * 0.5, frontZ + 0.05)
-    portal.name = index === 0 ? 'House Window Left Portal' : 'House Window Right Portal'
-    root.add(portal)
-
-    if (portalUniforms) portalWindows.push({ mesh: portal, uniforms: portalUniforms })
-  })
-
-  if (portalWindows.length > 0) {
-    const resolutionTmp = new THREE.Vector2()
-    root.userData.update = function updateHousePortal(deltaSeconds, timeSeconds) {
-      const tNow = typeof timeSeconds === 'number' ? timeSeconds : (performance.now() * 0.001)
-      portalWindows.forEach((entry) => {
-        if (entry && entry.uniforms) entry.uniforms.uTime.value = tNow
-      })
-    }
-
-    portalWindows.forEach((entry) => {
-      entry.mesh.onBeforeRender = (renderer) => {
-        const pixelRatio = renderer.getPixelRatio ? renderer.getPixelRatio() : 1
-        renderer.getSize(resolutionTmp)
-        entry.uniforms.uResolution.value.set(
-          Math.max(1, resolutionTmp.x * pixelRatio),
-          Math.max(1, resolutionTmp.y * pixelRatio)
-        )
-        entry.uniforms.uTime.value = performance.now() * 0.001
-      }
-    })
-  }
+  addHouseWindows(root, openingMaterial, frontZ, portalEffectEnabled)
 
   return root
 }
 
 function createHouse(options = {}) {
   const root = new THREE.Group()
-  root.name = 'House'
+  const variant = options.variant === 'fun' ? 'fun' : 'default'
+  root.name = variant === 'fun' ? 'Fun House' : 'House'
   const useSimplePhysics = options.physicsMode === 'simple'
-  root.userData.physics = clonePhysicsDef(useSimplePhysics ? houseSimplePhysicsDef : housePhysicsDef)
+  const physicsSource = useSimplePhysics ? houseSimplePhysicsDef : housePhysicsDef
+  root.userData.physics = clonePhysicsDef(physicsSource)
   root.userData.inspectorCenterMode = 'physics'
+  root.userData.isFunHouse = variant === 'fun'
 
-  const mesh = createHouseMesh(options)
+  const mesh = variant === 'fun' ? createFunHouseMesh(options) : createHouseMesh(options)
   alignMeshBaseToCollider(mesh, root.userData.physics)
   root.add(mesh)
 
   if (typeof mesh.userData?.update === 'function') {
     root.userData.update = mesh.userData.update
+  }
+  if (mesh.userData?.funHouseApi) {
+    Object.assign(root.userData, mesh.userData.funHouseApi)
   }
 
   return root
@@ -812,6 +1208,15 @@ export function getHouseAsset() {
     name: 'House',
     description: 'A hard-to-guess house.',
     factory: createHouse,
+    physics: housePhysicsDef
+  }
+}
+
+export function getFunHouseAsset() {
+  return {
+    name: 'Fun House',
+    description: 'Really fun!',
+    factory: (options = {}) => createHouse({ ...options, variant: 'fun' }),
     physics: housePhysicsDef
   }
 }

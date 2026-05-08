@@ -19,6 +19,7 @@ const CAMERA_CONFIG = {
   MAX_ZOOM_DISTANCE: 100,
   DEFAULT_ZOOM_DISTANCE: 5,
   POSSESS_MAX_ZOOM_DISTANCE: 15,
+  PRESET_NEAR_VIEW_DISTANCE: 0.65,
   MIN_POLAR_ANGLE: 0.1,
   MAX_POLAR_ANGLE: Math.PI - 0.1,
   CAMERA_HEIGHT_OFFSET: 1.0,
@@ -127,6 +128,8 @@ export class ThirdPersonCameraController {
     this.rotationEuler = new THREE.Euler(0, 0, 0, 'YXZ')
     this.distance = CAMERA_CONFIG.DEFAULT_ZOOM_DISTANCE
     this.targetDistance = CAMERA_CONFIG.DEFAULT_ZOOM_DISTANCE
+    this.viewPresetIndex = -1
+    this.cameraForwardSign = 1
     this.isControlEnabled = false
     this.spectatorPosition = new THREE.Vector3(0, 0, 0)
     this.moveState = { forward: false, backward: false, left: false, right: false, up: false, down: false }
@@ -427,6 +430,11 @@ export class ThirdPersonCameraController {
         e.preventDefault()
         this.disableControl()  // ✨ Hold C = unlock camera (exit pointer lock)
         break
+      case 'KeyV':
+        if (e.repeat) return
+        e.preventDefault()
+        this._cycleViewPreset()
+        break
       case 'KeyW': this.moveState.forward = true; break
       case 'KeyS': this.moveState.backward = true; break
       case 'KeyA': this.moveState.left = true; break
@@ -529,6 +537,43 @@ export class ThirdPersonCameraController {
     e.preventDefault()
   }
 
+  _cycleViewPreset() {
+    if (!this.targetObject || this.isSpectator) return
+
+    this.viewPresetIndex = (this.viewPresetIndex + 1) % 3
+
+    if (this.viewPresetIndex === 0) {
+      this.cameraForwardSign = 1
+      this.targetDistance = CAMERA_CONFIG.PRESET_NEAR_VIEW_DISTANCE
+    } else if (this.viewPresetIndex === 1) {
+      this.cameraForwardSign = 1
+      this.targetDistance = CAMERA_CONFIG.POSSESS_MAX_ZOOM_DISTANCE
+    } else {
+      this.cameraForwardSign = -1
+      this.targetDistance = CAMERA_CONFIG.POSSESS_MAX_ZOOM_DISTANCE
+    }
+
+    if (!this.targetObject || this.isSpectator) return
+
+    const maxZoom = CAMERA_CONFIG.POSSESS_MAX_ZOOM_DISTANCE
+    const minZoom = CAMERA_CONFIG.MIN_ZOOM_DISTANCE
+    this.targetDistance = Math.max(minZoom, Math.min(maxZoom, this.targetDistance))
+
+    if (this.viewPresetIndex === 0) {
+      this.distance = this.targetDistance
+    }
+  }
+
+  getControlWorldDirection(target = new THREE.Vector3()) {
+    this.camera.getWorldDirection(target)
+
+    if (this.cameraForwardSign < 0 && this.targetObject && !this.isSpectator) {
+      target.multiplyScalar(-1)
+    }
+
+    return target
+  }
+
   _updateCameraPosition(delta = 0) {
     const maxRotationPerFrame = CAMERA_CONFIG.ROTATION_SPEED_LIMIT
     if (Math.abs(this.rotationDeltaX) > CAMERA_CONFIG.INERTIA_THRESHOLD || Math.abs(this.rotationDeltaY) > CAMERA_CONFIG.INERTIA_THRESHOLD) {
@@ -567,7 +612,7 @@ export class ThirdPersonCameraController {
           
           cueWorldPos.y += CAMERA_CONFIG.CAMERA_HEIGHT_OFFSET
 
-          const offset = this._tmpOffset.set(0, 0, 1)
+          const offset = this._tmpOffset.set(0, 0, this.cameraForwardSign)
           offset.applyQuaternion(this.rotation)
           
           // ✨ Check for collision and clamp distance
@@ -596,7 +641,7 @@ export class ThirdPersonCameraController {
 
       this.targetObject.getWorldPosition(this.targetPosition)
       
-      const offset = this._tmpOffset.set(0, 0, 1)
+      const offset = this._tmpOffset.set(0, 0, this.cameraForwardSign)
       offset.applyQuaternion(this.rotation)
       
       // ✨ Check for collision and clamp distance
@@ -656,6 +701,8 @@ export class ThirdPersonCameraController {
     this.targetObject = object
     this.cachedCuePivot = null
     this.isSpectator = false
+    this.viewPresetIndex = -1
+    this.cameraForwardSign = 1
     
     // ✨ Hide spectator UI when focusing on object
     if (this.uiManager) {
@@ -715,6 +762,8 @@ export class ThirdPersonCameraController {
     this.cachedCuePivot = null
     this.isPlayerTarget = false
     this.isSpectator = true
+    this.viewPresetIndex = -1
+    this.cameraForwardSign = 1
     this.spectatorPosition.copy(this.camera.position)
     
     // ✨ Hide player UI and show spectator UI when exiting player
@@ -1101,6 +1150,8 @@ export class ThirdPersonCameraController {
     this.isSpectator = true
     this.targetObject = null
     this.isPlayerTarget = false
+    this.viewPresetIndex = -1
+    this.cameraForwardSign = 1
     this._lastDitherAlpha = null
     this._collisionCheckAccumulator = this._effectiveCollisionCheckInterval
     this._collisionCacheAccumulator = this._effectiveCollisionCacheRefreshInterval

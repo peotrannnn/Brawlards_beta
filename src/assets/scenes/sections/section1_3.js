@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { createEyeSun } from '../../objects/eye.js'
-import { getHouseAsset } from '../../objects/House.js'
+import { getFunHouseAsset, getHouseAsset } from '../../objects/House.js'
 import { createTreeBillboard, updateBillboards, setTreeOpacity } from '../../objects/TreeBillboard.js'
 
 // ======================================================
@@ -999,6 +999,7 @@ export function createSection3(rootGroup) {
     : { ...SECTION3_TREE_LOD_SETTINGS, ...SECTION3_TREE_LOD_LOW_QUALITY_OVERRIDES }
 
   const houseAsset = getHouseAsset()
+  const funHouseAsset = getFunHouseAsset()
 
   const grassTexture = createGrassNoiseTexture(grassSettings.textureSize)
   grassTexture.repeat.set(grassSettings.textureRepeat, grassSettings.textureRepeat)
@@ -1087,16 +1088,36 @@ export function createSection3(rootGroup) {
     houseSettings
   )
 
+  let funHousePlacementIndex = 0
+  let closestFunHouseDistanceSq = Number.POSITIVE_INFINITY
   housePlacements.forEach((placement, index) => {
-    const house = houseAsset.factory({
-      lowCost: true,
-      physicsMode: 'simple'
-    })
+    const dx = placement.x - SECTION3_CENTER_X
+    const dz = placement.z - SECTION3_CENTER_Z
+    const distanceSq = dx * dx + dz * dz
+    if (distanceSq < closestFunHouseDistanceSq) {
+      closestFunHouseDistanceSq = distanceSq
+      funHousePlacementIndex = index
+    }
+  })
+
+  housePlacements.forEach((placement, index) => {
+    const isFunHouse = index === funHousePlacementIndex
+    const house = isFunHouse
+      ? funHouseAsset.factory({
+          lowCost: true,
+          physicsMode: 'simple',
+          variant: 'fun'
+        })
+      : houseAsset.factory({
+          lowCost: true,
+          physicsMode: 'simple'
+        })
     house.position.set(placement.x, SECTION3_CENTER_Y, placement.z)
     house.rotation.y = placement.yaw
-    house.name = `Section3 House ${index + 1}`
+    house.name = isFunHouse ? 'Section3 Fun House' : `Section3 House ${index + 1}`
     house.userData = house.userData || {}
     house.userData.isSection3House = true
+    house.userData.isFunHouse = isFunHouse
     house.traverse((child) => {
       if (child.isMesh) {
         child.castShadow = false
