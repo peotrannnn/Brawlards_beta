@@ -223,6 +223,7 @@ export class Scene1Manager {
     this.gameOverReason = null  // 'elevator' or 'death'
     this.gameOverCallback = null  // Callback function to show game over screen
     this.gameOverCallbackTriggered = false  // Flag to ensure callback only called once
+    this._simulationMode = false
     
     // ✨ NEW: Sweat effects array (updated by update() method)
     this.activeSweatEffects = [] // Array of sweat effect objects
@@ -1025,6 +1026,10 @@ export class Scene1Manager {
    */
   setGameOverCallback(callback) {
     this.gameOverCallback = callback
+  }
+
+  setSimulationMode(enabled) {
+    this._simulationMode = !!enabled
   }
 
   /**
@@ -3970,6 +3975,12 @@ export class Scene1Manager {
     const elevatorWorldPos = elevator.getWorldPosition(this._tmpFunHouseAnimPos)
     const collisionRadiusSq = 3.3 * 3.3
     if (playerEntry.mesh.position.distanceToSquared(elevatorWorldPos) > collisionRadiusSq) return
+
+    if (!this._simulationMode) {
+      this.gameOver = true
+      this.gameOverReason = 'elevator'
+      return
+    }
 
     if (this.destroySystem?.destroyCharacter) {
       this.destroySystem.destroyCharacter(playerEntry)

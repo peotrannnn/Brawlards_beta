@@ -303,6 +303,7 @@ export class DestroySystem {
       // --- Bowling Ball Logic (Fixed: Cannon.js Vec3 does not have distanceToSquared) ---
       for (const bowling of bowlingBalls) {
         if (!bowling.body) continue;
+        if (bowling.body.userData?.bowlingAggroEnabled !== true) continue;
         const bowlingPos = bowling.body.position;
         const bowlingRadius = bowling.body.shapes?.[0]?.radius || 0.5;
 
@@ -447,6 +448,7 @@ export class DestroySystem {
       }
 
       for (const bowling of bowlingBalls) {
+        if (bowling.body?.userData?.bowlingAggroEnabled !== true) continue;
         let bowlingPos = bowling.mesh?.position;
         let bowlingRadius = 0.5;
         const bowlingSmallTrigger = bowling.mesh?.children?.find(c => c.name === 'TriggerZone_Small');

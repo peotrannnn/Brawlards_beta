@@ -19,7 +19,7 @@ const CAMERA_CONFIG = {
   MAX_ZOOM_DISTANCE: 100,
   DEFAULT_ZOOM_DISTANCE: 5,
   POSSESS_MAX_ZOOM_DISTANCE: 15,
-  PRESET_NEAR_VIEW_DISTANCE: 0.65,
+  PRESET_NEAR_VIEW_DISTANCE: 0.5,
   MIN_POLAR_ANGLE: 0.1,
   MAX_POLAR_ANGLE: Math.PI - 0.1,
   CAMERA_HEIGHT_OFFSET: 1.0,
@@ -56,7 +56,8 @@ const CAMERA_CONFIG = {
   ADAPTIVE_COLLISION_CACHE_REFRESH_INTERVAL_LEVEL2: 3.0,
   DITHERING_DISTANCE_THRESHOLD: 1.0,
   DITHERING_ALPHA_START: 1.0,
-  DITHERING_ALPHA_END: 0.05,
+  DITHERING_ALPHA_END: 0.0,
+  CINEMATIC_DITHER_BLEND_DURATION: 1.0,
 }
 
 // Apply initial settings
@@ -180,6 +181,7 @@ export class ThirdPersonCameraController {
     this._tmpDesiredCameraPos = new THREE.Vector3()
     this._cinematicFocusState = null
     this._cinematicReleaseState = null
+    this._cinematicDitherState = null
 
     // Keep stable listener references so dispose() can correctly remove them.
     this._boundOnPointerLockChange = this._onPointerLockChange.bind(this)
@@ -293,8 +295,7 @@ export class ThirdPersonCameraController {
     this._effectiveCollisionCheckInterval = CAMERA_CONFIG.ADAPTIVE_COLLISION_CHECK_INTERVAL_LEVEL2
     this._effectiveCollisionCheckFastInterval = CAMERA_CONFIG.ADAPTIVE_COLLISION_CHECK_FAST_INTERVAL_LEVEL2
     this._effectiveCollisionCacheRefreshInterval = CAMERA_CONFIG.ADAPTIVE_COLLISION_CACHE_REFRESH_INTERVAL_LEVEL2
-    this._adaptiveDitherEnabled = false
-    this._removeDithering()
+    this._adaptiveDitherEnabled = true
   }
 
   _updateAdaptiveQuality(delta) {
@@ -614,6 +615,7 @@ export class ThirdPersonCameraController {
         this._tmpCinematicLookMatrix.lookAt(this.camera.position, this._tmpCinematicTarget, this._tmpCinematicUp)
         this._tmpCinematicQuat.setFromRotationMatrix(this._tmpCinematicLookMatrix)
         this.camera.quaternion.slerpQuaternions(state.startQuaternion, this._tmpCinematicQuat, blendT)
+        this._updateCinematicDithering(delta)
         return
       }
     }
@@ -780,6 +782,7 @@ export class ThirdPersonCameraController {
 
     // ✨ Apply reduced zoom distance when focusing on object
     this.distance = Math.max(CAMERA_CONFIG.MIN_ZOOM_DISTANCE, Math.min(CAMERA_CONFIG.POSSESS_MAX_ZOOM_DISTANCE, dist))
+    this.targetDistance = this.distance
 
     if (dist > 0.001) {
       const yaw = Math.atan2(offset.x, offset.z)
@@ -830,6 +833,8 @@ export class ThirdPersonCameraController {
   startCinematicFocus(targetObject, options = {}) {
     if (!targetObject) return false
 
+    const startAlpha = this._getCurrentDitherAlpha()
+
     this._cinematicFocusState = {
       active: true,
       targetObject,
@@ -841,6 +846,12 @@ export class ThirdPersonCameraController {
       elapsed: 0
     }
     this._cinematicReleaseState = null
+    this._cinematicDitherState = {
+      phase: 'fade-in',
+      elapsed: 0,
+      duration: CAMERA_CONFIG.CINEMATIC_DITHER_BLEND_DURATION,
+      startAlpha
+    }
 
     this.rotationDeltaX = 0
     this.rotationDeltaY = 0
@@ -856,6 +867,12 @@ export class ThirdPersonCameraController {
       startQuaternion: this.camera.quaternion.clone(),
       blendDuration: Math.max(0.05, options.blendDuration ?? 1.2),
       elapsed: 0
+    }
+    this._cinematicDitherState = {
+      phase: 'fade-out',
+      elapsed: 0,
+      duration: CAMERA_CONFIG.CINEMATIC_DITHER_BLEND_DURATION,
+      startAlpha: 1.0
     }
     this._cinematicFocusState = null
     if (this.isControlEnabled) {
@@ -893,6 +910,86 @@ export class ThirdPersonCameraController {
 
     this.camera.position.copy(position)
     this.camera.quaternion.copy(this._tmpCinematicQuat)
+  }
+
+  _getCurrentDitherAlpha() {
+    if (typeof this._lastDitherAlpha === 'number') {
+      return THREE.MathUtils.clamp(this._lastDitherAlpha, 0, 1)
+    }
+
+    return this.isDitheringActive ? 1 : 1
+  }
+
+  _resolveDistanceDitherAlpha(cameraDistance) {
+    if (!this.targetObject || this.isSpectator) return null
+
+    const threshold = CAMERA_CONFIG.DITHERING_DISTANCE_THRESHOLD
+    const requestedDistance = this.targetObject && !this.isSpectator
+      ? THREE.MathUtils.clamp(this.targetDistance, CAMERA_CONFIG.MIN_ZOOM_DISTANCE, CAMERA_CONFIG.POSSESS_MAX_ZOOM_DISTANCE)
+      : cameraDistance
+    const fadeDistance = Math.min(cameraDistance, requestedDistance)
+
+    if (fadeDistance >= threshold) {
+      return null
+    }
+
+    const minDistance = CAMERA_CONFIG.MIN_ZOOM_DISTANCE
+    const fadeSpan = Math.max(0.0001, threshold - minDistance)
+    const normalizedDistance = THREE.MathUtils.clamp((fadeDistance - minDistance) / fadeSpan, 0, 1)
+    const alphaRange = CAMERA_CONFIG.DITHERING_ALPHA_START - CAMERA_CONFIG.DITHERING_ALPHA_END
+    return CAMERA_CONFIG.DITHERING_ALPHA_END + (normalizedDistance * alphaRange)
+  }
+
+  _applyResolvedDitherAlpha(alpha) {
+    const clampedAlpha = THREE.MathUtils.clamp(alpha, 0, 1)
+
+    if (clampedAlpha >= 0.999) {
+      if (this.isDitheringActive) {
+        this._removeDithering()
+      }
+      this._lastDitherAlpha = 1
+      return
+    }
+
+    this._ditherUpdateAccumulator = 0
+    this._lastDitherAlpha = clampedAlpha
+    this._applyDithering(clampedAlpha)
+  }
+
+  _updateCinematicDithering(delta = 0, computedAlpha = null) {
+    const transition = this._cinematicDitherState
+    if (!transition) return false
+
+    transition.elapsed += Math.max(0, delta)
+    const duration = Math.max(0.001, transition.duration || CAMERA_CONFIG.CINEMATIC_DITHER_BLEND_DURATION)
+    const blendT = THREE.MathUtils.smoothstep(Math.min(1, transition.elapsed / duration), 0, 1)
+
+    if (transition.phase === 'fade-in') {
+      const alpha = THREE.MathUtils.lerp(transition.startAlpha ?? 1, 1, blendT)
+      this._applyResolvedDitherAlpha(alpha)
+      if (blendT >= 1) {
+        transition.phase = 'hold'
+      }
+      return true
+    }
+
+    if (transition.phase === 'hold') {
+      this._applyResolvedDitherAlpha(1)
+      return true
+    }
+
+    if (transition.phase === 'fade-out') {
+      const endAlpha = computedAlpha == null ? 1 : computedAlpha
+      const alpha = THREE.MathUtils.lerp(transition.startAlpha ?? 1, endAlpha, blendT)
+      this._applyResolvedDitherAlpha(alpha)
+      if (blendT >= 1) {
+        this._cinematicDitherState = null
+      }
+      return true
+    }
+
+    this._cinematicDitherState = null
+    return false
   }
 
   /**
@@ -973,6 +1070,7 @@ export class ThirdPersonCameraController {
         if (!this.ditherMaterials.has(key)) {
           const ditherMat = mat.clone()
           ditherMat.transparent = true
+          ditherMat.depthWrite = false
           // Keep alphaTest disabled for dithered carry-items to prevent hard cutout
           // when opacity is reduced at close camera distance.
           ditherMat.alphaTest = 0
@@ -983,6 +1081,7 @@ export class ThirdPersonCameraController {
         const ditherMat = this.ditherMaterials.get(key)
         ditherMat.opacity = alpha
         ditherMat.transparent = true
+        ditherMat.depthWrite = false
 
         // Apply dithering material
         if (Array.isArray(child.material)) {
@@ -1076,13 +1175,13 @@ export class ThirdPersonCameraController {
     }
 
     this._ditherUpdateAccumulator += delta
-    
-    const threshold = CAMERA_CONFIG.DITHERING_DISTANCE_THRESHOLD
-    
-    if (cameraDistance < threshold) {
-      // Calculate alpha based on distance (closer = more transparent)
-      const alphaRange = CAMERA_CONFIG.DITHERING_ALPHA_START - CAMERA_CONFIG.DITHERING_ALPHA_END
-      const alpha = CAMERA_CONFIG.DITHERING_ALPHA_END + (cameraDistance / threshold) * alphaRange
+    const alpha = this._resolveDistanceDitherAlpha(cameraDistance)
+
+    if (this._updateCinematicDithering(delta, alpha)) {
+      return
+    }
+
+    if (alpha != null) {
       const canSkipUpdate = this.isDitheringActive &&
         this._lastDitherAlpha !== null &&
         Math.abs(alpha - this._lastDitherAlpha) < CAMERA_CONFIG.DITHERING_ALPHA_EPSILON &&
@@ -1271,6 +1370,8 @@ export class ThirdPersonCameraController {
     this._collisionCheckAccumulator = this._effectiveCollisionCheckInterval
     this._collisionCacheAccumulator = this._effectiveCollisionCacheRefreshInterval
     this._cinematicFocusState = null
+    this._cinematicReleaseState = null
+    this._cinematicDitherState = null
     
     // ✨ Initialize camera state to default (pointer lock DISABLED)
     this.isControlEnabled = false
@@ -1290,6 +1391,8 @@ export class ThirdPersonCameraController {
 
   dispose() {
     this._cinematicFocusState = null
+    this._cinematicReleaseState = null
+    this._cinematicDitherState = null
     document.removeEventListener('pointerlockchange', this._boundOnPointerLockChange)
     document.removeEventListener('pointerlockerror', this._boundOnPointerLockError)
     window.removeEventListener('keydown', this._boundOnKeyDown)

@@ -5,6 +5,7 @@ const BOWLING_AI_CONFIG = {
   acceleration: 4.0,
   rotationSmooth: 2.2,
   fixedTimeStep: 1 / 60,
+  aggroDelay: 5.0,
   airControlMultiplier: 0.45,
   maxHorizontalSpeedGround: 1.4,
   maxHorizontalSpeedAir: 1.0,
@@ -57,12 +58,17 @@ export class BowlingAI {
     this.airborneForLanding = false
     this.lastVerticalSpeed = 0
     this.lastLandingShockwaveTime = -Infinity
+    this.aggroDelayRemaining = BOWLING_AI_CONFIG.aggroDelay
 
     this.touchPadding = 0.08
+    if (!this.body.userData) this.body.userData = {}
+    this.body.userData.bowlingAggroEnabled = false
 
     this._configureStablePhysics()
 
     this._onBodyCollide = () => {
+      if (!this.canAttack()) return
+
       const now = performance.now() / 1000
       if (now - this.lastLandingShockwaveTime < BOWLING_AI_CONFIG.landingShockwaveCooldown) {
         return
@@ -104,6 +110,47 @@ export class BowlingAI {
 
   getAngryState() {
     return this.isAngry
+  }
+
+  canAttack() {
+    return this.aggroDelayRemaining <= 0
+  }
+
+  _setAggroEnabled(isEnabled) {
+    if (!this.body?.userData) return
+    this.body.userData.bowlingAggroEnabled = !!isEnabled
+  }
+
+  _updateAggroDelay(delta) {
+    if (this.aggroDelayRemaining <= 0) {
+      this._setAggroEnabled(true)
+      return true
+    }
+
+    this.aggroDelayRemaining = Math.max(0, this.aggroDelayRemaining - Math.max(0, delta))
+    const unlocked = this.aggroDelayRemaining <= 0
+    this._setAggroEnabled(unlocked)
+    return unlocked
+  }
+
+  _applyPassiveIdle() {
+    this.isAngry = false
+    this.isPounceActive = false
+    this.pounceTargetEntry = null
+    this.pendingLandingShockwave = null
+    this.airborneForLanding = false
+    this.justJumped = false
+
+    if (this.body?.velocity) {
+      this.body.velocity.x *= 0.82
+      this.body.velocity.z *= 0.82
+    }
+
+    if (this.body?.angularVelocity) {
+      this.body.angularVelocity.x *= 0.55
+      this.body.angularVelocity.y *= 0.55
+      this.body.angularVelocity.z *= 0.55
+    }
   }
 
   _configureStablePhysics() {
@@ -291,6 +338,11 @@ export class BowlingAI {
 
   update(delta, syncList, selfEntry) {
     this.lastVerticalSpeed = this.body.velocity.y
+
+    if (!this._updateAggroDelay(delta)) {
+      this._applyPassiveIdle()
+      return { targetYaw: this.bodyYaw, touchedTarget: null }
+    }
 
     const { target, distance } = this._findNearestTarget(syncList, selfEntry)
     this.isAngry = !!target

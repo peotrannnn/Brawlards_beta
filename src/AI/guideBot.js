@@ -222,6 +222,19 @@ export class GuideAI {
     })
   }
 
+  _getSacrificePlayerEntry(syncList) {
+    const loyalPlayerStillValid = this._isEntryAlive(syncList, this.loyalPlayerEntry) && this._isValidPlayerEntry(this.loyalPlayerEntry)
+    const nextPlayerEntry = loyalPlayerStillValid
+      ? this.loyalPlayerEntry
+      : this._acquireNearestPlayer(syncList || [])
+
+    if (nextPlayerEntry) {
+      this.loyalPlayerEntry = nextPlayerEntry
+    }
+
+    return nextPlayerEntry
+  }
+
   _stepYawTowardPosition(targetPos, delta, smooth = this.rotationSmooth) {
     if (!targetPos || !this.mesh) return this.bodyYaw
 
@@ -239,10 +252,9 @@ export class GuideAI {
     return this.bodyYaw
   }
 
-  _applySacrificeFloatPose(delta, state, playerEntry = null) {
-    if (!state || !this.mesh || !this.body) return
+  _applySacrificeFloatPose(delta, floatElapsed = 0, playerEntry = null) {
+    if (!this.mesh || !this.body) return
 
-    const elapsed = state.floatElapsed || 0
     if (playerEntry?.mesh?.position) {
       this._stepYawTowardPosition(playerEntry.mesh.position, delta, GUIDE_AI_CONFIG.sacrificeFacePlayerTurnSmooth)
     }
@@ -251,7 +263,7 @@ export class GuideAI {
     this._tmpQuat.setFromEuler(this._tmpSacrificeFaceEuler)
     this.body.quaternion.set(this._tmpQuat.x, this._tmpQuat.y, this._tmpQuat.z, this._tmpQuat.w)
     this.mesh.quaternion.copy(this._tmpQuat)
-    this._setSacrificeLegSwing(elapsed)
+    this._setSacrificeLegSwing(floatElapsed)
   }
 
   _setGuideMood(mood) {
@@ -911,12 +923,7 @@ export class GuideAI {
       state.floatElapsed += delta
       const riseAmount = state.floatElapsed * GUIDE_AI_CONFIG.sacrificeRiseSpeed
       const nextY = state.startY + riseAmount
-      const playerEntry = this._isEntryAlive(syncList, this.loyalPlayerEntry) && this._isValidPlayerEntry(this.loyalPlayerEntry)
-        ? this.loyalPlayerEntry
-        : this._acquireNearestPlayer(syncList || [])
-      if (playerEntry) {
-        this.loyalPlayerEntry = playerEntry
-      }
+      const playerEntry = this._getSacrificePlayerEntry(syncList)
 
       this.body.type = CANNON.Body.KINEMATIC
       this.body.collisionResponse = false
@@ -927,7 +934,7 @@ export class GuideAI {
       this.body.aabbNeedsUpdate = true
       this.mesh.position.set(pedestalPos.x, nextY, pedestalPos.z)
       this.mesh.userData.sacrificeFloatPoseActive = true
-      this._applySacrificeFloatPose(delta, state, playerEntry)
+      this._applySacrificeFloatPose(delta, state.floatElapsed, playerEntry)
 
       return { targetYaw: this.bodyYaw, touchedGuy: null }
     }
