@@ -94,9 +94,10 @@ const SCENE1_CONFIG = {
   vendingInsertUpOffset: 10,
   vendingDropForwardExtra: 0.32,
   vendingDropLift: 0.38,
-  funHousePowerBoxOpenDuration: 0.34,
-  funHouseLightStickInsertDuration: 0.9,
-  funHousePowerBoxCloseDuration: 0.36,
+  funHousePowerBoxOpenDuration: 0.8,
+  funHouseLightStickInsertDuration: 1.15,
+  funHousePowerBoxCloseDuration: 0.82,
+  funHouseLightStickInsertApproachDistance: 0.24,
   funHouseLightStickInsertArcLift: 0.18,
   cartonOpenDelay: 1.0,
   cartonOpenDuration: 0.8,
@@ -346,6 +347,7 @@ export class Scene1Manager {
     this.chestState = null
     this.funHouseEntry = null
     this.funHouseLightStickInstallState = null
+    this.funHousePowerBoxDoorOpenAmount = 0
     this._funHouseCollectScanAccumulator = 0
 
     // Reusable vectors for hot-path distance checks.
@@ -363,9 +365,12 @@ export class Scene1Manager {
     this._tmpVendingAnimPos = new THREE.Vector3()
     this._tmpVendingAnimQuat = new THREE.Quaternion()
     this._tmpFunHouseAnimPos = new THREE.Vector3()
+    this._tmpFunHouseApproachPos = new THREE.Vector3()
+    this._tmpFunHouseAnimUp = new THREE.Vector3(0, 1, 0)
     this._tmpFunHouseAnimQuat = new THREE.Quaternion()
     this._tmpFunHouseTargetPos = new THREE.Vector3()
     this._tmpFunHouseTargetQuat = new THREE.Quaternion()
+    this._tmpFunHouseTargetScale = new THREE.Vector3(1, 1, 1)
     this._tmpScaleSyncWorldPos = new THREE.Vector3()
     this._tmpScaleSyncWorldQuat = new THREE.Quaternion()
     this._tmpScaleSyncWorldScale = new THREE.Vector3()
@@ -3527,6 +3532,7 @@ export class Scene1Manager {
     if (!mesh?.userData?.getFunHousePowerBoxWorldTarget || !powerBox) return null
 
     const triggerInfo = this._getWorldShapeInfo(powerBox, 'funHouseLightStickTrigger')
+    const playerTriggerInfo = this._getWorldShapeInfo(powerBox, 'funHousePlayerTrigger')
     const targetInfo = mesh.userData.getFunHousePowerBoxWorldTarget()
     if (!targetInfo?.target || !targetInfo?.targetQuaternion) return null
 
@@ -3534,8 +3540,12 @@ export class Scene1Manager {
       mesh,
       powerBox,
       triggerInfo,
+      playerTriggerInfo,
       target: this._tmpFunHouseTargetPos.copy(targetInfo.target),
-      targetQuaternion: this._tmpFunHouseTargetQuat.copy(targetInfo.targetQuaternion)
+      targetQuaternion: this._tmpFunHouseTargetQuat.copy(targetInfo.targetQuaternion),
+      targetScale: targetInfo.targetScale
+        ? this._tmpFunHouseTargetScale.copy(targetInfo.targetScale)
+        : this._tmpFunHouseTargetScale.set(1, 1, 1)
     }
   }
 
@@ -3944,6 +3954,41 @@ export class Scene1Manager {
     return nearest
   }
 
+  _setFunHousePowerBoxDoorAmount(houseMesh, amount) {
+    const clamped = THREE.MathUtils.clamp(amount, 0, 1)
+    this.funHousePowerBoxDoorOpenAmount = clamped
+    houseMesh?.userData?.setFunHousePowerBoxDoorOpenAmount?.(clamped)
+    return clamped
+  }
+
+  _updateFunHousePowerBoxDoorProximity(targetInfo, playerEntry, delta) {
+    if (!targetInfo?.mesh) return false
+
+    const playerTriggerInfo = targetInfo.playerTriggerInfo
+    const isPlayerNearby = !!(
+      playerEntry?.mesh &&
+      playerTriggerInfo &&
+      this._isPointInsideOrientedBox(playerEntry.mesh.position, playerTriggerInfo, 0.15)
+    )
+
+    const currentAmount = this.funHousePowerBoxDoorOpenAmount || 0
+    const targetAmount = isPlayerNearby ? 1 : 0
+    const duration = targetAmount > currentAmount
+      ? SCENE1_CONFIG.funHousePowerBoxOpenDuration
+      : SCENE1_CONFIG.funHousePowerBoxCloseDuration
+    const step = duration > 1e-4 ? (delta / duration) : 1
+
+    let nextAmount = currentAmount
+    if (targetAmount > currentAmount) {
+      nextAmount = Math.min(targetAmount, currentAmount + step)
+    } else if (targetAmount < currentAmount) {
+      nextAmount = Math.max(targetAmount, currentAmount - step)
+    }
+
+    this._setFunHousePowerBoxDoorAmount(targetInfo.mesh, nextAmount)
+    return isPlayerNearby
+  }
+
   _beginFunHouseLightStickInstall(entry, targetInfo) {
     if (!entry?.body || !entry?.mesh || !targetInfo?.mesh || !targetInfo?.target || !targetInfo?.targetQuaternion) {
       return false
@@ -3961,19 +4006,33 @@ export class Scene1Manager {
     body.collisionFilterMask = 0
     body.velocity.set(0, 0, 0)
     body.angularVelocity.set(0, 0, 0)
-    if (typeof body.sleep === 'function') {
-      body.sleep()
+    if (typeof body.wakeUp === 'function') {
+      body.wakeUp()
     }
 
-    entry.mesh.visible = false
+    const insertForward = targetInfo.triggerInfo?.forward?.clone?.() || new THREE.Vector3(0, 0, 1)
+    const insertUp = targetInfo.triggerInfo?.up?.clone?.() || new THREE.Vector3(0, 1, 0)
+    const approachPos = targetInfo.target.clone().addScaledVector(
+      insertForward,
+      SCENE1_CONFIG.funHouseLightStickInsertApproachDistance
+    )
 
-    targetInfo.mesh.userData.setFunHousePowerBoxDoorOpenAmount?.(0)
+    const doorStartAmount = this.funHousePowerBoxDoorOpenAmount || 0
 
     this.funHouseLightStickInstallState = {
       entry,
       houseMesh: targetInfo.mesh,
-      phase: 'opening',
+      phase: doorStartAmount >= 0.995 ? 'inserting' : 'opening',
       elapsed: 0,
+      doorStartAmount,
+      startPos: entry.mesh.position.clone(),
+      startQuat: entry.mesh.quaternion.clone(),
+      startScale: entry.mesh.scale.clone(),
+      approachPos,
+      targetPos: targetInfo.target.clone(),
+      targetQuaternion: targetInfo.targetQuaternion.clone(),
+      targetScale: targetInfo.targetScale ? targetInfo.targetScale.clone() : entry.mesh.scale.clone(),
+      insertUp,
       originalType,
       originalCollisionResponse,
       originalCollisionFilterMask,
@@ -3989,11 +4048,15 @@ export class Scene1Manager {
 
     const houseMesh = installState.houseMesh
     if (!houseMesh?.parent) {
+      this.funHousePowerBoxDoorOpenAmount = 0
       this.funHouseLightStickInstallState = null
       return 'cancelled'
     }
 
-    const setDoorAmount = houseMesh.userData?.setFunHousePowerBoxDoorOpenAmount
+    if (!installState.visualCommitted && (!installState.entry?.mesh || !installState.entry?.body)) {
+      this.funHouseLightStickInstallState = null
+      return 'cancelled'
+    }
 
     installState.elapsed += delta
 
@@ -4003,20 +4066,68 @@ export class Scene1Manager {
         0,
         1
       )
-      setDoorAmount?.(t)
+      const doorAmount = THREE.MathUtils.lerp(installState.doorStartAmount || 0, 1, t)
+      this._setFunHousePowerBoxDoorAmount(houseMesh, doorAmount)
+
+      if (t >= 1) {
+        this._setFunHousePowerBoxDoorAmount(houseMesh, 1)
+        installState.phase = 'inserting'
+        installState.elapsed = 0
+      }
+
+      return 'running'
+    }
+
+    if (installState.phase === 'inserting') {
+      this._setFunHousePowerBoxDoorAmount(houseMesh, 1)
+
+      const t = THREE.MathUtils.smoothstep(
+        THREE.MathUtils.clamp(installState.elapsed / SCENE1_CONFIG.funHouseLightStickInsertDuration, 0, 1),
+        0,
+        1
+      )
+
+      const entry = installState.entry
+      const body = entry?.body
+      const mesh = entry?.mesh
+      if (body && mesh) {
+        const split = 0.64
+        let pos
+        let quat
+
+        if (t < split) {
+          const localT = THREE.MathUtils.smoothstep(t / split, 0, 1)
+          pos = this._tmpFunHouseAnimPos.copy(installState.startPos).lerp(installState.approachPos, localT)
+          pos.addScaledVector(installState.insertUp, Math.sin(localT * Math.PI) * SCENE1_CONFIG.funHouseLightStickInsertArcLift)
+          quat = this._tmpFunHouseAnimQuat.copy(installState.startQuat).slerp(installState.targetQuaternion, localT)
+        } else {
+          const localT = THREE.MathUtils.smoothstep((t - split) / (1 - split), 0, 1)
+          pos = this._tmpFunHouseAnimPos.copy(installState.approachPos).lerp(installState.targetPos, localT)
+          quat = this._tmpFunHouseAnimQuat.copy(installState.targetQuaternion)
+        }
+
+        body.position.set(pos.x, pos.y, pos.z)
+        body.quaternion.set(quat.x, quat.y, quat.z, quat.w)
+        body.velocity.set(0, 0, 0)
+        body.angularVelocity.set(0, 0, 0)
+        body.aabbNeedsUpdate = true
+        mesh.position.copy(pos)
+        mesh.quaternion.copy(quat)
+        mesh.scale.copy(installState.startScale).lerp(installState.targetScale, t)
+      }
 
       if (t >= 1) {
         if (!installState.visualCommitted) {
-          const entry = installState.entry
-          const body = entry?.body
-          if (body) {
-            if (installState.originalType !== undefined) body.type = installState.originalType
-            if (installState.originalCollisionResponse !== undefined) body.collisionResponse = installState.originalCollisionResponse
-            if (installState.originalCollisionFilterMask !== undefined) body.collisionFilterMask = installState.originalCollisionFilterMask
+          const commitEntry = installState.entry
+          const commitBody = commitEntry?.body
+          if (commitBody) {
+            if (installState.originalType !== undefined) commitBody.type = installState.originalType
+            if (installState.originalCollisionResponse !== undefined) commitBody.collisionResponse = installState.originalCollisionResponse
+            if (installState.originalCollisionFilterMask !== undefined) commitBody.collisionFilterMask = installState.originalCollisionFilterMask
           }
           houseMesh.userData.completeFunHouseLightStickInstallation?.()
-          if (entry) {
-            this._despawnEntry(entry)
+          if (commitEntry) {
+            this._despawnEntry(commitEntry)
           }
           installState.visualCommitted = true
           installState.entry = null
@@ -4034,10 +4145,10 @@ export class Scene1Manager {
         0,
         1
       )
-      setDoorAmount?.(1 - t)
+      this._setFunHousePowerBoxDoorAmount(houseMesh, 1 - t)
 
       if (t >= 1) {
-        setDoorAmount?.(0)
+        this._setFunHousePowerBoxDoorAmount(houseMesh, 0)
         this.funHouseLightStickInstallState = null
         return 'completed'
       }
@@ -4056,11 +4167,17 @@ export class Scene1Manager {
     if (this.funHouseLightStickInstallState) return
 
     const targetInfo = this._getFunHouseCollectTarget()
-    const triggerInfo = targetInfo?.triggerInfo
-    if (!targetInfo?.mesh || !triggerInfo) return
+    if (!targetInfo?.mesh) return
     if (targetInfo.mesh.userData?.hasFunHouseStateOverride?.() || targetInfo.mesh.userData?.isFunHouseLightStickInstalled?.()) {
+      this._setFunHousePowerBoxDoorAmount(targetInfo.mesh, 0)
       return
     }
+
+    const playerEntry = syncList?.find((entry) => entry.name === 'Player' && entry.mesh && entry.body)
+    this._updateFunHousePowerBoxDoorProximity(targetInfo, playerEntry, delta)
+
+    const triggerInfo = targetInfo.triggerInfo
+    if (!triggerInfo || this.funHousePowerBoxDoorOpenAmount < 0.95) return
 
     this._funHouseCollectScanAccumulator += delta
     if (this._funHouseCollectScanAccumulator < SCENE1_CONFIG.funHouseCollectScanIntervalSec) return
@@ -6271,6 +6388,7 @@ export class Scene1Manager {
     this.vendingBabyOilAsset = null
     this.funHouseEntry = null
     this.funHouseLightStickInstallState = null
+    this.funHousePowerBoxDoorOpenAmount = 0
     this._funHouseCollectScanAccumulator = 0
     this.cartonBoxEntry = null
     this.cartonBoxState = null

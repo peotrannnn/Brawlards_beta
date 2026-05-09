@@ -222,16 +222,17 @@ function createElevatorDoor() {
     const animationState = doorGroup.userData.animationState
     if (!animationState?.isOpening) return
     const animationConfig = doorGroup.userData.animationConfig || {}
+    const animationDuration = animationConfig.duration ?? ELEVATOR_CONFIG.animationDuration
     const maxGlowIntensity = animationConfig.maxGlowIntensity ?? ELEVATOR_CONFIG.lightIntensity
     const maxEnvironmentLightIntensity = animationConfig.maxEnvironmentLightIntensity ?? ELEVATOR_CONFIG.environmentLightIntensity
-      const environmentLightDistance = animationConfig.environmentLightDistance ?? ELEVATOR_CONFIG.environmentLightDistance
+    const environmentLightDistance = animationConfig.environmentLightDistance ?? ELEVATOR_CONFIG.environmentLightDistance
 
     animationState.openElapsed = Math.min(
-      ELEVATOR_CONFIG.animationDuration,
+      animationDuration,
       (animationState.openElapsed || 0) + Math.max(0, delta)
     )
     animationState.openProgress = Math.min(
-      animationState.openElapsed / ELEVATOR_CONFIG.animationDuration,
+      animationState.openElapsed / animationDuration,
       1.0
     )
 
@@ -252,7 +253,7 @@ function createElevatorDoor() {
 
     if (localEnvironmentLight) {
       localEnvironmentLight.intensity = maxEnvironmentLightIntensity * animationState.openProgress
-        localEnvironmentLight.distance = environmentLightDistance
+      localEnvironmentLight.distance = environmentLightDistance
     }
 
     if (animationState.openProgress >= 1.0) {

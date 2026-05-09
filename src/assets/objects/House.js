@@ -58,7 +58,7 @@ const FUN_HOUSE_CONFIG = {
     glassEmissive: '#4d8fb6',
     indicatorOff: '#612121',
     indicatorOn: '#79ff7a',
-    installedStickScale: 0.96
+    installedStickScale: 0.64
   }
 }
 
@@ -782,9 +782,10 @@ function createFunHouseMesh(options = {}) {
   elevator.rotation.y = Math.PI / 2
   elevator.scale.setScalar(FUN_HOUSE_CONFIG.elevatorScale)
   elevator.userData.animationConfig = {
+    duration: 2.6,
     maxGlowIntensity: 5,
-     maxEnvironmentLightIntensity: 120,
-     environmentLightDistance: 8
+    maxEnvironmentLightIntensity: 120,
+    environmentLightDistance: 8
   }
   elevator.traverse((child) => {
     if (!child?.isMesh || !child.material) return
@@ -813,6 +814,23 @@ function createFunHouseMesh(options = {}) {
     FUN_HOUSE_CONFIG.powerBox.centerY,
     frontZ - FUN_HOUSE_CONFIG.powerBox.insetZ
   )
+  const powerBoxIndicatorLocalPosition = new THREE.Vector3(
+    FUN_HOUSE_CONFIG.powerBox.width * 0.35,
+    FUN_HOUSE_CONFIG.powerBox.height * 0.33,
+    FUN_HOUSE_CONFIG.powerBox.depth * 0.52
+  )
+  const installedStickLocalPosition = new THREE.Vector3(
+    powerBoxIndicatorLocalPosition.x,
+    powerBoxIndicatorLocalPosition.y,
+    -FUN_HOUSE_CONFIG.powerBox.depth * 0.18
+  )
+  const lightStickTriggerSize = [0.74, 0.72, 0.92]
+  const lightStickTriggerOffset = [
+    installedStickLocalPosition.x,
+    installedStickLocalPosition.y,
+    FUN_HOUSE_CONFIG.powerBox.depth * 0.56
+  ]
+  const playerTriggerSize = FUN_HOUSE_CONFIG.powerBox.triggerSize.map((size) => size * 3)
   powerBox.userData.physics = {
     type: 'static',
     material: 'table',
@@ -822,7 +840,15 @@ function createFunHouseMesh(options = {}) {
         role: 'funHouseLightStickTrigger',
         isTrigger: true,
         debugColor: '#ffffff',
-        size: [...FUN_HOUSE_CONFIG.powerBox.triggerSize],
+        size: [...lightStickTriggerSize],
+        offset: [...lightStickTriggerOffset]
+      },
+      {
+        type: 'box',
+        role: 'funHousePlayerTrigger',
+        isTrigger: true,
+        debugColor: '#7ec8ff',
+        size: [...playerTriggerSize],
         offset: [
           0,
           FUN_HOUSE_CONFIG.powerBox.triggerCenterYOffset,
@@ -909,24 +935,20 @@ function createFunHouseMesh(options = {}) {
     new THREE.SphereGeometry(0.04, 16, 16),
     powerBoxIndicatorMaterial
   )
-  powerBoxIndicator.position.set(
-    FUN_HOUSE_CONFIG.powerBox.width * 0.35,
-    FUN_HOUSE_CONFIG.powerBox.height * 0.33,
-    FUN_HOUSE_CONFIG.powerBox.depth * 0.52
-  )
+  powerBoxIndicator.position.copy(powerBoxIndicatorLocalPosition)
   powerBoxIndicator.castShadow = true
   powerBoxIndicator.name = 'Fun House Power Box Indicator'
   powerBox.add(powerBoxIndicator)
 
   const installedStickAnchor = new THREE.Group()
   installedStickAnchor.name = 'Fun House Power Box Light Stick Anchor'
-  installedStickAnchor.position.set(0, 0, -FUN_HOUSE_CONFIG.powerBox.depth * 0.08)
-  installedStickAnchor.rotation.z = Math.PI * 0.5
-  installedStickAnchor.rotation.y = Math.PI * 0.08
+  installedStickAnchor.position.copy(installedStickLocalPosition)
+  installedStickAnchor.rotation.x = -Math.PI * 0.5
   powerBox.add(installedStickAnchor)
 
   const tempInstalledStickTarget = new THREE.Vector3()
   const tempInstalledStickQuaternion = new THREE.Quaternion()
+  const tempInstalledStickScale = new THREE.Vector3(1, 1, 1)
 
   const installedLightStick = getLightStickAsset().factory()
   installedLightStick.name = 'Fun House Installed Light Stick'
@@ -1019,7 +1041,8 @@ function createFunHouseMesh(options = {}) {
     getFunHousePowerBoxWorldTarget() {
       return {
         target: installedStickAnchor.getWorldPosition(tempInstalledStickTarget),
-        targetQuaternion: installedStickAnchor.getWorldQuaternion(tempInstalledStickQuaternion)
+        targetQuaternion: installedStickAnchor.getWorldQuaternion(tempInstalledStickQuaternion),
+        targetScale: installedLightStick.getWorldScale(tempInstalledStickScale)
       }
     },
     completeFunHouseLightStickInstallation: completeLightStickInstallation,
