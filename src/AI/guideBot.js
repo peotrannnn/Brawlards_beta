@@ -31,14 +31,9 @@ const GUIDE_AI_CONFIG = {
   sacrificeStopDistance: 0.32,
   sacrificeWaitDuration: 1.0,
   sacrificeRiseSpeed: 0.58,
-  sacrificeSpinSpeedMin: 0.5,
-  sacrificeSpinSpeedMax: 0.9,
-  sacrificeSpinAngleMin: 0.5,
-  sacrificeSpinAngleMax: 0.6,
+  sacrificeFacePlayerTurnSmooth: 4.2,
   sacrificeLegSwingSpeed: 5,
   sacrificeLegSwingAngle: 0.42,
-  sacrificeFacePlayerBlendStartHeight: 1.25,
-  sacrificeFacePlayerBlendEndHeight: 3.6,
 }
 
 const LIGHT_STICK_OFF_NAMES = new Set(['Light Stick Off'])
@@ -103,9 +98,7 @@ export class GuideAI {
     this._tmpLerpColor = new THREE.Color()
     this._tmpOffsetDir = new THREE.Vector3()
     this._tmpFollowPos = new THREE.Vector3()
-    this._tmpSacrificeEuler = new THREE.Euler(0, 0, 0, 'YXZ')
     this._tmpSacrificeFaceEuler = new THREE.Euler(0, 0, 0, 'YXZ')
-    this._tmpSacrificeFaceQuat = new THREE.Quaternion()
     this._legRefs = null
     this.sacrificeState = null
 
@@ -169,15 +162,6 @@ export class GuideAI {
       floatElapsed: 0,
       pedestalPosition: targetPosition.clone(),
       startY: 0,
-      spinPhaseX: Math.random() * Math.PI * 2,
-      spinPhaseY: Math.random() * Math.PI * 2,
-      spinPhaseZ: Math.random() * Math.PI * 2,
-      spinSpeedX: THREE.MathUtils.lerp(GUIDE_AI_CONFIG.sacrificeSpinSpeedMin, GUIDE_AI_CONFIG.sacrificeSpinSpeedMax, Math.random()),
-      spinSpeedY: THREE.MathUtils.lerp(GUIDE_AI_CONFIG.sacrificeSpinSpeedMin, GUIDE_AI_CONFIG.sacrificeSpinSpeedMax, Math.random()),
-      spinSpeedZ: THREE.MathUtils.lerp(GUIDE_AI_CONFIG.sacrificeSpinSpeedMin, GUIDE_AI_CONFIG.sacrificeSpinSpeedMax, Math.random()),
-      spinAngleX: THREE.MathUtils.lerp(GUIDE_AI_CONFIG.sacrificeSpinAngleMin, GUIDE_AI_CONFIG.sacrificeSpinAngleMax, Math.random()),
-      spinAngleY: THREE.MathUtils.lerp(GUIDE_AI_CONFIG.sacrificeSpinAngleMin, GUIDE_AI_CONFIG.sacrificeSpinAngleMax, Math.random()),
-      spinAngleZ: THREE.MathUtils.lerp(GUIDE_AI_CONFIG.sacrificeSpinAngleMin, GUIDE_AI_CONFIG.sacrificeSpinAngleMax, Math.random())
     }
     this.targetItemEntry = null
     this.loyalPlayerEntry = null
@@ -238,39 +222,33 @@ export class GuideAI {
     })
   }
 
-  _applySacrificeFloatPose(state, playerEntry = null) {
+  _stepYawTowardPosition(targetPos, delta, smooth = this.rotationSmooth) {
+    if (!targetPos || !this.mesh) return this.bodyYaw
+
+    const lookDir = this._tmpOffsetDir.subVectors(targetPos, this.mesh.position)
+    lookDir.y = 0
+    if (lookDir.lengthSq() < 1e-6) return this.bodyYaw
+
+    const desiredYaw = Math.atan2(lookDir.x, lookDir.z)
+    let yawDiff = desiredYaw - this.bodyYaw
+    if (yawDiff > Math.PI) yawDiff -= Math.PI * 2
+    if (yawDiff < -Math.PI) yawDiff += Math.PI * 2
+
+    const turnFactor = THREE.MathUtils.clamp(smooth * delta, 0, 1)
+    this.bodyYaw += yawDiff * turnFactor
+    return this.bodyYaw
+  }
+
+  _applySacrificeFloatPose(delta, state, playerEntry = null) {
     if (!state || !this.mesh || !this.body) return
 
     const elapsed = state.floatElapsed || 0
-    const euler = this._tmpSacrificeEuler
-    euler.set(
-      Math.sin(elapsed * state.spinSpeedX + state.spinPhaseX) * state.spinAngleX,
-      Math.sin(elapsed * state.spinSpeedY + state.spinPhaseY) * state.spinAngleY,
-      Math.cos(elapsed * state.spinSpeedZ + state.spinPhaseZ) * state.spinAngleZ,
-      'YXZ'
-    )
-    this._tmpQuat.setFromEuler(euler)
-
-    const currentRise = Math.max(0, this.mesh.position.y - (state.startY || 0))
-    const blendStartHeight = GUIDE_AI_CONFIG.sacrificeFacePlayerBlendStartHeight
-    const blendEndHeight = Math.max(blendStartHeight + 0.001, GUIDE_AI_CONFIG.sacrificeFacePlayerBlendEndHeight)
-    const faceBlend = THREE.MathUtils.smoothstep(
-      THREE.MathUtils.clamp((currentRise - blendStartHeight) / (blendEndHeight - blendStartHeight), 0, 1),
-      0,
-      1
-    )
-
-    if (faceBlend > 0.001 && playerEntry?.mesh?.position) {
-      const faceDir = this._tmpOffsetDir.subVectors(playerEntry.mesh.position, this.mesh.position)
-      faceDir.y = 0
-      if (faceDir.lengthSq() > 0.0001) {
-        const faceYaw = Math.atan2(faceDir.x, faceDir.z)
-        this._tmpSacrificeFaceEuler.set(0, faceYaw, 0, 'YXZ')
-        this._tmpSacrificeFaceQuat.setFromEuler(this._tmpSacrificeFaceEuler)
-        this._tmpQuat.slerp(this._tmpSacrificeFaceQuat, faceBlend)
-      }
+    if (playerEntry?.mesh?.position) {
+      this._stepYawTowardPosition(playerEntry.mesh.position, delta, GUIDE_AI_CONFIG.sacrificeFacePlayerTurnSmooth)
     }
 
+    this._tmpSacrificeFaceEuler.set(0, this.bodyYaw, 0, 'YXZ')
+    this._tmpQuat.setFromEuler(this._tmpSacrificeFaceEuler)
     this.body.quaternion.set(this._tmpQuat.x, this._tmpQuat.y, this._tmpQuat.z, this._tmpQuat.w)
     this.mesh.quaternion.copy(this._tmpQuat)
     this._setSacrificeLegSwing(elapsed)
@@ -949,7 +927,7 @@ export class GuideAI {
       this.body.aabbNeedsUpdate = true
       this.mesh.position.set(pedestalPos.x, nextY, pedestalPos.z)
       this.mesh.userData.sacrificeFloatPoseActive = true
-      this._applySacrificeFloatPose(state, playerEntry)
+      this._applySacrificeFloatPose(delta, state, playerEntry)
 
       return { targetYaw: this.bodyYaw, touchedGuy: null }
     }

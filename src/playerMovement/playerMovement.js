@@ -962,12 +962,28 @@ export class PlayerMovementController {
         return new THREE.Vector3(mesh.position.x, baseY + lift * 2.1, mesh.position.z)
     }
 
-    _setMeshCarriedFlag(itemMesh, isCarried) {
+    _setMeshCarriedFlag(itemMesh, isCarried, itemBody = null) {
     if (!itemMesh) return
-    if (itemMesh.userData?._cachedCarriedFlag === isCarried) return
+    if (itemMesh.userData?._cachedCarriedFlag === isCarried && itemBody?.userData?.isCarriedItem === isCarried) return
 
     itemMesh.userData = itemMesh.userData || {}
     itemMesh.userData._cachedCarriedFlag = isCarried
+    itemMesh.userData.isCarriedItem = isCarried
+    itemMesh.userData.carriedByPlayer = isCarried
+    itemMesh.userData.ignoreRaycast = isCarried
+    if (isCarried) {
+        itemMesh.userData.carriedByGuide = false
+    }
+
+    if (itemBody) {
+        itemBody.userData = itemBody.userData || {}
+        itemBody.userData.isCarriedItem = isCarried
+        itemBody.userData.carriedByPlayer = isCarried
+        if (isCarried) {
+            itemBody.userData.carriedByGuide = false
+        }
+    }
+
     itemMesh.traverse(child => {
         if (!child.isMesh) return
         child.userData.isCarriedItem = isCarried
@@ -977,9 +993,9 @@ export class PlayerMovementController {
             child.userData.carriedByGuide = false
         }
     })
-    
-    if (isCarried && this.cameraController) {
-        this.cameraController.forceRefreshCollisionCache();
+
+    if (this.cameraController) {
+        this.cameraController.forceRefreshCollisionCache()
     }
 }
 
@@ -1006,7 +1022,7 @@ export class PlayerMovementController {
             itemMesh.position.set(targetPos.x, targetPos.y, targetPos.z)
             itemMesh.quaternion.set(0, Math.sin(halfYaw), 0, Math.cos(halfYaw))
             // Mark mesh so camera raycaster skips it
-            this._setMeshCarriedFlag(itemMesh, true)
+            this._setMeshCarriedFlag(itemMesh, true, body)
         }
     }
 
@@ -1038,6 +1054,10 @@ export class PlayerMovementController {
         body.userData.hasBeenCollectedOnce = true
         body.userData.isCollectedItem = true
         this.carriedItems.push(carried)
+
+        if (this.particleManager && entry.mesh) {
+            this.particleManager.clearItemArrowForOwner(entry.mesh)
+        }
 
         const targetPos = this._getStackTargetForIndex(this.carriedItems.length - 1, mesh, this.currentBody)
         this._setCarriedBodyLocked(carried, targetPos)
@@ -1116,7 +1136,7 @@ export class PlayerMovementController {
                 if (carried.entry?.mesh) {
                     carried.entry.mesh.position.set(lerpX, lerpY, lerpZ)
                     carried.entry.mesh.quaternion.set(nextQuat.x, nextQuat.y, nextQuat.z, nextQuat.w)
-                    this._setMeshCarriedFlag(carried.entry.mesh, true)
+                    this._setMeshCarriedFlag(carried.entry.mesh, true, body)
                 }
 
                 if (t >= 1) {
@@ -1173,7 +1193,7 @@ export class PlayerMovementController {
             if (body.userData.isCollectedItem) continue
 
             delete body.userData.cameraPassthroughUntil
-            this._setMeshCarriedFlag(mesh, false)
+            this._setMeshCarriedFlag(mesh, false, body)
         }
     }
 
@@ -1259,7 +1279,7 @@ export class PlayerMovementController {
 
         // Keep camera-exclusion during Q shuffle window, clear for normal drops
         if (carried.entry?.mesh) {
-            this._setMeshCarriedFlag(carried.entry.mesh, droppedByShuffle)
+            this._setMeshCarriedFlag(carried.entry.mesh, droppedByShuffle, body)
         }
 
         if (withCooldown) {
