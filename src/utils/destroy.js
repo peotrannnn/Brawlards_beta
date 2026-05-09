@@ -119,27 +119,6 @@ export class DestroySystem {
     }
     this.destroyQueueSet.delete(entry);
 
-    // --- FIX: Deep Cleanup Mesh Children ---
-    // Xóa sạch các helper visual thừa (do CollisionManager tạo ra) trước khi remove mesh
-    if (entry.mesh) {
-        const toRemove = [];
-        entry.mesh.traverse(c => {
-            if (c.isLineSegments || c.isLineLoop || c.userData?.isDebugHelper) {
-                toRemove.push(c);
-            }
-        });
-        toRemove.forEach(c => {
-            if(c.parent) c.parent.remove(c);
-            if(c.geometry) c.geometry.dispose();
-            if(c.material) c.material.dispose();
-        });
-        
-        if (this.hbManager && this.hbManager.removeHitboxForObject) {
-            this.hbManager.removeHitboxForObject(entry);
-        }
-    }
-    // --- END FIX ---
-
     if (this.hbManager && this.hbManager.removeHitboxForObject) {
       this.hbManager.removeHitboxForObject(entry);
     }

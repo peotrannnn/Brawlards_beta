@@ -1007,6 +1007,89 @@ vec4 s3SampleStochastic(sampler2D tex, vec2 uv) {
   material.needsUpdate = true
 }
 
+function createSection3PedestalScoreStar(slotRadius = 2.2) {
+  const starGroup = new THREE.Group()
+  starGroup.name = 'Section3 Pedestal Score Star'
+
+  const vertices = []
+  for (let i = 0; i < 6; i++) {
+    const angle = -Math.PI / 2 + (i * Math.PI / 3)
+    vertices.push(new THREE.Vector3(
+      Math.cos(angle) * slotRadius,
+      0.003,
+      Math.sin(angle) * slotRadius
+    ))
+  }
+
+  const linePoints = []
+  const triangles = [
+    [0, 2, 4, 0],
+    [1, 3, 5, 1]
+  ]
+  triangles.forEach((indices) => {
+    for (let i = 0; i < indices.length - 1; i++) {
+      linePoints.push(vertices[indices[i]].clone(), vertices[indices[i + 1]].clone())
+    }
+  })
+
+  const starLines = new THREE.LineSegments(
+    new THREE.BufferGeometry().setFromPoints(linePoints),
+    new THREE.LineBasicMaterial({
+      color: '#ffffff',
+      transparent: true,
+      opacity: 0.76
+    })
+  )
+  starLines.name = 'Section3 Pedestal Score Star Lines'
+  starGroup.add(starLines)
+
+  const glowLight = new THREE.PointLight('#ffffff', 0.45, slotRadius * 2.25, 1.8)
+  glowLight.position.set(0, 0.12, 0)
+  glowLight.castShadow = false
+  glowLight.name = 'Section3 Pedestal Score Glow Light'
+  starGroup.add(glowLight)
+
+  const slotAnchors = []
+  const slotMarkers = []
+  const markerMaterial = new THREE.MeshStandardMaterial({
+    color: '#f6f3e8',
+    emissive: '#ffffff',
+    emissiveIntensity: 0.42,
+    roughness: 0.34,
+    metalness: 0.12,
+    transparent: true,
+    opacity: 0.92
+  })
+
+  vertices.forEach((vertex, index) => {
+    const marker = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.2, 0.2, 0.018, 18),
+      markerMaterial.clone()
+    )
+    marker.position.copy(vertex)
+    marker.position.y = 0.002
+    marker.castShadow = false
+    marker.receiveShadow = true
+    marker.name = `Section3 Pedestal Score Slot Marker ${index + 1}`
+    starGroup.add(marker)
+    slotMarkers.push(marker)
+
+    const anchor = new THREE.Object3D()
+    anchor.position.set(vertex.x, 0.002, vertex.z)
+    anchor.name = `Section3 Pedestal Ball Slot ${index + 1}`
+    anchor.userData.section3PedestalBallSlotIndex = index
+    starGroup.add(anchor)
+    slotAnchors.push(anchor)
+  })
+
+  starGroup.userData.section3PedestalBallSlotAnchors = slotAnchors
+  starGroup.userData.section3PedestalBallSlotRadius = slotRadius
+  starGroup.userData.section3PedestalScoreLineMaterial = starLines.material
+  starGroup.userData.section3PedestalScoreMarkers = slotMarkers
+  starGroup.userData.section3PedestalScoreGlowLight = glowLight
+  return starGroup
+}
+
 export function createSection3(rootGroup) {
   // ======================================================
   // SECTION 3: MẶT PHẲNG TRÒN Ở PHÍA TRÊN SECTION 1 & 2
@@ -1112,10 +1195,20 @@ export function createSection3(rootGroup) {
   pedestalTarget.name = 'Section3 Sacrifice Pedestal Target'
   pedestalTarget.position.set(0, 0.24, 0)
   pedestal.add(pedestalTarget)
+
+  const pedestalScoreStar = createSection3PedestalScoreStar(2.2)
+  pedestalScoreStar.position.y = 0.091
+  pedestal.add(pedestalScoreStar)
+
   rootGroup.add(pedestal)
 
   rootGroup.userData.section3SacrificePedestal = pedestal
   rootGroup.userData.section3SacrificePedestalTarget = pedestalTarget
+  rootGroup.userData.section3PedestalBallSlotAnchors = pedestalScoreStar.userData.section3PedestalBallSlotAnchors || []
+  rootGroup.userData.section3PedestalScoreStar = pedestalScoreStar
+  rootGroup.userData.section3PedestalScoreMarkers = pedestalScoreStar.userData.section3PedestalScoreMarkers || []
+  rootGroup.userData.section3PedestalScoreLineMaterial = pedestalScoreStar.userData.section3PedestalScoreLineMaterial || null
+  rootGroup.userData.section3PedestalScoreGlowLight = pedestalScoreStar.userData.section3PedestalScoreGlowLight || null
 
   const section3GrassLod = createSection3GrassLayer(
     rootGroup,

@@ -149,6 +149,26 @@ const SCENE1_CONFIG = {
   section3SacrificeGuideNearPlayerDistance: 28.0,
   section3SacrificeEyeNearPlayerDistance: 48.0,
   section3SacrificeCameraBlendSec: 1.8,
+  section3PedestalFullScore: 36,
+  section3PedestalSpawnIntervalMinSec: 5.0,
+  section3PedestalSpawnIntervalMaxSec: 15.0,
+  section3PedestalSpawnRadiusMin: 8.5,
+  section3PedestalSpawnRadiusMax: 24.0,
+  section3PedestalSpawnHeight: 6.5,
+  section3PedestalDespawnSec: 30.0,
+  section3PedestalCaptureRadius: 4.4,
+  section3PedestalCaptureHeightPadding: 1.15,
+  section3PedestalSlotHoldDistance: 0.9,
+  section3PedestalSlotReleaseDistance: 1.35,
+  section3PedestalSlotReleaseHeight: 1.1,
+  section3PedestalSlotAnimDuration: 0.55,
+  section3PedestalSlotAnimLift: 0.72,
+  section3PedestalVisualGlowLightMinIntensity: 0.45,
+  section3PedestalVisualGlowLightMaxIntensity: 4.5,
+  section3PedestalVisualGlowLightMinDistance: 4.5,
+  section3PedestalVisualGlowLightMaxDistance: 7.2,
+  section3PedestalVisualMarkerGlowMinIntensity: 0.42,
+  section3PedestalVisualMarkerGlowMaxIntensity: 3.0,
   section3CinematicTreeFadeRadius: 16.0,
   section3CinematicTreeFullFadeRadius: 7.5,
   section3CinematicTreeFadeDurationSec: 1.0,
@@ -281,6 +301,7 @@ export class Scene1Manager {
     this.allBallsSpawned = false
     this.ballAssets = {}
     this.currentBatchSpawningComplete = true // Track if current batch scheduling is done
+    this.ballSpawnGeneration = 0
 
     // ✨ NEW: Bowling ball system for batch spawning
     this.bowlingBallEntry = null // Current bowling ball (max 1 at a time)
@@ -329,6 +350,17 @@ export class Scene1Manager {
     this.section3EyeSun = this.sectionGroups?.section3?.userData?.section3EyeSun || null
     this.section3EyeBot = null
     this.debugSection3PlayerEntry = null
+    this.section3PedestalSlotAnchors = []
+    this.section3PedestalSlotAssignments = []
+    this.section3PedestalBallEntries = new Map()
+    this.section3PedestalSpawnPending = false
+    this.section3PedestalSpawnTimer = SCENE1_CONFIG.section3PedestalSpawnIntervalMinSec + (Math.random() * (SCENE1_CONFIG.section3PedestalSpawnIntervalMaxSec - SCENE1_CONFIG.section3PedestalSpawnIntervalMinSec))
+    this.section3PedestalScore = 0
+    this.section3PedestalScoreStar = null
+    this.section3PedestalScoreMarkers = []
+    this.section3PedestalScoreLineMaterial = null
+    this.section3PedestalScoreGlowLight = null
+    this.funHouseElevatorDisplayPanel = null
 
     // Scene1 proximity fog and screen overlay effects
     this.baseFogColor = new THREE.Color(0xffffff)
@@ -391,6 +423,13 @@ export class Scene1Manager {
     this._tmpSection3SacrificeTargetPos = new THREE.Vector3()
     this._tmpSection3SacrificeCameraLockPos = new THREE.Vector3()
     this._tmpSection3CinematicTreeCameraPos = new THREE.Vector3()
+    this._tmpSection3PedestalCenterPos = new THREE.Vector3()
+    this._tmpSection3PedestalSlotWorldPos = new THREE.Vector3()
+    this._tmpSection3PedestalBallTargetPos = new THREE.Vector3()
+    this._tmpSection3PedestalBallCurrentPos = new THREE.Vector3()
+    this._section3PedestalGlowStartColor = new THREE.Color('#ffffff')
+    this._section3PedestalGlowEndColor = new THREE.Color('#ff2d2d')
+    this._tmpSection3PedestalGlowColor = new THREE.Color('#ffffff')
 
     // Reward coin on ordered sequence system
     this.sequenceSilverCoinAsset = null
@@ -406,6 +445,7 @@ export class Scene1Manager {
     this.previousBallNames = new Set() // ✨ NEW: Track previous frame's balls to detect destruction
     this.currentBallNamesBuffer = new Set()
     this.currentBallNumberBuffer = new Map()
+    this._section2DynamicEntriesBuffer = []
     this._tmpSection3FocusPos = new THREE.Vector3()
     this._tmpSection3EyeLookTarget = new THREE.Vector3()
     this._tmpSection3EyePlayerPos = new THREE.Vector3()
@@ -414,8 +454,13 @@ export class Scene1Manager {
     this._tmpSection3PlatformCenter = new THREE.Vector3()
     this._section3DefaultFocusPos = new THREE.Vector3(0, 140, 0)
     this._section3HouseScaleRegistry = new Map()
+    this._section3HouseRegistrySyncEntrySet = new Set()
+    this._section3HouseRegistryStaleEntries = []
+    this._section3HouseRegistryCleanupFrame = 0
     this._section3HouseScaleUpdateAccumulator = 0
     this._section3TreeScaleRegistry = new Map()
+    this._section3TreeRegistryStaleEntries = []
+    this._section3TreeRegistryCleanupFrame = 0
     this._section3TreeScaleUpdateAccumulator = 0
     this._section3TreeBillboardUpdateAccumulator = 0
     this.section3EdgeDarkness = 0
@@ -1616,6 +1661,7 @@ export class Scene1Manager {
     this._updateSection3TreeLod(syncList, delta, camera)
     this._updateSection3TreeDistanceScaling(syncList, delta)
     this._updateSection3GrassLod(syncList, delta, camera)
+    this._updateSection3PedestalSystem(syncList, delta)
     this._updateSection3GuideSacrifice(syncList, delta, camera)
     this._updateSection3EyeBot(syncList, delta)
     this._updateSection3EyeTransition(syncList, delta, camera)
@@ -1723,15 +1769,30 @@ export class Scene1Manager {
   _ensureSection3HouseScaleRegistry(syncList) {
     if (!Array.isArray(syncList)) return
 
-    const syncEntrySet = new Set(syncList)
+    this._section3HouseRegistryCleanupFrame = (this._section3HouseRegistryCleanupFrame + 1) % 30
+    if (this._section3HouseRegistryCleanupFrame === 0 && this._section3HouseScaleRegistry.size > 0) {
+      const syncEntrySet = this._section3HouseRegistrySyncEntrySet
+      const staleEntries = this._section3HouseRegistryStaleEntries
+      syncEntrySet.clear()
+      staleEntries.length = 0
 
-    const staleEntries = []
-    this._section3HouseScaleRegistry.forEach((_, entry) => {
-      if (!entry || !syncEntrySet.has(entry) || !entry.mesh || !entry.body || !entry.mesh.parent) {
-        staleEntries.push(entry)
+      for (const entry of syncList) {
+        syncEntrySet.add(entry)
       }
-    })
-    staleEntries.forEach(entry => this._section3HouseScaleRegistry.delete(entry))
+
+      this._section3HouseScaleRegistry.forEach((_, entry) => {
+        if (!entry || !syncEntrySet.has(entry) || !entry.mesh || !entry.body || !entry.mesh.parent) {
+          staleEntries.push(entry)
+        }
+      })
+
+      for (const entry of staleEntries) {
+        this._section3HouseScaleRegistry.delete(entry)
+      }
+
+      staleEntries.length = 0
+      syncEntrySet.clear()
+    }
 
     for (const entry of syncList) {
       if (!entry?.mesh || !entry?.body) continue
@@ -1832,14 +1893,22 @@ export class Scene1Manager {
 
   _ensureSection3TreeScaleRegistry() {
     const trees = this.sectionGroups?.section3?.userData?.section3Trees || []
-    const liveTrees = new Set(trees.filter((tree) => tree?.parent))
-    const staleTrees = []
 
-    this._section3TreeScaleRegistry.forEach((_, tree) => {
-      if (!liveTrees.has(tree)) staleTrees.push(tree)
-    })
+    this._section3TreeRegistryCleanupFrame = (this._section3TreeRegistryCleanupFrame + 1) % 30
+    if (this._section3TreeRegistryCleanupFrame === 0 && this._section3TreeScaleRegistry.size > 0) {
+      const staleTrees = this._section3TreeRegistryStaleEntries
+      staleTrees.length = 0
 
-    staleTrees.forEach((tree) => this._section3TreeScaleRegistry.delete(tree))
+      this._section3TreeScaleRegistry.forEach((_, tree) => {
+        if (!tree?.parent) staleTrees.push(tree)
+      })
+
+      for (const tree of staleTrees) {
+        this._section3TreeScaleRegistry.delete(tree)
+      }
+
+      staleTrees.length = 0
+    }
 
     for (const tree of trees) {
       if (!tree?.parent || this._section3TreeScaleRegistry.has(tree)) continue
@@ -1945,6 +2014,608 @@ export class Scene1Manager {
     }
   }
 
+  _getRandomSection3PedestalSpawnDelay() {
+    const minDelay = SCENE1_CONFIG.section3PedestalSpawnIntervalMinSec
+    const maxDelay = SCENE1_CONFIG.section3PedestalSpawnIntervalMaxSec
+    return minDelay + (Math.random() * Math.max(0, maxDelay - minDelay))
+  }
+
+  _resetSection3PedestalSpawnTimer() {
+    this.section3PedestalSpawnTimer = this._getRandomSection3PedestalSpawnDelay()
+  }
+
+  _ensureSection3PedestalRuntime() {
+    const { pedestal, target } = this._ensureSection3SacrificePedestal()
+    if (!pedestal) {
+      this.section3PedestalSlotAnchors = []
+      this.section3PedestalSlotAssignments = []
+      this.section3PedestalScoreStar = null
+      this.section3PedestalScoreMarkers = []
+      this.section3PedestalScoreLineMaterial = null
+      this.section3PedestalScoreGlowLight = null
+      return { pedestal: null, target, slotAnchors: [] }
+    }
+
+    const anchorsAreValid = Array.isArray(this.section3PedestalSlotAnchors)
+      && this.section3PedestalSlotAnchors.length > 0
+      && this.section3PedestalSlotAnchors.every((anchor) => anchor?.parent)
+
+    if (!anchorsAreValid) {
+      const section3Group = this.sectionGroups?.section3 || null
+      let slotAnchors = section3Group?.userData?.section3PedestalBallSlotAnchors || []
+
+      if (!Array.isArray(slotAnchors) || slotAnchors.length === 0) {
+        slotAnchors = []
+        pedestal.traverse?.((child) => {
+          if (Number.isInteger(child?.userData?.section3PedestalBallSlotIndex)) {
+            slotAnchors.push(child)
+          }
+        })
+      }
+
+      slotAnchors = slotAnchors
+        .filter((anchor) => anchor?.parent)
+        .sort((a, b) => {
+          const aIndex = a?.userData?.section3PedestalBallSlotIndex ?? 0
+          const bIndex = b?.userData?.section3PedestalBallSlotIndex ?? 0
+          return aIndex - bIndex
+        })
+
+      const existingAssignments = Array.isArray(this.section3PedestalSlotAssignments)
+        ? this.section3PedestalSlotAssignments
+        : []
+
+      this.section3PedestalSlotAnchors = slotAnchors
+      this.section3PedestalSlotAssignments = slotAnchors.map((_, index) => existingAssignments[index] || null)
+    }
+
+    const section3Group = this.sectionGroups?.section3 || null
+    const starIsValid = this.section3PedestalScoreStar?.parent
+      && this.section3PedestalScoreLineMaterial
+      && Array.isArray(this.section3PedestalScoreMarkers)
+      && this.section3PedestalScoreMarkers.length > 0
+
+    if (!starIsValid) {
+      const starGroup = section3Group?.userData?.section3PedestalScoreStar
+        || pedestal.getObjectByName?.('Section3 Pedestal Score Star')
+        || null
+
+      this.section3PedestalScoreStar = starGroup || null
+      this.section3PedestalScoreMarkers = section3Group?.userData?.section3PedestalScoreMarkers
+        || starGroup?.userData?.section3PedestalScoreMarkers
+        || []
+      this.section3PedestalScoreLineMaterial = section3Group?.userData?.section3PedestalScoreLineMaterial
+        || starGroup?.userData?.section3PedestalScoreLineMaterial
+        || starGroup?.children?.find?.((child) => child?.name === 'Section3 Pedestal Score Star Lines')?.material
+        || null
+      this.section3PedestalScoreGlowLight = section3Group?.userData?.section3PedestalScoreGlowLight
+        || starGroup?.userData?.section3PedestalScoreGlowLight
+        || starGroup?.children?.find?.((child) => child?.isPointLight && child.name === 'Section3 Pedestal Score Glow Light')
+        || null
+    }
+
+    return {
+      pedestal,
+      target,
+      slotAnchors: this.section3PedestalSlotAnchors
+    }
+  }
+
+  _updateSection3PedestalVisuals() {
+    const { pedestal } = this._ensureSection3PedestalRuntime()
+    if (!pedestal) return
+
+    const totalSlots = Math.max(1, this.section3PedestalSlotAssignments.length)
+    const filledSlots = this.section3PedestalSlotAssignments.reduce((count, entry) => count + (entry ? 1 : 0), 0)
+    const fillRatio = THREE.MathUtils.clamp(filledSlots / totalSlots, 0, 1)
+
+    const glowColor = this._tmpSection3PedestalGlowColor.copy(this._section3PedestalGlowStartColor)
+    glowColor.lerp(this._section3PedestalGlowEndColor, fillRatio)
+
+    if (this.section3PedestalScoreLineMaterial) {
+      this.section3PedestalScoreLineMaterial.color.copy(glowColor)
+      this.section3PedestalScoreLineMaterial.opacity = THREE.MathUtils.lerp(0.76, 1, fillRatio)
+    }
+
+    if (this.section3PedestalScoreGlowLight) {
+      this.section3PedestalScoreGlowLight.color.copy(glowColor)
+      this.section3PedestalScoreGlowLight.intensity = THREE.MathUtils.lerp(
+        SCENE1_CONFIG.section3PedestalVisualGlowLightMinIntensity,
+        SCENE1_CONFIG.section3PedestalVisualGlowLightMaxIntensity,
+        fillRatio
+      )
+      this.section3PedestalScoreGlowLight.distance = THREE.MathUtils.lerp(
+        SCENE1_CONFIG.section3PedestalVisualGlowLightMinDistance,
+        SCENE1_CONFIG.section3PedestalVisualGlowLightMaxDistance,
+        fillRatio
+      )
+    }
+
+    this.section3PedestalScoreMarkers.forEach((marker, index) => {
+      const material = marker?.material
+      if (!material) return
+
+      const isFilled = !!this.section3PedestalSlotAssignments[index]
+      material.color.copy(glowColor)
+      material.emissive.copy(glowColor)
+      material.emissiveIntensity = THREE.MathUtils.lerp(
+        SCENE1_CONFIG.section3PedestalVisualMarkerGlowMinIntensity,
+        SCENE1_CONFIG.section3PedestalVisualMarkerGlowMaxIntensity,
+        fillRatio
+      ) + (isFilled ? 0.55 : 0)
+      material.opacity = isFilled
+        ? THREE.MathUtils.lerp(0.92, 1, fillRatio)
+        : THREE.MathUtils.lerp(0.78, 0.92, fillRatio)
+    })
+  }
+
+  _getSection3PedestalWorldCenter(pedestal, target = this._tmpSection3PedestalCenterPos) {
+    if (!pedestal?.getWorldPosition) return target.set(0, 140, 0)
+    return pedestal.getWorldPosition(target)
+  }
+
+  _getSection3PedestalTopY(pedestal) {
+    const center = this._getSection3PedestalWorldCenter(pedestal)
+    const height = pedestal?.geometry?.parameters?.height || 0.18
+    const scaleY = Math.abs(pedestal?.scale?.y || 1)
+    return center.y + ((height * scaleY) * 0.5)
+  }
+
+  _getSection3PedestalWorldRadius(pedestal) {
+    const radiusTop = pedestal?.geometry?.parameters?.radiusTop || 4.1
+    const radiusBottom = pedestal?.geometry?.parameters?.radiusBottom || radiusTop
+    const scale = Math.max(Math.abs(pedestal?.scale?.x || 1), Math.abs(pedestal?.scale?.z || 1))
+    return Math.max(radiusTop, radiusBottom) * scale
+  }
+
+  _getSection3PedestalBallRadius(entry) {
+    const bodyShape = entry?.body?.shapes?.find((shape) => typeof shape?.radius === 'number')
+    if (typeof bodyShape?.radius === 'number' && bodyShape.radius > 0) {
+      return bodyShape.radius
+    }
+
+    const meshRadius = entry?.mesh?.children?.find?.((child) => child?.isMesh)?.geometry?.parameters?.radius
+    if (typeof meshRadius === 'number' && meshRadius > 0) {
+      return meshRadius
+    }
+
+    return 0.25
+  }
+
+  _getSection3PedestalBallScoreValue(entryOrName) {
+    const explicitValue = typeof entryOrName?.userData?.section3PedestalScoreValue === 'number'
+      ? entryOrName.userData.section3PedestalScoreValue
+      : typeof entryOrName?.body?.userData?.section3PedestalScoreValue === 'number'
+        ? entryOrName.body.userData.section3PedestalScoreValue
+        : typeof entryOrName?.mesh?.userData?.section3PedestalScoreValue === 'number'
+          ? entryOrName.mesh.userData.section3PedestalScoreValue
+          : null
+
+    if (explicitValue !== null) return explicitValue
+
+    const sourceName = typeof entryOrName === 'string'
+      ? entryOrName
+      : entryOrName?.userData?.section3PedestalSourceName
+        || entryOrName?.body?.userData?.section3PedestalSourceName
+        || entryOrName?.mesh?.userData?.section3PedestalSourceName
+        || entryOrName?.name
+        || ''
+
+    if (sourceName.includes('Bowling')) return 20
+    if (sourceName.includes('Cue Ball')) return 0
+
+    const match = sourceName.match(/Ball\s+(\d+)/)
+    return match ? Math.max(0, parseInt(match[1], 10) || 0) : 0
+  }
+
+  _markSection3PedestalBallFlags(entry, extra = {}) {
+    if (!entry) return
+
+    entry.userData = entry.userData || {}
+    Object.assign(entry.userData, { isSection3PedestalBall: true }, extra)
+
+    if (entry.mesh?.userData) {
+      Object.assign(entry.mesh.userData, { isSection3PedestalBall: true }, extra)
+    }
+
+    if (entry.body?.userData) {
+      Object.assign(entry.body.userData, { isSection3PedestalBall: true }, extra)
+    }
+  }
+
+  _updateSection3PedestalScore() {
+    let nextScore = 0
+    const assignments = Array.isArray(this.section3PedestalSlotAssignments)
+      ? this.section3PedestalSlotAssignments
+      : []
+
+    for (const entry of assignments) {
+      if (!entry) continue
+      nextScore += this._getSection3PedestalBallScoreValue(entry)
+    }
+
+    this.section3PedestalScore = nextScore
+    return nextScore
+  }
+
+  _computeSection3PedestalSlotTargetPosition(slotAnchor, pedestal, entry, target = this._tmpSection3PedestalBallTargetPos) {
+    if (!slotAnchor?.getWorldPosition) {
+      return target.set(0, this._getSection3PedestalTopY(pedestal) + this._getSection3PedestalBallRadius(entry), 0)
+    }
+
+    slotAnchor.getWorldPosition(target)
+    target.y = this._getSection3PedestalTopY(pedestal) + this._getSection3PedestalBallRadius(entry)
+    return target
+  }
+
+  _releaseSection3PedestalSlot(slotIndex, resetDespawnTimer = true) {
+    if (!Array.isArray(this.section3PedestalSlotAssignments) || slotIndex < 0 || slotIndex >= this.section3PedestalSlotAssignments.length) {
+      return null
+    }
+
+    const entry = this.section3PedestalSlotAssignments[slotIndex] || null
+    this.section3PedestalSlotAssignments[slotIndex] = null
+
+    if (!entry) return null
+
+    const state = this.section3PedestalBallEntries.get(entry)
+    if (state) {
+      state.slotIndex = -1
+      state.isAnimating = false
+      state.animationElapsed = 0
+      state.animationLift = 0
+      if (resetDespawnTimer) {
+        state.despawnAt = Date.now() + (SCENE1_CONFIG.section3PedestalDespawnSec * 1000)
+      }
+    }
+
+    this._markSection3PedestalBallFlags(entry, {
+      isSection3PedestalSlotted: false,
+      section3PedestalSlotIndex: -1
+    })
+
+    if (entry.body) {
+      entry.body.collisionResponse = true
+      entry.body.aabbNeedsUpdate = true
+      if (typeof entry.body.wakeUp === 'function') entry.body.wakeUp()
+    }
+
+    return entry
+  }
+
+  _findSection3PedestalCaptureSlotIndex(entry, slotAnchors) {
+    if (!entry?.body || !Array.isArray(slotAnchors) || slotAnchors.length === 0) return -1
+
+    const currentState = this.section3PedestalBallEntries.get(entry)
+    if (currentState?.slotIndex >= 0) {
+      const assignedEntry = this.section3PedestalSlotAssignments[currentState.slotIndex]
+      if (!assignedEntry || assignedEntry === entry) {
+        return currentState.slotIndex
+      }
+    }
+
+    let nearestSlot = -1
+    let nearestDistSq = Infinity
+
+    for (let i = 0; i < slotAnchors.length; i++) {
+      const assignedEntry = this.section3PedestalSlotAssignments[i]
+      if (assignedEntry && assignedEntry !== entry) continue
+
+      slotAnchors[i].getWorldPosition(this._tmpSection3PedestalSlotWorldPos)
+      const dx = entry.body.position.x - this._tmpSection3PedestalSlotWorldPos.x
+      const dz = entry.body.position.z - this._tmpSection3PedestalSlotWorldPos.z
+      const distSq = (dx * dx) + (dz * dz)
+      if (distSq >= nearestDistSq) continue
+
+      nearestDistSq = distSq
+      nearestSlot = i
+    }
+
+    return nearestSlot
+  }
+
+  _startSection3PedestalSlotAnimation(entry, slotIndex, pedestal, slotAnchors) {
+    if (!entry?.body || !entry?.mesh || !pedestal || !Array.isArray(slotAnchors)) return false
+    const slotAnchor = slotAnchors[slotIndex]
+    if (!slotAnchor?.parent) return false
+
+    const state = this.section3PedestalBallEntries.get(entry)
+    if (!state) return false
+
+    if (state.slotIndex >= 0 && state.slotIndex !== slotIndex) {
+      this._releaseSection3PedestalSlot(state.slotIndex, false)
+    }
+
+    this.section3PedestalSlotAssignments[slotIndex] = entry
+    state.slotIndex = slotIndex
+    state.isAnimating = true
+    state.animationElapsed = 0
+    state.animationLift = Math.max(
+      SCENE1_CONFIG.section3PedestalSlotAnimLift,
+      this._getSection3PedestalBallRadius(entry) * 1.2
+    )
+    state.animationStartPos.copy(entry.body.position)
+    this._computeSection3PedestalSlotTargetPosition(slotAnchor, pedestal, entry, state.animationTargetPos)
+    state.despawnAt = null
+
+    this._markSection3PedestalBallFlags(entry, {
+      isSection3PedestalSlotted: true,
+      section3PedestalSlotIndex: slotIndex
+    })
+
+    entry.body.velocity.set(0, 0, 0)
+    entry.body.angularVelocity.set(0, 0, 0)
+    entry.body.collisionResponse = false
+    entry.body.aabbNeedsUpdate = true
+    if (typeof entry.body.wakeUp === 'function') entry.body.wakeUp()
+    return true
+  }
+
+  _getSection3PedestalSpawnPosition(pedestal) {
+    const center = this._getSection3PedestalWorldCenter(pedestal)
+    const pedestalRadius = this._getSection3PedestalWorldRadius(pedestal)
+    const platformBounds = this._resolveSection3PlatformBounds()
+    const minRadius = Math.max(SCENE1_CONFIG.section3PedestalSpawnRadiusMin, pedestalRadius + 2.1)
+    const maxPlatformRadius = platformBounds?.radius ? Math.max(minRadius + 0.1, platformBounds.radius - 10) : SCENE1_CONFIG.section3PedestalSpawnRadiusMax
+    const maxRadius = Math.max(minRadius + 0.1, Math.min(SCENE1_CONFIG.section3PedestalSpawnRadiusMax, maxPlatformRadius))
+    const angle = Math.random() * Math.PI * 2
+    const radius = THREE.MathUtils.lerp(minRadius, maxRadius, Math.sqrt(Math.random()))
+
+    return new THREE.Vector3(
+      center.x + Math.cos(angle) * radius,
+      center.y + SCENE1_CONFIG.section3PedestalSpawnHeight,
+      center.z + Math.sin(angle) * radius
+    )
+  }
+
+  _spawnSection3PedestalBall(syncList) {
+    if (this.section3PedestalSpawnPending || !this.spawner || !this.mainScene || !this.world || !this.physicsMaterials || !Array.isArray(syncList)) {
+      return
+    }
+
+    const { pedestal, slotAnchors } = this._ensureSection3PedestalRuntime()
+    if (!pedestal || slotAnchors.length === 0) return
+
+    this.section3PedestalSpawnPending = true
+
+    import('../assets/objects/BallFactory.js').then((module) => {
+      const ballAssets = module.getBallAssets(this.renderer)
+      if (!Array.isArray(ballAssets) || ballAssets.length === 0) return
+
+      const ballAsset = ballAssets[Math.floor(Math.random() * ballAssets.length)]
+      if (!ballAsset?.factory || !ballAsset?.physics) return
+
+      const sourceName = ballAsset.name || 'Ball'
+      const prefabName = `Section3 Pedestal ${sourceName}`
+      const scoreValue = this._getSection3PedestalBallScoreValue(sourceName)
+      const spawnPos = this._getSection3PedestalSpawnPosition(pedestal)
+      const ballNumberMatch = sourceName.match(/Ball\s+(\d+)/)
+      const ballNumber = sourceName.includes('Cue Ball')
+        ? 0
+        : ballNumberMatch
+          ? parseInt(ballNumberMatch[1], 10)
+          : null
+
+      const prefab = {
+        name: prefabName,
+        type: 'dynamic',
+        createMesh: () => {
+          const mesh = ballAsset.factory()
+          mesh.name = prefabName
+          mesh.userData = mesh.userData || {}
+          mesh.userData.shadowConfig = { size: 1.0, opacity: 0.6, fadeRate: 0.5 }
+          mesh.userData.section3PedestalSourceName = sourceName
+          mesh.userData.section3PedestalScoreValue = scoreValue
+          return mesh
+        },
+        createBody: () => {
+          const shape = ballAsset.physics.shapes?.[0]
+          const body = new CANNON.Body({
+            mass: ballAsset.physics.mass,
+            collisionFilterGroup: COLLISION_GROUPS.BALL,
+            collisionFilterMask: COLLISION_MASKS.BALL,
+            material: this.physicsMaterials?.ball || undefined,
+            linearDamping: ballAsset.physics.linearDamping || 0.1,
+            angularDamping: ballAsset.physics.angularDamping || 0.8
+          })
+          body.addShape(new CANNON.Sphere(shape?.radius || 0.25))
+          body.userData = body.userData || {}
+          body.userData.section3PedestalSourceName = sourceName
+          body.userData.section3PedestalScoreValue = scoreValue
+          return body
+        }
+      }
+
+      const entry = this.spawner({
+        scene: this.mainScene,
+        prefab,
+        position: spawnPos,
+        world: this.world,
+        physicsMaterials: this.physicsMaterials,
+        syncList: this.syncList,
+        particleManager: this.particleManager
+      })
+
+      if (!entry) return
+
+      if (Number.isFinite(ballNumber)) {
+        entry.userData = entry.userData || {}
+        entry.userData.ballNumber = ballNumber
+        if (entry.mesh?.userData) entry.mesh.userData.ballNumber = ballNumber
+      }
+
+      this._markSection3PedestalBallFlags(entry, {
+        section3PedestalSourceName: sourceName,
+        section3PedestalScoreValue: scoreValue,
+        isSection3PedestalSlotted: false,
+        section3PedestalSlotIndex: -1
+      })
+
+      this.section3PedestalBallEntries.set(entry, {
+        slotIndex: -1,
+        isAnimating: false,
+        animationElapsed: 0,
+        animationLift: 0,
+        animationStartPos: new THREE.Vector3().copy(entry.body?.position || entry.mesh?.position || spawnPos),
+        animationTargetPos: new THREE.Vector3(),
+        despawnAt: Date.now() + (SCENE1_CONFIG.section3PedestalDespawnSec * 1000)
+      })
+
+      this._applyRandomRotation(entry)
+    }).catch((err) => {
+      console.error('[Scene1Manager] Error spawning section3 pedestal ball:', err)
+    }).finally(() => {
+      this.section3PedestalSpawnPending = false
+    })
+  }
+
+  _updateSection3PedestalBallEntries(syncList, delta) {
+    if (!Array.isArray(syncList) || this.section3PedestalBallEntries.size === 0) {
+      this._updateFunHouseElevatorScoreDisplay()
+      return
+    }
+
+    const { pedestal, slotAnchors } = this._ensureSection3PedestalRuntime()
+    if (!pedestal || slotAnchors.length === 0) {
+      this._updateFunHouseElevatorScoreDisplay()
+      return
+    }
+
+    const now = Date.now()
+    const topY = this._getSection3PedestalTopY(pedestal)
+    const pedestalCenter = this._getSection3PedestalWorldCenter(pedestal)
+    const captureRadiusSq = SCENE1_CONFIG.section3PedestalCaptureRadius * SCENE1_CONFIG.section3PedestalCaptureRadius
+    const releaseDistanceSq = SCENE1_CONFIG.section3PedestalSlotReleaseDistance * SCENE1_CONFIG.section3PedestalSlotReleaseDistance
+    let scoreDirty = false
+
+    for (const [entry, state] of Array.from(this.section3PedestalBallEntries.entries())) {
+      if (!syncList.includes(entry) || !entry?.body || !entry?.mesh) {
+        if (state?.slotIndex >= 0) {
+          this._releaseSection3PedestalSlot(state.slotIndex, false)
+          scoreDirty = true
+        }
+        this.section3PedestalBallEntries.delete(entry)
+        continue
+      }
+
+      if (state.isAnimating) {
+        state.animationElapsed += Math.max(0, delta)
+        const t = THREE.MathUtils.clamp(
+          state.animationElapsed / Math.max(0.001, SCENE1_CONFIG.section3PedestalSlotAnimDuration),
+          0,
+          1
+        )
+        const eased = THREE.MathUtils.smoothstep(t, 0, 1)
+        this._tmpSection3PedestalBallCurrentPos.copy(state.animationStartPos).lerp(state.animationTargetPos, eased)
+        this._tmpSection3PedestalBallCurrentPos.y += Math.sin(eased * Math.PI) * state.animationLift
+
+        entry.body.position.copy(this._tmpSection3PedestalBallCurrentPos)
+        entry.mesh.position.copy(this._tmpSection3PedestalBallCurrentPos)
+        entry.body.velocity.set(0, 0, 0)
+        entry.body.angularVelocity.set(0, 0, 0)
+        entry.body.aabbNeedsUpdate = true
+
+        if (t >= 1) {
+          state.isAnimating = false
+          state.animationElapsed = 0
+          state.animationLift = 0
+          entry.body.position.copy(state.animationTargetPos)
+          entry.mesh.position.copy(state.animationTargetPos)
+          entry.body.collisionResponse = true
+          entry.body.aabbNeedsUpdate = true
+        }
+        continue
+      }
+
+      if (state.slotIndex >= 0) {
+        const slotAnchor = slotAnchors[state.slotIndex]
+        if (!slotAnchor?.parent) {
+          this._releaseSection3PedestalSlot(state.slotIndex)
+          scoreDirty = true
+          continue
+        }
+
+        this._computeSection3PedestalSlotTargetPosition(slotAnchor, pedestal, entry, this._tmpSection3PedestalBallTargetPos)
+        const dx = entry.body.position.x - this._tmpSection3PedestalBallTargetPos.x
+        const dz = entry.body.position.z - this._tmpSection3PedestalBallTargetPos.z
+        const distSq = (dx * dx) + (dz * dz)
+        const heightDiff = Math.abs(entry.body.position.y - this._tmpSection3PedestalBallTargetPos.y)
+
+        if (distSq > releaseDistanceSq || heightDiff > SCENE1_CONFIG.section3PedestalSlotReleaseHeight) {
+          this._releaseSection3PedestalSlot(state.slotIndex)
+          scoreDirty = true
+        }
+        continue
+      }
+
+      const radius = this._getSection3PedestalBallRadius(entry)
+      const dxToCenter = entry.body.position.x - pedestalCenter.x
+      const dzToCenter = entry.body.position.z - pedestalCenter.z
+      const distToCenterSq = (dxToCenter * dxToCenter) + (dzToCenter * dzToCenter)
+      const heightAboveTop = entry.body.position.y - topY
+      const withinCaptureHeight = heightAboveTop >= -(radius * 0.5)
+        && heightAboveTop <= (radius + SCENE1_CONFIG.section3PedestalCaptureHeightPadding)
+
+      if (distToCenterSq <= captureRadiusSq && withinCaptureHeight) {
+        const slotIndex = this._findSection3PedestalCaptureSlotIndex(entry, slotAnchors)
+        if (slotIndex >= 0 && this._startSection3PedestalSlotAnimation(entry, slotIndex, pedestal, slotAnchors)) {
+          scoreDirty = true
+          continue
+        }
+      }
+
+      if (state.despawnAt !== null && now >= state.despawnAt) {
+        this.section3PedestalBallEntries.delete(entry)
+        this._despawnEntry(entry)
+      }
+    }
+
+    if (scoreDirty) {
+      this._updateSection3PedestalScore()
+    }
+
+    this._updateFunHouseElevatorScoreDisplay()
+  }
+
+  _updateFunHouseElevatorScoreDisplay() {
+    const funHouse = this._ensureFunHouseEntry()
+    const elevator = funHouse?.mesh?.getObjectByName?.('Fun House Elevator') || null
+    if (!elevator) {
+      this.funHouseElevatorDisplayPanel = null
+      return
+    }
+
+    if (!this.funHouseElevatorDisplayPanel?.parent) {
+      this.funHouseElevatorDisplayPanel = null
+      elevator.traverseVisible((child) => {
+        if (!this.funHouseElevatorDisplayPanel && child?.userData && typeof child.userData.updateDisplay === 'function') {
+          this.funHouseElevatorDisplayPanel = child
+        }
+      })
+    }
+
+    if (this.funHouseElevatorDisplayPanel?.userData?.updateDisplay) {
+      this.funHouseElevatorDisplayPanel.userData.updateDisplay(
+        this.section3PedestalScore,
+        false,
+        SCENE1_CONFIG.section3PedestalFullScore
+      )
+    }
+  }
+
+  _updateSection3PedestalSystem(syncList, delta) {
+    this._updateSection3PedestalBallEntries(syncList, delta)
+    this._updateSection3PedestalVisuals()
+
+    if (this.activeSectionId !== 'section3') return
+
+    this.section3PedestalSpawnTimer -= Math.max(0, delta)
+    if (this.section3PedestalSpawnTimer > 0) return
+
+    this._resetSection3PedestalSpawnTimer()
+    this._spawnSection3PedestalBall(syncList)
+  }
+
   _clearSection3Sacrifice(camera = null, options = {}) {
     const { cancelGuide = true } = options
     const guideEntry = this.section3SacrificeState?.guideEntry || null
@@ -2013,7 +2684,9 @@ export class Scene1Manager {
 
     const sacrificeWindowOpened = eyeBot._descentElapsed >= SCENE1_CONFIG.section3SacrificeTriggerSec
 
-    if (!currentState && sacrificeWindowOpened) {
+    const funHouseScoreReady = this.section3PedestalScore >= SCENE1_CONFIG.section3PedestalFullScore
+
+    if (!currentState && sacrificeWindowOpened && funHouseScoreReady) {
       const { target } = this._ensureSection3SacrificePedestal()
       const guideEntry = this._findSection3SacrificeGuide(syncList, playerEntry)
       const guideAI = guideEntry?.body?.userData?.guideAI || null
@@ -3052,8 +3725,10 @@ export class Scene1Manager {
     this.penaltyDudeActive = true
     this.penaltyDudeTouchedPlayer = false
     this.ballSpawningActive = false
+    this.currentBatchSpawningComplete = true
     this.isResetActive = false
     this.resetTimer = 0
+    this._invalidatePendingBallSpawns()
 
     // Clear all existing balls immediately
     const ballsToDestroy = this.syncList.filter(e => e && e.name && e.name.startsWith('Ball '))
@@ -3063,6 +3738,8 @@ export class Scene1Manager {
 
     this.currentBatchBalls = []
     this.previousBallNames.clear()
+    this.currentBallNamesBuffer.clear()
+    this.currentBallNumberBuffer.clear()
 
     this._spawnPenaltyDude()
   }
@@ -4572,6 +5249,12 @@ export class Scene1Manager {
     this.pendingBallSpawnTimers.clear()
   }
 
+  _invalidatePendingBallSpawns() {
+    this.ballSpawnGeneration += 1
+    this._cancelPendingBallSpawnTimers()
+    this._cancelPendingBowlingSpawn()
+  }
+
   _despawnBowlingBall(reason = '') {
     if (!this.bowlingBallEntry) return false
 
@@ -5498,6 +6181,20 @@ export class Scene1Manager {
     })
   }
 
+  _collectDynamicPhysicsEntries(syncList) {
+    const dynamicEntries = this._section2DynamicEntriesBuffer
+    dynamicEntries.length = 0
+    if (!Array.isArray(syncList)) return dynamicEntries
+
+    for (const entry of syncList) {
+      if (entry?.body && entry.body.mass > 0 && entry.mesh) {
+        dynamicEntries.push(entry)
+      }
+    }
+
+    return dynamicEntries
+  }
+
   _updateSection2ProximitySystems(syncList, delta, particleManager = null) {
     if (!syncList) return
 
@@ -5507,13 +6204,13 @@ export class Scene1Manager {
     if (!this.isInSection2Run || !playerInSection2) {
       // Only build the expensive dynamicEntries list when we actually need to clear active effects.
       if (this.section2IsUnderwater || this.section2UnderwaterBlend > 0.001) {
-        const dynamicEntries = syncList.filter(entry => entry.body && entry.body.mass > 0 && entry.mesh)
+        const dynamicEntries = this._collectDynamicPhysicsEntries(syncList)
         this._deactivateSection2Effects(dynamicEntries)
       }
       return
     }
 
-    const dynamicEntries = syncList.filter(entry => entry.body && entry.body.mass > 0 && entry.mesh)
+    const dynamicEntries = this._collectDynamicPhysicsEntries(syncList)
     this._ensureSection2ObjectsCached()
 
     this._updateSection2Water(delta, playerEntry, dynamicEntries, particleManager)
@@ -5695,6 +6392,8 @@ export class Scene1Manager {
     
     this.isResetActive = true
     this.resetTimer = 3000 // 3 seconds in milliseconds
+    this.currentBatchSpawningComplete = true
+    this._invalidatePendingBallSpawns()
     
     // Despawn all balls in currentBatchBalls
     this.currentBatchBalls.forEach(ballEntry => {
@@ -5709,6 +6408,9 @@ export class Scene1Manager {
     }
     
     this.currentBatchBalls = []
+    this.previousBallNames.clear()
+    this.currentBallNamesBuffer.clear()
+    this.currentBallNumberBuffer.clear()
   }
 
   /**
@@ -5810,7 +6512,7 @@ export class Scene1Manager {
         this._spawnNextBallBatch(syncList)
       } else if (!this.allBallsSpawned) {
         // All regular balls spawned, spawn ball 8 immediately in front of player
-        this._spawnBall8(syncList)
+        this._spawnBall8(syncList, this.ballSpawnGeneration)
         this.allBallsSpawned = true
         this.ballSpawningActive = false
       }
@@ -5824,6 +6526,8 @@ export class Scene1Manager {
    */
   _spawnNextBallBatch(syncList) {
     if (this.ballBatchIndex >= this.ballSpawnSequence.length) return
+
+    const spawnGeneration = this.ballSpawnGeneration
 
     // Mark that we're scheduling spawns for this batch
     this.currentBatchSpawningComplete = false
@@ -5851,7 +6555,8 @@ export class Scene1Manager {
       if (delay > maxBallDelay) maxBallDelay = delay
       const timerId = setTimeout(() => {
         this.pendingBallSpawnTimers.delete(timerId)
-        this._spawnSingleBall(ballNumber, syncList)
+        if (spawnGeneration !== this.ballSpawnGeneration) return
+        this._spawnSingleBall(ballNumber, syncList, spawnGeneration)
       }, delay)
       this.pendingBallSpawnTimers.add(timerId)
       this.ballBatchIndex++
@@ -5864,7 +6569,8 @@ export class Scene1Manager {
       this._cancelPendingBowlingSpawn()
       this.pendingBowlingSpawnTimer = setTimeout(() => {
         this.pendingBowlingSpawnTimer = null
-        this._spawnBowlingBall(syncList)
+        if (spawnGeneration !== this.ballSpawnGeneration) return
+        this._spawnBowlingBall(syncList, null, spawnGeneration)
       }, bowlingDelay)
     }
     
@@ -5875,8 +6581,12 @@ export class Scene1Manager {
   /**
    * Spawn a single ball by number
    */
-  _spawnSingleBall(ballNumber, syncList) {
+  _spawnSingleBall(ballNumber, syncList, spawnGeneration = this.ballSpawnGeneration) {
+    if (spawnGeneration !== this.ballSpawnGeneration) return
+
     import('../assets/objects/BallFactory.js').then(module => {
+      if (spawnGeneration !== this.ballSpawnGeneration) return
+
       const ballAssets = module.getBallAssets(this.renderer)
       
       if (!ballAssets || ballAssets.length === 0) {
@@ -5969,10 +6679,12 @@ export class Scene1Manager {
    * Spawn a bowling ball to accompany the ball batch
    * Max 1 bowling ball at a time; auto-despawns after 45-90 seconds
    */
-  _spawnBowlingBall(syncList, overrideSpawnPos = null) {
+  _spawnBowlingBall(syncList, overrideSpawnPos = null, spawnGeneration = this.ballSpawnGeneration) {
+    if (spawnGeneration !== this.ballSpawnGeneration) return
     if (this.isInSection2Run || this.bowlingBallEntry) return
 
     import('../assets/objects/BallFactory.js').then(module => {
+      if (spawnGeneration !== this.ballSpawnGeneration) return
       if (this.isInSection2Run || this.bowlingBallEntry) return
 
       const ballAssets = module.getBallAssets(this.renderer)
@@ -6074,8 +6786,12 @@ export class Scene1Manager {
   /**
    * Spawn ball 8 in front of player
    */
-  _spawnBall8(syncList) {
+  _spawnBall8(syncList, spawnGeneration = this.ballSpawnGeneration) {
+    if (spawnGeneration !== this.ballSpawnGeneration) return
+
     import('../assets/objects/BallFactory.js').then(module => {
+      if (spawnGeneration !== this.ballSpawnGeneration) return
+
       const ballAssets = module.getBallAssets(this.renderer)
       
       if (!ballAssets || ballAssets.length === 0) {
@@ -6500,6 +7216,23 @@ export class Scene1Manager {
     this.section2PipeBall8DestroyedCount = 0
     this.section2PipeRewardSpawned = false
     this.section2PipeRewardEntry = null
+    for (const [entry] of this.section3PedestalBallEntries) {
+      this._despawnEntry(entry)
+    }
+    this.section3PedestalBallEntries.clear()
+    this.section3PedestalSlotAssignments = []
+    this.section3PedestalSlotAnchors = []
+    this.section3PedestalSpawnPending = false
+    this._resetSection3PedestalSpawnTimer()
+    this.section3PedestalScore = 0
+    this.section3PedestalScoreStar = null
+    this.section3PedestalScoreMarkers = []
+    this.section3PedestalScoreLineMaterial = null
+    this.section3PedestalScoreGlowLight = null
+    if (this.funHouseElevatorDisplayPanel?.userData?.updateDisplay) {
+      this.funHouseElevatorDisplayPanel.userData.updateDisplay(0, false, SCENE1_CONFIG.section3PedestalFullScore)
+    }
+    this.funHouseElevatorDisplayPanel = null
     resetSoundFilter1({ immediate: true })
     this._section3HouseScaleRegistry.clear()
     this._section3HouseScaleUpdateAccumulator = 0

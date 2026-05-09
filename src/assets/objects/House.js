@@ -783,9 +783,9 @@ function createFunHouseMesh(options = {}) {
   elevator.scale.setScalar(FUN_HOUSE_CONFIG.elevatorScale)
   elevator.userData.animationConfig = {
     duration: 2.6,
-    maxGlowIntensity: 5,
-    maxEnvironmentLightIntensity: 120,
-    environmentLightDistance: 8
+    maxGlowIntensity: 7,
+    maxEnvironmentLightIntensity: 22,
+    environmentLightDistance: 7
   }
   elevator.traverse((child) => {
     if (!child?.isMesh || !child.material) return
