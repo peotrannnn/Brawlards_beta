@@ -152,6 +152,7 @@ export class ScreenMat {
     this.isFlash = false
     this.flashRemainingMs = 0
     this.lowCost = false
+    this.loadingTransition = null
 
     if (typeof document !== 'undefined') {
       ensureStyles()
@@ -177,6 +178,12 @@ export class ScreenMat {
     if (this.overlay) {
       this.overlay.classList.toggle('low-cost', this.lowCost)
     }
+  }
+
+  _setWhiteLayerOpacity(opacity) {
+    if (!this.whiteFlashLayer) return
+    const clamped = Number.isFinite(opacity) ? Math.max(0, Math.min(1, opacity)) : 0
+    this.whiteFlashLayer.style.opacity = clamped.toFixed(2)
   }
 
   start(durationMs = 8000, options = {}) {
@@ -238,38 +245,116 @@ export class ScreenMat {
     this.overlay.style.setProperty('--ghost-alpha', '0.25')
   }
 
+  startLoadingTransition(options = {}) {
+    if (!this.whiteFlashLayer) return
+
+    const fadeInMs = Math.max(0, options.fadeInMs ?? 500)
+    const fadeOutMs = Math.max(0, options.fadeOutMs ?? 500)
+
+    this.loadingTransition = {
+      fadeInMs,
+      fadeOutMs,
+      elapsedMs: 0,
+      opacity: fadeInMs > 0 ? 0 : 1,
+      phase: fadeInMs > 0 ? 'fadeIn' : 'hold',
+      readyToFadeOut: false
+    }
+
+    this.whiteFlashLayer.style.background = options.color || '#ffffff'
+    this._setWhiteLayerOpacity(this.loadingTransition.opacity)
+  }
+
+  finishLoadingTransition() {
+    if (!this.loadingTransition) return
+
+    this.loadingTransition.readyToFadeOut = true
+    if (this.loadingTransition.phase === 'hold') {
+      this.loadingTransition.phase = 'fadeOut'
+      this.loadingTransition.elapsedMs = 0
+    }
+  }
+
+  isLoadingTransitionActive() {
+    return !!this.loadingTransition
+  }
+
+  isLoadingTransitionOpaque() {
+    if (!this.loadingTransition) return false
+    return this.loadingTransition.phase === 'hold' && this.loadingTransition.opacity >= 0.999
+  }
+
   stop() {
     this.active = false
     this.remainingMs = 0
     this.flashRemainingMs = 0
+    this.loadingTransition = null
 
     if (this.overlay) {
       this.overlay.classList.remove('active')
       this.overlay.style.opacity = '0'
     }
 
-    if (this.whiteFlashLayer) {
-      this.whiteFlashLayer.style.opacity = '0'
-    }
+    this._setWhiteLayerOpacity(0)
   }
 
   update(deltaSeconds) {
-    if (!this.active || !this.overlay) return
+    if ((!this.active && !this.loadingTransition) || (!this.overlay && !this.whiteFlashLayer)) return
 
     // clamp delta to avoid jump
     deltaSeconds = Math.min(deltaSeconds, 0.033)
 
-    this.remainingMs -= deltaSeconds * 1000
-    this.elapsedMs += deltaSeconds * 1000
+    const deltaMs = deltaSeconds * 1000
 
-    // Handle white flash fade (2 seconds)
+    let flashOpacity = 0
     if (this.flashRemainingMs > 0) {
-      this.flashRemainingMs -= deltaSeconds * 1000
-      const flashOpacity = Math.max(0, this.flashRemainingMs / 2000)
-      if (this.whiteFlashLayer) {
-        this.whiteFlashLayer.style.opacity = flashOpacity.toFixed(2)
+      this.flashRemainingMs = Math.max(0, this.flashRemainingMs - deltaMs)
+      flashOpacity = Math.max(0, this.flashRemainingMs / 2000)
+    }
+
+    let loadingOpacity = 0
+    if (this.loadingTransition) {
+      const transition = this.loadingTransition
+
+      if (transition.phase === 'fadeIn') {
+        transition.elapsedMs += deltaMs
+        const progress = transition.fadeInMs > 0
+          ? Math.min(transition.elapsedMs / transition.fadeInMs, 1)
+          : 1
+        transition.opacity = progress
+        if (progress >= 1) {
+          transition.phase = transition.readyToFadeOut ? 'fadeOut' : 'hold'
+          transition.elapsedMs = 0
+          transition.opacity = 1
+        }
+      } else if (transition.phase === 'hold') {
+        transition.opacity = 1
+        if (transition.readyToFadeOut) {
+          transition.phase = 'fadeOut'
+          transition.elapsedMs = 0
+        }
+      } else if (transition.phase === 'fadeOut') {
+        transition.elapsedMs += deltaMs
+        const progress = transition.fadeOutMs > 0
+          ? Math.min(transition.elapsedMs / transition.fadeOutMs, 1)
+          : 1
+        transition.opacity = 1 - progress
+        if (progress >= 1) {
+          this.loadingTransition = null
+          loadingOpacity = 0
+        }
+      }
+
+      if (this.loadingTransition) {
+        loadingOpacity = this.loadingTransition.opacity
       }
     }
+
+    this._setWhiteLayerOpacity(Math.max(flashOpacity, loadingOpacity))
+
+    if (!this.active || !this.overlay) return
+
+    this.remainingMs -= deltaMs
+    this.elapsedMs += deltaMs
 
     // Linear decay - tuyến tính giảm dần từ 1 đến 0
     const intensity = Math.max(0, this.remainingMs / this.totalDurationMs)

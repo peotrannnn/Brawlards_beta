@@ -148,15 +148,23 @@ const SCENE1_CONFIG = {
 const SECTION_WARMUP_CONFIG = {
   overlayFrameBudgetMs: 4.5,
   backgroundFrameBudgetMs: 2.5,
+  blockingFrameBudgetMs: 14,
   overlayMinVisibleMs: 900,
   overlayBatchSize: 10,
   backgroundBatchSize: 3,
+  blockingBatchSize: 24,
   silentCompileDelayMs: 32
 }
 
 const SECTION_STREAMING_CONFIG = {
   switchConfirmSec: 0.12,
-  pendingTeleportMaxWaitSec: 6.0
+  pendingTeleportMaxWaitSec: 6.0,
+  loadingFadeDurationMs: 500,
+  loadingRevealDelayFrames: 2,
+  loadingPostTeleportMinMs: 1800,
+  loadingPostTeleportMaxMs: 12000,
+  loadingStableFrameMaxMs: 24,
+  loadingStableFrameTarget: 18
 }
 
 export class Scene1Manager {
@@ -587,6 +595,14 @@ export class Scene1Manager {
     return this.sectionGroups?.[sectionId] || null
   }
 
+  _getRequiredWarmSections(destinationSection) {
+    if (destinationSection === 'section2' || destinationSection === 'section4') {
+      return ['section2', 'section4']
+    }
+
+    return [destinationSection]
+  }
+
   _enqueueSectionWarmup(sectionId, options = {}) {
     const state = this.sectionWarmState[sectionId]
     if (!state) return false
@@ -601,12 +617,23 @@ export class Scene1Manager {
     }
 
     if (!forceReload && state.loading) {
+      if (this.activeSectionWarmJob?.sectionId === sectionId) {
+        this.activeSectionWarmJob.blocking = this.activeSectionWarmJob.blocking || !!options.blocking
+        if (options.blocking) {
+          this.activeSectionWarmJob.silent = true
+        }
+      }
       return false
     }
 
     const existingIndex = this.sectionWarmQueue.findIndex(job => job.sectionId === sectionId)
     const existingQueued = existingIndex !== -1
     if (existingQueued && !forceReload) {
+      const existingJob = this.sectionWarmQueue[existingIndex]
+      existingJob.blocking = existingJob.blocking || !!options.blocking
+      if (options.blocking) {
+        existingJob.silent = true
+      }
       if (isHighPriority && existingIndex > 0) {
         const [job] = this.sectionWarmQueue.splice(existingIndex, 1)
         this.sectionWarmQueue.unshift(job)
@@ -618,7 +645,8 @@ export class Scene1Manager {
       sectionId,
       title: options.title || `Loading ${sectionId}`,
       forceReload,
-      silent: !!options.silent
+      silent: !!options.silent,
+      blocking: !!options.blocking
     }
 
     if (isHighPriority) {
@@ -670,7 +698,7 @@ export class Scene1Manager {
     this._section3WarmPrimeReady = true
   }
 
-  _processPendingTeleport() {
+  _processPendingTeleport(delta = 0) {
     const request = this.pendingTeleportRequest
     if (!request) return
 
@@ -678,8 +706,7 @@ export class Scene1Manager {
       playerEntry,
       targetPosition,
       options,
-      destinationSection,
-      queuedAtMs
+      destinationSection
     } = request
 
     if (!playerEntry?.body || !targetPosition) {
@@ -687,29 +714,95 @@ export class Scene1Manager {
       return
     }
 
-    const state = this.sectionWarmState[destinationSection]
-    const elapsedSec = (performance.now() - queuedAtMs) / 1000
-    const timedOut = elapsedSec >= SECTION_STREAMING_CONFIG.pendingTeleportMaxWaitSec
+    const mat = this._ensureScreenMat()
+    if (request.useLoadingScreen && !request.teleportCommitted) {
+      this._startSectionLoadingScreen()
+    }
+    const requiredSections = this._getRequiredWarmSections(destinationSection)
+    const allRequiredReady = requiredSections.every((sectionId) => {
+      const state = this.sectionWarmState[sectionId]
+      return !state || state.ready
+    })
 
-    if (state?.ready || timedOut) {
-      this.pendingTeleportRequest = null
-      this._teleportPlayerEntry(playerEntry, targetPosition, {
-        ...options,
-        skipSectionWarmupGate: true
-      })
+    requiredSections.forEach((sectionId) => {
+      const state = this.sectionWarmState[sectionId]
+      if (!state?.ready && !state?.loading) {
+        this._enqueueSectionWarmup(sectionId, {
+          title: `Loading ${sectionId}`,
+          priority: 'high',
+          silent: true,
+          blocking: true
+        })
+      }
+    })
+
+    if (request.useLoadingScreen && !request.teleportCommitted && !mat?.isLoadingTransitionOpaque()) {
       return
     }
 
-    if (!state?.loading) {
-      this._enqueueSectionWarmup(destinationSection, {
-        title: `Loading ${destinationSection}`,
-        showReadyOverlay: true,
-        priority: 'high'
-      })
+    if (allRequiredReady) {
+      if (!request.teleportCommitted) {
+        request.teleportCommitted = true
+        request.revealDelayFrames = SECTION_STREAMING_CONFIG.loadingRevealDelayFrames
+        request.revealStarted = false
+        request.effectStarted = false
+        request.postTeleportElapsedMs = 0
+        request.stableFrameCount = 0
+        request.lastFrameSampleAtMs = performance.now()
+
+        this._teleportPlayerEntry(playerEntry, targetPosition, {
+          ...options,
+          withEffect: false,
+          skipSectionWarmupGate: true,
+          skipSectionLoadingScreen: true
+        })
+        return
+      }
+
+      if (request.revealDelayFrames > 0) {
+        request.revealDelayFrames -= 1
+        return
+      }
+
+      if (request.useLoadingScreen && !request.revealStarted) {
+        const nowMs = performance.now()
+        const frameMs = Math.max(0, nowMs - (request.lastFrameSampleAtMs || nowMs))
+        request.lastFrameSampleAtMs = nowMs
+        request.postTeleportElapsedMs = (request.postTeleportElapsedMs || 0) + frameMs
+
+        if (frameMs <= SECTION_STREAMING_CONFIG.loadingStableFrameMaxMs) {
+          request.stableFrameCount = (request.stableFrameCount || 0) + 1
+        } else {
+          request.stableFrameCount = 0
+        }
+
+        const reachedMinSettle = request.postTeleportElapsedMs >= SECTION_STREAMING_CONFIG.loadingPostTeleportMinMs
+        const reachedStableFrameTarget = (request.stableFrameCount || 0) >= SECTION_STREAMING_CONFIG.loadingStableFrameTarget
+        const reachedMaxSettle = request.postTeleportElapsedMs >= SECTION_STREAMING_CONFIG.loadingPostTeleportMaxMs
+
+        if (!reachedMaxSettle && (!reachedMinSettle || !reachedStableFrameTarget)) {
+          return
+        }
+      }
+
+      if (request.useLoadingScreen && !request.revealStarted) {
+        if (options.withEffect && !request.effectStarted) {
+          this._playTeleportScreenMat(options.effectDurationMs)
+          request.effectStarted = true
+        }
+        mat?.finishLoadingTransition()
+        request.revealStarted = true
+        return
+      }
+
+      if (!request.useLoadingScreen || !mat?.isLoadingTransitionActive()) {
+        this.pendingTeleportRequest = null
+      }
+      return
     }
   }
 
-  _showSectionReadyOverlay(title, sectionId) {
+  _closeSectionWarmOverlay() {
     if (this.sectionWarmOverlayTimer !== null) {
       clearTimeout(this.sectionWarmOverlayTimer)
       this.sectionWarmOverlayTimer = null
@@ -719,6 +812,26 @@ export class Scene1Manager {
       this.sectionWarmOverlay.close()
       this.sectionWarmOverlay = null
     }
+  }
+
+  _startSectionLoadingScreen() {
+    const mat = this._ensureScreenMat()
+    if (!mat) return null
+
+    if (!mat.isLoadingTransitionActive()) {
+      this._closeSectionWarmOverlay()
+      mat.startLoadingTransition({
+        fadeInMs: SECTION_STREAMING_CONFIG.loadingFadeDurationMs,
+        fadeOutMs: SECTION_STREAMING_CONFIG.loadingFadeDurationMs,
+        color: '#ffffff'
+      })
+    }
+
+    return mat
+  }
+
+  _showSectionReadyOverlay(title, sectionId) {
+    this._closeSectionWarmOverlay()
 
     this.sectionWarmOverlay = createLoadingOverlay(title)
     this.sectionWarmOverlay.update(1, sectionId)
@@ -834,16 +947,22 @@ export class Scene1Manager {
     const total = Math.max(1, meshes.length)
     let index = 0
     const warmStartTime = performance.now()
-    const showOverlay = !job.silent
-    const frameBudgetMs = showOverlay
-      ? SECTION_WARMUP_CONFIG.overlayFrameBudgetMs
-      : SECTION_WARMUP_CONFIG.backgroundFrameBudgetMs
-    const batchSize = showOverlay
-      ? SECTION_WARMUP_CONFIG.overlayBatchSize
-      : SECTION_WARMUP_CONFIG.backgroundBatchSize
-    const minVisibleMs = showOverlay ? SECTION_WARMUP_CONFIG.overlayMinVisibleMs : 0
+    const shouldShowOverlay = () => !job.silent && !job.blocking
+    const getFrameBudgetMs = () => {
+      if (job.blocking) return SECTION_WARMUP_CONFIG.blockingFrameBudgetMs
+      return shouldShowOverlay()
+        ? SECTION_WARMUP_CONFIG.overlayFrameBudgetMs
+        : SECTION_WARMUP_CONFIG.backgroundFrameBudgetMs
+    }
+    const getBatchSize = () => {
+      if (job.blocking) return SECTION_WARMUP_CONFIG.blockingBatchSize
+      return shouldShowOverlay()
+        ? SECTION_WARMUP_CONFIG.overlayBatchSize
+        : SECTION_WARMUP_CONFIG.backgroundBatchSize
+    }
+    const getMinVisibleMs = () => shouldShowOverlay() ? SECTION_WARMUP_CONFIG.overlayMinVisibleMs : 0
 
-    if (showOverlay) {
+    if (shouldShowOverlay()) {
       this.sectionWarmOverlay = createLoadingOverlay(job.title)
       this.sectionWarmOverlay.update(0, 'starting')
     } else {
@@ -863,6 +982,8 @@ export class Scene1Manager {
     const step = () => {
       const startTime = performance.now()
       let batchCount = 0
+      const frameBudgetMs = getFrameBudgetMs()
+      const batchSize = getBatchSize()
       while (
         index < meshes.length &&
         batchCount < batchSize &&
@@ -897,7 +1018,8 @@ export class Scene1Manager {
 
       const realProgress = index / total
       const elapsedMs = performance.now() - warmStartTime
-      const timeProgress = Math.min(elapsedMs / minVisibleMs, 1)
+      const minVisibleMs = getMinVisibleMs()
+      const timeProgress = minVisibleMs > 0 ? Math.min(elapsedMs / minVisibleMs, 1) : 1
       const progress = Math.max(realProgress, timeProgress * 0.9)
 
       if (this.sectionWarmOverlay) {
@@ -916,6 +1038,7 @@ export class Scene1Manager {
         if (this.sectionWarmOverlay) {
           const elapsedAfterCompile = performance.now() - warmStartTime
           this.sectionWarmOverlay.update(1, 'complete')
+          const minVisibleMs = getMinVisibleMs()
           const remainingVisibleMs = Math.max(0, minVisibleMs - elapsedAfterCompile)
           setTimeout(closeOverlayAndContinue, remainingVisibleMs + 120)
           return
@@ -953,7 +1076,7 @@ export class Scene1Manager {
         try {
           // Ensure all mesh materials are defined and valid before compiling
           let invalidMeshes = [];
-          patchMaterials(this.mainScene);
+          patchMaterials(group);
           if (job.sectionId === 'section3') {
             this._primeSection3StreamingState(group)
           }
@@ -980,7 +1103,7 @@ export class Scene1Manager {
         compileSceneForSection().finally(compileAndFinalize)
       }
 
-      if (job.silent) {
+      if (job.silent && !job.blocking) {
         setTimeout(finalizeSectionWarmup, SECTION_WARMUP_CONFIG.silentCompileDelayMs)
       } else {
         finalizeSectionWarmup()
@@ -1404,7 +1527,7 @@ export class Scene1Manager {
     }
 
     this._startNextSectionWarmup()
-    this._processPendingTeleport()
+    this._processPendingTeleport(delta)
 
     this._updateSectionStreaming(syncList, delta)
     
@@ -3000,10 +3123,40 @@ export class Scene1Manager {
     const {
       withEffect = true,
       effectDurationMs = 4000,
-      skipSectionWarmupGate = false
+      skipSectionWarmupGate = false,
+      skipSectionLoadingScreen = false
     } = options
 
     const destinationSection = this._resolveSectionFromPosition(targetPosition)
+    const requiresSectionLoadingScreen = !skipSectionLoadingScreen && destinationSection !== this.activeSectionId
+
+    if (requiresSectionLoadingScreen && !skipSectionWarmupGate) {
+      if (this.pendingTeleportRequest) return
+
+      this._getRequiredWarmSections(destinationSection).forEach((sectionId) => {
+        this._enqueueSectionWarmup(sectionId, {
+          title: `Loading ${sectionId}`,
+          priority: 'high',
+          silent: true,
+          blocking: true
+        })
+      })
+
+      this.pendingTeleportRequest = {
+        playerEntry,
+        targetPosition: targetPosition.clone(),
+        options: { withEffect, effectDurationMs },
+        destinationSection,
+        useLoadingScreen: true,
+        teleportCommitted: false,
+        effectStarted: false,
+        revealStarted: false,
+        revealDelayFrames: 0
+      }
+
+      this._startSectionLoadingScreen()
+      return
+    }
 
     if (!skipSectionWarmupGate) {
       const destinationState = this.sectionWarmState[destinationSection]
@@ -3797,6 +3950,9 @@ export class Scene1Manager {
     }
 
     const body = entry.body
+    const originalType = body.type
+    const originalCollisionResponse = body.collisionResponse
+    const originalCollisionFilterMask = body.collisionFilterMask
     body.userData = body.userData || {}
     body.userData.isCollectedItem = true
     body.userData.lockedByFunHouse = true
@@ -3805,6 +3961,11 @@ export class Scene1Manager {
     body.collisionFilterMask = 0
     body.velocity.set(0, 0, 0)
     body.angularVelocity.set(0, 0, 0)
+    if (typeof body.sleep === 'function') {
+      body.sleep()
+    }
+
+    entry.mesh.visible = false
 
     targetInfo.mesh.userData.setFunHousePowerBoxDoorOpenAmount?.(0)
 
@@ -3813,13 +3974,9 @@ export class Scene1Manager {
       houseMesh: targetInfo.mesh,
       phase: 'opening',
       elapsed: 0,
-      startPos: entry.mesh.position.clone(),
-      startQuat: entry.mesh.quaternion.clone(),
-      targetPos: targetInfo.target.clone(),
-      targetQuat: targetInfo.targetQuaternion.clone(),
-      originalType: body.type,
-      originalCollisionResponse: body.collisionResponse,
-      originalCollisionFilterMask: body.collisionFilterMask,
+      originalType,
+      originalCollisionResponse,
+      originalCollisionFilterMask,
       visualCommitted: false
     }
 
@@ -3837,13 +3994,6 @@ export class Scene1Manager {
     }
 
     const setDoorAmount = houseMesh.userData?.setFunHousePowerBoxDoorOpenAmount
-    const entryAlive = !!(installState.entry && this.syncList?.includes(installState.entry) && installState.entry.mesh && installState.entry.body)
-
-    if (!entryAlive && !installState.visualCommitted) {
-      setDoorAmount?.(0)
-      this.funHouseLightStickInstallState = null
-      return 'cancelled'
-    }
 
     installState.elapsed += delta
 
@@ -3853,60 +4003,21 @@ export class Scene1Manager {
         0,
         1
       )
-      installState.entry.body.position.set(
-        installState.startPos.x,
-        installState.startPos.y,
-        installState.startPos.z
-      )
-      installState.entry.body.quaternion.set(
-        installState.startQuat.x,
-        installState.startQuat.y,
-        installState.startQuat.z,
-        installState.startQuat.w
-      )
-      installState.entry.body.aabbNeedsUpdate = true
-      installState.entry.mesh.position.copy(installState.startPos)
-      installState.entry.mesh.quaternion.copy(installState.startQuat)
       setDoorAmount?.(t)
 
       if (t >= 1) {
-        installState.phase = 'inserting'
-        installState.elapsed = 0
-      }
-
-      return 'running'
-    }
-
-    if (installState.phase === 'inserting' && entryAlive) {
-      const entry = installState.entry
-      const body = entry.body
-      const mesh = entry.mesh
-      const t = THREE.MathUtils.smoothstep(
-        THREE.MathUtils.clamp(installState.elapsed / SCENE1_CONFIG.funHouseLightStickInsertDuration, 0, 1),
-        0,
-        1
-      )
-
-      const curPos = this._tmpFunHouseAnimPos.copy(installState.startPos).lerp(installState.targetPos, t)
-      curPos.y += Math.sin(t * Math.PI) * SCENE1_CONFIG.funHouseLightStickInsertArcLift
-      const curQuat = this._tmpFunHouseAnimQuat.copy(installState.startQuat).slerp(installState.targetQuat, t)
-
-      body.type = CANNON.Body.KINEMATIC
-      body.collisionResponse = false
-      body.collisionFilterMask = 0
-      body.velocity.set(0, 0, 0)
-      body.angularVelocity.set(0, 0, 0)
-      body.position.set(curPos.x, curPos.y, curPos.z)
-      body.quaternion.set(curQuat.x, curQuat.y, curQuat.z, curQuat.w)
-      body.aabbNeedsUpdate = true
-      mesh.position.copy(curPos)
-      mesh.quaternion.copy(curQuat)
-      setDoorAmount?.(1)
-
-      if (t >= 1) {
         if (!installState.visualCommitted) {
+          const entry = installState.entry
+          const body = entry?.body
+          if (body) {
+            if (installState.originalType !== undefined) body.type = installState.originalType
+            if (installState.originalCollisionResponse !== undefined) body.collisionResponse = installState.originalCollisionResponse
+            if (installState.originalCollisionFilterMask !== undefined) body.collisionFilterMask = installState.originalCollisionFilterMask
+          }
           houseMesh.userData.completeFunHouseLightStickInstallation?.()
-          this._despawnEntry(entry)
+          if (entry) {
+            this._despawnEntry(entry)
+          }
           installState.visualCommitted = true
           installState.entry = null
         }
@@ -4346,10 +4457,11 @@ export class Scene1Manager {
       }
     }
     if (glowPlane?.material) {
-      glowPlane.material.emissiveIntensity = (animCfg.maxGlowIntensity || 5) * animState.openProgress
+      glowPlane.material.emissiveIntensity = (animCfg.maxGlowIntensity ?? 5) * animState.openProgress
     }
     if (environmentLight) {
-      environmentLight.intensity = (animCfg.maxEnvironmentLightIntensity || 800) * animState.openProgress
+      environmentLight.intensity = (animCfg.maxEnvironmentLightIntensity ?? 800) * animState.openProgress
+      environmentLight.distance = animCfg.environmentLightDistance ?? 40
     }
 
     if (!this.section2ElevatorDisplayPanel) {
@@ -6115,14 +6227,8 @@ export class Scene1Manager {
     this.section2SpawnedBall8Entries = []
     this.sectionWarmQueue = []
     this.activeSectionWarmJob = null
-    if (this.sectionWarmOverlayTimer !== null) {
-      clearTimeout(this.sectionWarmOverlayTimer)
-      this.sectionWarmOverlayTimer = null
-    }
-    if (this.sectionWarmOverlay) {
-      this.sectionWarmOverlay.close()
-      this.sectionWarmOverlay = null
-    }
+    this.pendingTeleportRequest = null
+    this._closeSectionWarmOverlay()
     this.section2DoorLoadTriggered = false
     if (this.debugSection3PlayerEntry) {
       this._despawnEntry(this.debugSection3PlayerEntry)

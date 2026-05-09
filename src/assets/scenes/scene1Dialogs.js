@@ -57,7 +57,7 @@ export const SCENE1_COMPUNES = {
 // ==================== CONTROL INSTRUCTION DIALOGS ====================
 export const SCENE1_CONTROL_GUIDES = {
   move: "[WASD] and [Space] to move around.",
-  look: "[Mouse] and [Scroll wheel] to look and zoom.",
+  look: "[Mouse] and [Scroll wheel] to look and zoom. [V] to switch perspective.",
   shoot: "Hold [E] and release to shoot.",
   item: "Press [Q] to swap item and [Z] to drop item."
 }

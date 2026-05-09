@@ -426,10 +426,8 @@ function setInstalledLightStickVisible(lightStick, visible) {
   lightStick.visible = visible
   lightStick.traverse((child) => {
     if (!child?.isPointLight) return
-    if (child.userData.baseIntensity == null) {
-      child.userData.baseIntensity = child.intensity
-    }
-    child.intensity = visible ? child.userData.baseIntensity : 0
+    child.visible = false
+    child.intensity = 0
   })
 }
 
@@ -783,6 +781,11 @@ function createFunHouseMesh(options = {}) {
   elevator.name = 'Fun House Elevator'
   elevator.rotation.y = Math.PI / 2
   elevator.scale.setScalar(FUN_HOUSE_CONFIG.elevatorScale)
+  elevator.userData.animationConfig = {
+    maxGlowIntensity: 5,
+     maxEnvironmentLightIntensity: 120,
+     environmentLightDistance: 8
+  }
   elevator.traverse((child) => {
     if (!child?.isMesh || !child.material) return
     if (child.userData?.isGlowPlane || child.userData?.isDisplayBg || child.userData?.isDisplayPanel) return

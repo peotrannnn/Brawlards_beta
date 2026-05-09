@@ -783,7 +783,8 @@ export function createSection2(rootGroup) {
   returnElevator.userData.animationConfig = {
     duration: 1.5,
     maxGlowIntensity: 5,
-    maxEnvironmentLightIntensity: 0,
+    maxEnvironmentLightIntensity: 140,
+    environmentLightDistance: 9,
     slideAxis: 'z',
     slideHalfWidth: 3.8 / 2
   }
