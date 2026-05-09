@@ -45,15 +45,27 @@ import { DestroySystem } from "../utils/destroy.js"
 import { ParticleManager } from "../utils/particleManager.js"
 import { sceneAssets } from "../assets/sceneAssets.js"
 import { Scene1Manager } from "../sceneManager/Scene1Manager.js"
+import { musicPlayer } from "../music/MusicPlayer.js"
+import { playSound3 } from "../sounds/sound3.js"
+import { primeSound2Audio } from "../sounds/sound2.js"
+import { primeSound3Audio } from "../sounds/sound3.js"
+import { primeSound4Audio } from "../sounds/sound4.js"
+import { primeSound6Audio } from "../sounds/sound6.js"
 import { settingsManager } from "./SettingsManager.js"
 
 // ==================== CONFIGURATION ====================
 const SIMULATION_CONFIG = {
   fixedTimeStep: 1 / 60,
+  maxSubSteps: 5,
+  solverIterations: 12,
   spawnRateMs: 1200,
   maxObjectsInScene: 30,
   bowlingLifetimeMinMs: 45000,
   bowlingLifetimeMaxMs: 90000,
+  floorGuardProbeAbove: 0.7,
+  floorGuardProbeBelow: 2.2,
+  floorGuardRecoveryDrop: 0.8,
+  floorGuardRecoveryHorizontalDrift: 0.75,
 }
 
 const RENDER_PERF_CONFIG = {
@@ -75,6 +87,9 @@ const RENDER_PERF_CONFIG = {
 export function startSimulationTest(renderer, onBack, gameplayMode = false, sceneIndex = 0, options = {}) {
   document.body.style.margin = "0"
   document.body.style.overflow = "hidden"
+  if (!gameplayMode) {
+    void musicPlayer.requestSilence({ fadeOutSec: 1.1 })
+  }
   // ==================== CONTROL GUIDE UI ====================
   const controlGuideUI = new ControlGuideUI()
   let controlGuideState = { phase: 0 }
@@ -383,6 +398,23 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
     if (asset.name === "Pilot Room") {
       currentSceneManager = new Scene1Manager(currentSceneGroup, destroySystem, scene)
 
+      const sceneMusicCallbacks = {
+        onSectionChange: (sectionId, musicOptions = {}) => {
+          if (!currentSceneManager) return
+          void musicPlayer.requestSection(sectionId, musicOptions)
+        },
+        onGuySpawned: () => {
+          void musicPlayer.requestGuy({ immediate: true })
+        },
+        onGuyCleared: (sectionId) => {
+          if (!currentSceneManager || currentSceneManager.gameOver) return
+          void musicPlayer.requestSection(sectionId, { immediate: false })
+        },
+        onBlackout: () => {
+          void musicPlayer.requestSilence({ fadeOutSec: 1.2 })
+        },
+      }
+
       if (gameplayMode) {
         gameOverScreen = new GameOverScreen(asset.name, 0, onBack, cameraController)
         currentSceneManager.setGameOverCallback((reason, completionTime) => {
@@ -400,17 +432,23 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
         if (typeof currentSceneManager.setSimulationMode === 'function') {
           currentSceneManager.setSimulationMode(false)
         }
+        if (typeof currentSceneManager.setMusicCallbacks === 'function') {
+          currentSceneManager.setMusicCallbacks(sceneMusicCallbacks)
+        }
       } else {
         // Simulation mode: allow elevator to open with L key
         if (typeof currentSceneManager.setSimulationMode === 'function') {
           currentSceneManager.setSimulationMode(true)
+        }
+        if (typeof currentSceneManager.setMusicCallbacks === 'function') {
+          currentSceneManager.setMusicCallbacks(sceneMusicCallbacks)
         }
       }
 
       const guyAsset = objects.find(obj => obj.name === 'Guy')
       if (guyAsset) {
         currentSceneManager.initializeSpawning(
-          (args) => spawnerSpawn({ ...args, fakeShadowManager }),
+          (args) => spawnerSpawn({ ...args, fakeShadowManager, listenerPosition: camera.position }),
           guyAsset, world, physicsMaterials, syncList,
           particleManager, SIMULATION_CONFIG, renderer
         )
@@ -603,6 +641,7 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
   // ==================== PHYSICS ====================
   const world = new CANNON.World()
   world.gravity.set(0, -9.82, 0)
+  world.solver.iterations = SIMULATION_CONFIG.solverIterations
   const physicsMaterials = setupContactMaterials(world)
 
   // ==================== CONTROLLERS & AI ====================
@@ -655,13 +694,113 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
   const objects = createAllGameObjects(renderer, {
     playerCustomization: options.playerCustomization
   })
-  const destroySystem = new DestroySystem({ syncList, world, scene })
+  const destroySystem = new DestroySystem({ syncList, world, scene, listenerPositionProvider: () => camera.position })
   const particleManager = new ParticleManager(scene)
   destroySystem.setParticleManager(particleManager)
   playerMovement.setSyncListAndDestroySystem(syncList, destroySystem)
   playerMovement.setParticleManager(particleManager)
-  const physicsEventManager = new PhysicsEventManager({ particleManager, syncList })
+  const physicsEventManager = new PhysicsEventManager({ particleManager, syncList, listenerPositionProvider: () => camera.position })
   let possessed = null
+  const floorGuardRayFrom = new CANNON.Vec3()
+  const floorGuardRayTo = new CANNON.Vec3()
+  const floorGuardHit = new CANNON.RaycastResult()
+  const floorGuardCollisionMask = COLLISION_GROUPS.STATIC | COLLISION_GROUPS.RAIL
+
+  function syncDynamicBodyInterpolation(body) {
+    if (!body) return
+
+    if (body.previousPosition) body.previousPosition.copy(body.position)
+    if (body.interpolatedPosition) body.interpolatedPosition.copy(body.position)
+    if (body.previousQuaternion) body.previousQuaternion.copy(body.quaternion)
+    if (body.interpolatedQuaternion) body.interpolatedQuaternion.copy(body.quaternion)
+  }
+
+  function isFloorGuardCandidate(entry) {
+    const body = entry?.body
+    if (!entry || !body || body.mass <= 0) return false
+    if (entry.type !== 'dynamic' || body.type !== CANNON.Body.DYNAMIC) return false
+    if (entry.name === 'Player') return false
+    if (entry.name && entry.name.includes('Ball')) return false
+    if (body.userData?.isCueBody || body.userData?.isForceBody) return false
+    return true
+  }
+
+  function updateDynamicBodyFloorGuard(entry) {
+    if (!isFloorGuardCandidate(entry)) return
+
+    const body = entry.body
+    body.userData = body.userData || {}
+    const userData = body.userData
+    const radius = Math.max(0.12, body.boundingRadius || 0.2)
+    const probeAbove = Math.max(SIMULATION_CONFIG.floorGuardProbeAbove, radius * 2.2)
+    const probeBelow = Math.max(SIMULATION_CONFIG.floorGuardProbeBelow, radius * 5.5)
+    const sinkTolerance = Math.max(0.12, radius * 0.45)
+    const supportHeight = Math.max(0.18, radius * 1.05)
+    const recoveryDrop = Math.max(SIMULATION_CONFIG.floorGuardRecoveryDrop, radius * 2.2)
+    const recoveryHorizontalDrift = Math.max(SIMULATION_CONFIG.floorGuardRecoveryHorizontalDrift, radius * 3.2)
+
+    floorGuardRayFrom.set(body.position.x, body.position.y + probeAbove, body.position.z)
+    floorGuardRayTo.set(body.position.x, body.position.y - probeBelow, body.position.z)
+    floorGuardHit.reset()
+
+    const hasGroundHit = world.raycastClosest(
+      floorGuardRayFrom,
+      floorGuardRayTo,
+      {
+        collisionFilterMask: floorGuardCollisionMask,
+        skipBackfaces: true
+      },
+      floorGuardHit
+    ) && floorGuardHit.hasHit
+
+    if (hasGroundHit) {
+      const groundY = floorGuardHit.hitPointWorld.y
+      userData.floorGuardLastGroundY = groundY
+
+      const isWithinSupportBand = body.position.y >= groundY - sinkTolerance
+        && body.position.y <= groundY + supportHeight
+
+      if (isWithinSupportBand) {
+        if (!userData.floorGuardLastSafePosition) {
+          userData.floorGuardLastSafePosition = new CANNON.Vec3(body.position.x, body.position.y, body.position.z)
+        }
+        userData.floorGuardLastSafePosition.copy(body.position)
+        userData.floorGuardArmed = true
+        return
+      }
+    }
+
+    const safePos = userData.floorGuardLastSafePosition
+    if (userData.floorGuardArmed !== true || !safePos) return
+
+    const dx = body.position.x - safePos.x
+    const dz = body.position.z - safePos.z
+    const fellTooFar = body.position.y < safePos.y - recoveryDrop
+    const stayedNearLastSafe = (dx * dx) + (dz * dz) <= recoveryHorizontalDrift * recoveryHorizontalDrift
+    if (!fellTooFar || !stayedNearLastSafe) return
+
+    body.position.copy(safePos)
+    if (typeof userData.floorGuardLastGroundY === 'number') {
+      body.position.y = Math.max(body.position.y, userData.floorGuardLastGroundY + Math.max(0.08, radius * 0.55))
+    }
+
+    if (body.velocity.y < 0) body.velocity.y = 0
+    body.velocity.x *= 0.35
+    body.velocity.z *= 0.35
+    body.angularVelocity.scale(0.2, body.angularVelocity)
+    body.force.set(0, 0, 0)
+    body.torque.set(0, 0, 0)
+    body.aabbNeedsUpdate = true
+    if (typeof body.wakeUp === 'function') body.wakeUp()
+    syncDynamicBodyInterpolation(body)
+
+    if (entry.mesh) {
+      entry.mesh.position.copy(body.position)
+      entry.mesh.quaternion.copy(body.quaternion)
+    }
+
+    userData.floorGuardLastSafePosition.copy(body.position)
+  }
 
   // ==================== DESTROY HANDLER ====================
   destroySystem.setOnDestroy(entry => {
@@ -688,6 +827,10 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
       const pos = entry.mesh.position.clone()
       if (!entry._destroyFxSpawned) {
         particleManager.spawn('smoke', pos)
+        playSound3({
+          sourcePosition: pos,
+          listenerPosition: camera.position,
+        })
       }
       if (typeof particleManager.clearVeinForOwner === 'function') {
         particleManager.clearVeinForOwner(entry.mesh)
@@ -1130,14 +1273,14 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
     if (table && table.userData && table.userData.tableDimensions) {
       baseY = table.userData.tableDimensions.topY || 0
     }
-    spawnerSpawnRandom({ scene, dynamicPrefabs: spawnableDynamicPrefabs, world, physicsMaterials, syncList, particleManager, height: 12, baseY, fakeShadowManager })
+    spawnerSpawnRandom({ scene, dynamicPrefabs: spawnableDynamicPrefabs, world, physicsMaterials, syncList, particleManager, height: 12, baseY, fakeShadowManager, listenerPosition: camera.position })
   }
 
   function spawnSelected(index) {
     const prefab = spawnableDynamicPrefabs[index]
     if (!prefab) return
     const pos = randomPositionAboveTable(8)
-    spawnerSpawn({ scene, prefab, position: pos, world, physicsMaterials, syncList, particleManager, fakeShadowManager })
+    spawnerSpawn({ scene, prefab, position: pos, world, physicsMaterials, syncList, particleManager, fakeShadowManager, listenerPosition: camera.position })
   }
 
   let spawnIntervalId = null
@@ -1156,6 +1299,11 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
 
   // ==================== INPUT HANDLERS ====================
   function onKeyDown(e) {
+    primeSound2Audio()
+    primeSound3Audio()
+    primeSound4Audio()
+    primeSound6Audio()
+
     if (gameplayMode) {
       if (e.code === "Escape") {
         e.preventDefault()
@@ -1757,7 +1905,11 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
     })
 
     physicsEventManager.reset()
-    world.step(SIMULATION_CONFIG.fixedTimeStep, delta, 3)
+    world.step(SIMULATION_CONFIG.fixedTimeStep, delta, SIMULATION_CONFIG.maxSubSteps)
+
+    syncList.forEach(entry => {
+      updateDynamicBodyFloorGuard(entry)
+    })
 
     bowlingAIControllers.forEach((bowlingAI, entry) => {
       if (!entry || !syncList.includes(entry)) return
@@ -1775,8 +1927,13 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
       }
       if (pair.body && !pair.body.userData) pair.body.userData = {}
       if (pair.body && !pair.body.userData.physicsEventRegistered) {
-        const isDynamicCharacter = ['Player', 'Guy', 'Dude', 'Guide', 'Dummy', 'Compune'].includes(pair.name)
-        if (pair.name && (pair.name.includes('Ball') || isDynamicCharacter)) {
+        const isDynamicCharacter = ['Guy', 'Dude', 'Guide', 'Dummy', 'Compune'].includes(pair.name)
+        const isBall = !!(pair.name && pair.name.includes('Ball'))
+        const shouldRegisterPhysicsEvents = pair.type === 'dynamic'
+          && !pair.body.userData?.isCueBody
+          && !pair.body.userData?.isForceBody
+        if (shouldRegisterPhysicsEvents) {
+          pair.body.userData.physicsEventMode = (isBall || isDynamicCharacter) ? 'full' : 'landing-only'
           physicsEventManager.registerBody(pair.body)
           pair.body.userData.physicsEventRegistered = true
         }

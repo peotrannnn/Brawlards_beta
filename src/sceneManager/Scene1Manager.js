@@ -28,6 +28,9 @@ import { createSweatEffect } from '../effects/particles/particle8.js'
 import { applySection2UnderwaterFog } from '../assets/scenes/sections/section1_2.js'
 import { ScreenMat } from '../utils/ScreenMat.js'
 import { createLoadingOverlay } from '../utils/loadingOverlay.js'
+import { playSound3 } from '../sounds/sound3.js'
+import { setSound6FlickerState, stopSound6Flicker } from '../sounds/sound6.js'
+import { resetSoundFilter1, updateSoundFilter1 } from '../sounds/soundfilter1.js'
 import { getLightStickOffAsset } from '../assets/items/lightStickOff.js'
 import { getBabyOilAsset } from '../assets/items/babyOil.js'
 import { getSilverCoinAsset } from '../assets/items/silverCoin.js'
@@ -73,11 +76,15 @@ const SCENE1_CONFIG = {
   section2BubbleTrailIntervalSlow: 0.16,
   section2BubbleTrailIntervalFast: 0.055,
   section2BubbleTrailWaterThreshold: 0.14,
+  section2WaterMuffleMinIntensity: 0.42,
+  flickerSoundCooldownSec: 0.08,
   personHeight: 4,
   sunLightDimFactor: 0.9,
   sunLightMinIntensity: 50,
   sunLightBaseFar: 200,
   dudeFogMaxDistance: 18,
+  guyMuffleMaxDistance: 18,
+  guyMuffleFullDistance: 1.8,
   dudeFogMinFar: 3,
   dudeFogStartDelay: 3.0,
   dudeFogResetDuration: 3.0,
@@ -109,6 +116,8 @@ const SCENE1_CONFIG = {
   vendingCollectScanIntervalSec: 1 / 18,
   sequenceSilverCoinSpawnHeight: 7,
   sequenceSilverCoinSpawnSpread: 0.7,
+  sequenceSilverCoinAvoidPlayerDistance: 2.2,
+  sequenceSilverCoinSpawnRetryCount: 10,
   sequenceSilverCoinMinSpinY: 6,
   sequenceSilverCoinMaxSpinY: 10,
   section3HouseScaleMinDistance: 8,
@@ -189,6 +198,7 @@ export class Scene1Manager {
     this.leakTimer = 0
     this.lightFlickerTimer = 0
     this.isLightFlickeringActive = false
+    this._frameFlickerSoundIntensity = 0
     
     this.ambientLightFlickerTimer = 0
     this.isAmbientFlickering = false
@@ -233,6 +243,7 @@ export class Scene1Manager {
     this.gameOverCallback = null  // Callback function to show game over screen
     this.gameOverCallbackTriggered = false  // Flag to ensure callback only called once
     this._simulationMode = false
+    this.musicCallbacks = null
     
     // ✨ NEW: Sweat effects array (updated by update() method)
     this.activeSweatEffects = [] // Array of sweat effect objects
@@ -308,6 +319,7 @@ export class Scene1Manager {
     this.section2PipeRewardSpawned = false
     this.section2PipeRewardEntry = null
     this.section2RunStartZ = -84
+    this.section2WaterRiseProgress = 0
     this.section2UnderwaterBlend = 0
     this.section2IsUnderwater = false
     this.section2ReverseCurrentTimer = 0
@@ -488,6 +500,10 @@ export class Scene1Manager {
     // Switch per-section lighting (intensity, ambient, fog)
     if (this.lightsInitialized) {
       this._applySectionLighting(sectionId)
+    }
+
+    if (this.musicCallbacks?.onSectionChange) {
+      this.musicCallbacks.onSectionChange(this.activeSectionId)
     }
   }
 
@@ -1160,6 +1176,13 @@ export class Scene1Manager {
     this._simulationMode = !!enabled
   }
 
+  setMusicCallbacks(callbacks) {
+    this.musicCallbacks = callbacks || null
+    if (this.musicCallbacks?.onSectionChange && this.activeSectionId) {
+      this.musicCallbacks.onSectionChange(this.activeSectionId)
+    }
+  }
+
   /**
    * Debug: manually start the Section 1 elevator countdown (simulates score-15+guy condition).
    */
@@ -1414,6 +1437,7 @@ export class Scene1Manager {
             syncList: this.syncList,
             particleManager: this.particleManager
           })
+          this.musicCallbacks?.onGuySpawned?.()
         } catch (e) {
 
         }
@@ -1456,6 +1480,7 @@ export class Scene1Manager {
    * If already blacked out, extend the duration
    */
   _triggerBlackout() {
+    this.musicCallbacks?.onBlackout?.()
     if (this.isBlackoutActive) {
       // Already blackout, add more time (accumulate for multiple player falls)
       this.blackoutTimer += this.blackoutDuration
@@ -1535,6 +1560,7 @@ export class Scene1Manager {
     this._processPendingTeleport(delta)
 
     this._updateSectionStreaming(syncList, delta)
+    this._beginFlickerSoundFrame()
     
     this._updateWaterSplash(delta, particleManager)
     this._updateBlackout(delta)
@@ -1585,6 +1611,7 @@ export class Scene1Manager {
     this._updateTeleportCooldown(delta)
     this._handleDudeTouchTeleport(syncList)
     this._updateSection2ProximitySystems(syncList, delta, particleManager)
+    this._flushFlickerSoundFrame()
     this._updateSection3HouseDistanceScaling(syncList, delta)
     this._updateSection3TreeLod(syncList, delta, camera)
     this._updateSection3TreeDistanceScaling(syncList, delta)
@@ -1596,6 +1623,7 @@ export class Scene1Manager {
     this._updateSection3CinematicTreeOcclusion(camera, delta)
     this._updateSection2ReturnElevator(syncList, delta)
     this._updateDudeFogAndPenaltyState(syncList, delta)
+    this._updateSoundFilter1(syncList, delta)
     this._updateSection3EdgeAtmosphere(syncList, delta)
     this._updateFunHousePowerBox(syncList, delta)
     this._checkFunHouseElevatorCollision(syncList)
@@ -2598,6 +2626,8 @@ export class Scene1Manager {
       return
     }
 
+    let maxElectricalIntensity = 0
+
     section1Group.traverse(child => {
       if (!child.userData?.lightSource) return
 
@@ -2614,6 +2644,7 @@ export class Scene1Manager {
         }
 
         child.userData.lightSource.intensity = newIntensity
+  maxElectricalIntensity = Math.max(maxElectricalIntensity, THREE.MathUtils.clamp(newIntensity / 1.75, 0, 1))
 
         child.children.forEach(mesh => {
           if (mesh.isMesh && mesh.material?.emissive && mesh.material.emissive.getHex() > 0) {
@@ -2628,6 +2659,18 @@ export class Scene1Manager {
         })
       }
     })
+
+    const flickerProgress = THREE.MathUtils.clamp(
+      this.lightFlickerTimer / Math.max(0.001, SCENE1_CONFIG.lightFlickerDuration),
+      0,
+      1
+    )
+    const section1ElectricalIntensity = THREE.MathUtils.clamp(
+      Math.max(0.38, maxElectricalIntensity) * (1 - (flickerProgress * 0.18)),
+      0,
+      1
+    )
+    this._accumulateFlickerSoundIntensity(section1ElectricalIntensity)
   }
 
   _updatePersonAnimation(delta, syncList) {
@@ -2701,6 +2744,22 @@ export class Scene1Manager {
   _triggerFlickerLights() {
     this.isLightFlickeringActive = true
     this.lightFlickerTimer = 0
+    setSound6FlickerState({ intensity: 0.76, immediate: true })
+  }
+
+  _beginFlickerSoundFrame() {
+    this._frameFlickerSoundIntensity = 0
+  }
+
+  _accumulateFlickerSoundIntensity(intensity = 0) {
+    this._frameFlickerSoundIntensity = Math.max(
+      this._frameFlickerSoundIntensity,
+      THREE.MathUtils.clamp(intensity, 0, 1)
+    )
+  }
+
+  _flushFlickerSoundFrame() {
+    setSound6FlickerState({ intensity: this._frameFlickerSoundIntensity })
   }
 
   _setSection1CeilingLightsState(enabled) {
@@ -2764,6 +2823,7 @@ export class Scene1Manager {
 
     if (this.lastGuyCount > 0 && this.guyCount === 0) {
       this._resetSceneEffects()
+      this.musicCallbacks?.onGuyCleared?.(this.activeSectionId || 'section1')
     }
 
     this.lastGuyCount = this.guyCount
@@ -2774,6 +2834,8 @@ export class Scene1Manager {
     this.lightFlickerTimer = 0
     this.isAmbientFlickering = false
     this.guyFlickerTimers.clear()
+    this._frameFlickerSoundIntensity = 0
+    stopSound6Flicker()
 
     this.totalPhaseChanges = 0
     this.currentFogDensity = this.baseFogDensity
@@ -2908,8 +2970,6 @@ export class Scene1Manager {
     const tableDepth = 11
     const halfW = (tableWidth * 0.5) * spreadScale
     const halfD = (tableDepth * 0.5) * spreadScale
-    const x = (Math.random() * 2 - 1) * halfW
-    const z = (Math.random() * 2 - 1) * halfD
 
     const table = this.sceneGroup?.getObjectByName('Billiard Table')
     let baseY = 0
@@ -2917,7 +2977,28 @@ export class Scene1Manager {
       baseY = table.userData.tableDimensions.topY
     }
 
-    return new THREE.Vector3(x, baseY + heightOffset, z)
+    const playerEntry = this.syncList?.find(entry => entry?.name === 'Player' && entry.mesh) || null
+    const avoidDistanceSq = SCENE1_CONFIG.sequenceSilverCoinAvoidPlayerDistance * SCENE1_CONFIG.sequenceSilverCoinAvoidPlayerDistance
+    let chosenX = 0
+    let chosenZ = 0
+
+    for (let attempt = 0; attempt < SCENE1_CONFIG.sequenceSilverCoinSpawnRetryCount; attempt += 1) {
+      const candidateX = (Math.random() * 2 - 1) * halfW
+      const candidateZ = (Math.random() * 2 - 1) * halfD
+
+      chosenX = candidateX
+      chosenZ = candidateZ
+
+      if (!playerEntry?.mesh) break
+
+      const dx = playerEntry.mesh.position.x - candidateX
+      const dz = playerEntry.mesh.position.z - candidateZ
+      if ((dx * dx) + (dz * dz) >= avoidDistanceSq) {
+        break
+      }
+    }
+
+    return new THREE.Vector3(chosenX, baseY + heightOffset, chosenZ)
   }
 
   _spawnSequenceSilverCoin() {
@@ -3246,6 +3327,10 @@ export class Scene1Manager {
 
   _despawnEntry(entry) {
     if (!entry) return
+
+    if (entry.mesh && this.particleManager?.clearItemArrowForOwner) {
+      this.particleManager.clearItemArrowForOwner(entry.mesh)
+    }
 
     if (this.destroySystem && typeof this.destroySystem.destroyObject === 'function') {
       this.destroySystem.destroyObject(entry)
@@ -3861,11 +3946,16 @@ export class Scene1Manager {
     if (applyState.originalCollisionFilterMask !== undefined) body.collisionFilterMask = applyState.originalCollisionFilterMask;
 
     const destroyPos = applyState.latchTarget.clone()
+    entry._destroyFxSpawned = true
     this._despawnEntry(entry)
     this.chestOilApplyState = null
 
     if (this.particleManager?.spawn) {
       this.particleManager.spawn('smoke', destroyPos, { count: 3, size: 0.2 })
+      playSound3({
+        sourcePosition: destroyPos,
+        listenerPosition: this.camera ? this.camera.position : null,
+      })
     }
 
     return 'completed'
@@ -4312,11 +4402,16 @@ export class Scene1Manager {
 
     const destroyPos = collectState.targetPos.clone()
     const vendingDropOrigin = (collectState.dropPos || collectState.targetPos).clone()
+    entry._destroyFxSpawned = true
     this._despawnEntry(entry)
     this.vendingCoinCollectState = null
 
     if (this.particleManager?.spawn) {
       this.particleManager.spawn('smoke', destroyPos.clone(), { count: 4, size: 0.35 })
+      playSound3({
+        sourcePosition: destroyPos,
+        listenerPosition: this.camera ? this.camera.position : null,
+      })
     }
 
     this._spawnVendingBabyOil(vendingDropOrigin, collectState.targetQuat)
@@ -4364,6 +4459,7 @@ export class Scene1Manager {
     })
     body.userData = body.userData || {}
     body.userData.spawnCategory = options.spawnCategory || (collisionProfile.collisionFilterGroup === COLLISION_GROUPS.ITEM ? 'item' : 'gameObject')
+    body.userData.physicsEventRegistered = false
 
     const shapes = Array.isArray(physicsDef.shapes) ? physicsDef.shapes : []
     for (const shapeDef of shapes) {
@@ -4759,6 +4855,7 @@ export class Scene1Manager {
   _deactivateSection2Effects(dynamicEntries) {
     this.isInSection2Run = false
     this.section2IsUnderwater = false
+    this.section2WaterRiseProgress = 0
     this.section2UnderwaterBlend = 0
     this.section2ReverseCurrentTimer = 0
     this.section2PipeWaterFxTimer = 0
@@ -5023,6 +5120,7 @@ export class Scene1Manager {
       progressToGate = THREE.MathUtils.clamp((playerEntry.mesh.position.z - startZ) / denom, 0, 1)
     }
     const waterRiseProgress = this._getSection2WaterRiseCurve(progressToGate)
+    this.section2WaterRiseProgress = waterRiseProgress
 
     const playerHeadY = hasPlayer ? (playerEntry.mesh.position.y + 0.95) : null
     let shouldEnterUnderwater = false
@@ -5129,6 +5227,7 @@ export class Scene1Manager {
     const normalized = THREE.MathUtils.clamp((signal + 1) * 0.5, 0, 1)
     const burst = normalized > 0.56 ? 1 : (0.08 + normalized * 0.34)
     const intensityScale = burst * fade
+    this._accumulateFlickerSoundIntensity(THREE.MathUtils.clamp(0.28 + (intensityScale * 0.72), 0, 1))
 
     if (pointLight) {
       pointLight.intensity = basePointLightIntensity * intensityScale
@@ -5180,6 +5279,8 @@ export class Scene1Manager {
         lightGroup.userData.flickerDuration = THREE.MathUtils.randFloat(0.5, 1.5)
         lightGroup.userData.flickerTimeRemaining = lightGroup.userData.flickerDuration
         lightGroup.userData.flickerSeed = Math.random() * Math.PI * 2
+        setSound6FlickerState({ intensity: 0.68, immediate: true })
+        this._accumulateFlickerSoundIntensity(0.68)
       }
       lightGroup.userData.wasNearby = isNearby
     }
@@ -5426,6 +5527,42 @@ export class Scene1Manager {
     }
 
     this._updateSection2PipeBall8Score(syncList)
+  }
+
+  _updateSoundFilter1(syncList, delta) {
+    const playerEntry = syncList.find(entry => entry.name === 'Player' && entry.mesh)
+
+    let nearestGuyDistance = Infinity
+    for (const entry of syncList) {
+      if (entry?.name !== 'Guy' || !entry.mesh) continue
+      if (!playerEntry?.mesh) continue
+      const distance = entry.mesh.position.distanceTo(playerEntry.mesh.position)
+      if (distance < nearestGuyDistance) nearestGuyDistance = distance
+    }
+
+    const underwaterIntensity = this.section2UnderwaterBlend * THREE.MathUtils.lerp(
+      SCENE1_CONFIG.section2WaterMuffleMinIntensity,
+      1,
+      this.section2WaterRiseProgress || 0
+    )
+
+    const guyDistanceRange = Math.max(
+      0.001,
+      SCENE1_CONFIG.guyMuffleMaxDistance - SCENE1_CONFIG.guyMuffleFullDistance
+    )
+    const guyBlend = isFinite(nearestGuyDistance)
+      ? 1 - THREE.MathUtils.clamp(
+        (nearestGuyDistance - SCENE1_CONFIG.guyMuffleFullDistance) / guyDistanceRange,
+        0,
+        1
+      )
+      : 0
+
+    updateSoundFilter1({
+      underwaterIntensity,
+      guyProximityIntensity: guyBlend * guyBlend,
+      delta,
+    })
   }
 
   onPenaltyDudeTouchedPlayer() {
@@ -6280,8 +6417,12 @@ export class Scene1Manager {
     this.isRetracting = false
     this.ambientLightFlickerTimer = 0
     this.isAmbientFlickering = false
+    this.isLightFlickeringActive = false
+    this.lightFlickerTimer = 0
     this.turnOffSection1CeilingAfterFlicker = false
     this.section1CeilingLightsEnabled = true
+    this._frameFlickerSoundIntensity = 0
+    stopSound6Flicker()
     this.guyFlickerTimers.clear()
     this.hookedGuyAIs.clear()
     this.totalPhaseChanges = 0
@@ -6336,6 +6477,7 @@ export class Scene1Manager {
     this.section2PipeTunnels = null
     this.section2WaterSurfaces = null
     this.section2RunStartZ = -84
+    this.section2WaterRiseProgress = 0
     this.section2UnderwaterBlend = 0
     this.section2IsUnderwater = false
     this.section2ReverseCurrentTimer = 0
@@ -6358,6 +6500,7 @@ export class Scene1Manager {
     this.section2PipeBall8DestroyedCount = 0
     this.section2PipeRewardSpawned = false
     this.section2PipeRewardEntry = null
+    resetSoundFilter1({ immediate: true })
     this._section3HouseScaleRegistry.clear()
     this._section3HouseScaleUpdateAccumulator = 0
     this._section3TreeScaleRegistry.clear()

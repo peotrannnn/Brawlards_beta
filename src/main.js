@@ -2,7 +2,7 @@ import * as THREE from "three"
 import { startSimulationTest } from "./core/SimulationTest.js"
 import { createInspector } from "./core/Inspector.js"
 import { startPlay } from "./core/Play.js"
-import { MusicPlayer } from "./music/MusicPlayer.js"
+import { musicPlayer } from "./music/MusicPlayer.js"
 import { preloadCoreAssets } from "./assets/preloadAssets.js"
 import { runWithLoadingOverlay } from "./utils/loadingOverlay.js"
 import { settingsManager } from "./core/SettingsManager.js"
@@ -125,22 +125,15 @@ document.body.appendChild(renderer.domElement)
 
 let currentCleanup = null
 
-const musicPlayer = new MusicPlayer()
-
 // Initialize FPS Counter
 initFPSCounter()
-
-document.addEventListener('click', async () => {
-  if (!musicPlayer.isPlaying) {
-    await musicPlayer.start()
-  }
-}, { once: true })
 
 showHomePage()
 
 // ==================== MAIN MENU ====================
 function showHomePage() {
   clearEntireUI();
+  void musicPlayer.requestLobby({ immediate: true })
 
 
   // Clear renderer and set transparent so menu background image is visible
@@ -203,13 +196,6 @@ function showHomePage() {
     { label: 'SETTINGS', action: (afterFade) => navigateToSettings(afterFade) },
   ];
 
-  // --- PATCH: Ensure music always starts on any menu action ---
-  function ensureMusicPlaying() {
-    if (musicPlayer && !musicPlayer.isPlaying) {
-      musicPlayer.start();
-    }
-  }
-
   const createMenuItem = (label, action, index) => {
     const item = document.createElement('div');
     item.textContent = label;
@@ -243,7 +229,6 @@ function showHomePage() {
     item.onclick = (e) => {
       e.preventDefault();
       e.stopPropagation();
-      ensureMusicPlaying();
       if (typeof action === 'function') {
         action(() => {
           if (menuOverlay && menuOverlay.parentNode) {
@@ -298,7 +283,6 @@ function showHomePage() {
       e.preventDefault();
     } else if (e.code === 'Enter' || e.code === 'NumpadEnter') {
       e.preventDefault();
-      ensureMusicPlaying();
       const selectedItem = menuItems[currentIndex];
       if (selectedItem && typeof selectedItem.action === 'function') {
         selectedItem.action(() => {
@@ -346,6 +330,7 @@ function showHomePage() {
 // ==================== NAVIGATION ====================
 async function navigateToSimulation() {
   try {
+    void musicPlayer.requestSilence({ fadeOutSec: 1.1 })
     await runWithLoadingOverlay(
       (updateProgress) => preloadCoreAssets(updateProgress),
       { title: 'Loading Simulation' }

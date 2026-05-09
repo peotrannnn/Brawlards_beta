@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
+import { COLLISION_GROUPS } from '../physics/physicsHelper.js';
+import { computeSound4EquivalentFallHeight, playSound4 } from '../sounds/sound4.js';
 
 /**
  * Quản lý và xử lý các sự kiện va chạm vật lý trong thế giới Cannon.js.
@@ -11,12 +13,15 @@ export class PhysicsEventManager {
      * @param {ParticleManager} options.particleManager - Trình quản lý particle để tạo hiệu ứng.
      * @param {Array} options.syncList - Danh sách các object được đồng bộ hóa (mesh & body).
      */
-    constructor({ particleManager, syncList }) {
+    constructor({ particleManager, syncList, listenerPositionProvider = null }) {
         this.particleManager = particleManager;
         this.syncList = syncList;
+        this.listenerPositionProvider = typeof listenerPositionProvider === 'function' ? listenerPositionProvider : null;
         // Sử dụng Set để đảm bảo mỗi cặp va chạm chỉ được xử lý một lần mỗi frame, tránh lag
         this.handledPairs = new Set();
         this.tableClothColor = 0x0c6b34; // Màu mặc định, sẽ được update từ scene
+        this._tmpContactPoint = new CANNON.Vec3();
+        this._tmpThreeContactPoint = new THREE.Vector3();
     }
 
     /**
@@ -28,6 +33,12 @@ export class PhysicsEventManager {
 
         body.addEventListener('collide', (event) => {
             const { body: otherBody, contact } = event;
+
+            this.handleLandingContact(body, otherBody, contact);
+
+            if (body.userData?.physicsEventMode !== 'full') {
+                return;
+            }
 
             // Tạo một key duy nhất cho cặp va chạm để tránh xử lý trùng lặp
             const pairKey = body.id < otherBody.id ? `${body.id}-${otherBody.id}` : `${otherBody.id}-${body.id}`;
@@ -59,6 +70,47 @@ export class PhysicsEventManager {
         });
     }
 
+    handleLandingContact(body, otherBody, contact) {
+        if (!body || !otherBody || !contact) return;
+        if (body.mass <= 0 || otherBody.mass > 0) return;
+        if (body.userData?.isCueBody || body.userData?.isForceBody) return;
+
+        const collisionGroup = otherBody.collisionFilterGroup || 0;
+        const isGroundGroup = (collisionGroup & (COLLISION_GROUPS.STATIC | COLLISION_GROUPS.RAIL)) !== 0;
+        const otherMaterialName = otherBody.material?.name;
+        const isGroundMaterial = otherMaterialName === 'table' || otherMaterialName === 'default';
+        if (!isGroundGroup && !isGroundMaterial) return;
+
+        const supportNormalY = contact.bi === body ? -contact.ni.y : contact.ni.y;
+        if (supportNormalY < 0.45) return;
+
+        const now = performance.now() / 1000;
+        body.userData = body.userData || {};
+        if ((body.userData.landingSoundCooldownUntil || 0) > now) return;
+
+        const impactSpeed = Math.abs(contact.getImpactVelocityAlongNormal());
+        const fallHeight = computeSound4EquivalentFallHeight(impactSpeed);
+        if (fallHeight < 0.55) return;
+
+        const contactPoint = this._tmpContactPoint;
+        if (contact.bi === body) {
+            body.pointToWorldFrame(contact.ri, contactPoint);
+        } else {
+            body.pointToWorldFrame(contact.rj, contactPoint);
+        }
+
+        const sourcePosition = this._tmpThreeContactPoint.set(contactPoint.x, contactPoint.y, contactPoint.z);
+
+        playSound4({
+            fallHeight,
+            targetMass: body.mass || 1,
+            sourcePosition,
+            listenerPosition: this.listenerPositionProvider ? this.listenerPositionProvider() : null,
+        });
+
+        body.userData.landingSoundCooldownUntil = now + 0.16;
+    }
+
     /**
      * Xử lý logic khi hai vật thể động va chạm.
      * @param {object} entryA - Entry đầu tiên từ syncList.
@@ -68,11 +120,11 @@ export class PhysicsEventManager {
     handleDynamicCollision(entryA, entryB, contact) {
         // Tính toán tọa độ điểm va chạm trong không gian thế giới.
         // contact.ri là vector từ tâm của bodyA đến điểm tiếp xúc, trong hệ tọa độ của bodyA.
-        const contactPoint = new CANNON.Vec3();
+        const contactPoint = this._tmpContactPoint;
         entryA.body.pointToWorldFrame(contact.ri, contactPoint);
 
         // Chuyển đổi từ CANNON.Vec3 sang THREE.Vector3 để dùng cho particle manager.
-        const threeContactPoint = new THREE.Vector3(contactPoint.x, contactPoint.y, contactPoint.z);
+        const threeContactPoint = this._tmpThreeContactPoint.set(contactPoint.x, contactPoint.y, contactPoint.z);
 
         // Lấy màu từ userData của mesh
         const color1 = entryA.mesh.userData.mainColor;
@@ -104,9 +156,9 @@ export class PhysicsEventManager {
         if (now - lastDustTime < DUST_COOLDOWN) return;
 
         // 3. Tạo hiệu ứng
-        const contactPoint = new CANNON.Vec3();
+        const contactPoint = this._tmpContactPoint;
         ballBody.pointToWorldFrame(contact.ri, contactPoint);
-        const threeContactPoint = new THREE.Vector3(contactPoint.x, contactPoint.y, contactPoint.z);
+        const threeContactPoint = this._tmpThreeContactPoint.set(contactPoint.x, contactPoint.y, contactPoint.z);
 
         // Tạo màu bụi sáng hơn một chút để dễ nhìn thấy trên nền bàn
         const dustColor = new THREE.Color(this.tableClothColor);
@@ -125,6 +177,10 @@ export class PhysicsEventManager {
      */
     setTableColor(hexColor) {
         this.tableClothColor = hexColor;
+    }
+
+    setListenerPositionProvider(provider) {
+        this.listenerPositionProvider = typeof provider === 'function' ? provider : null;
     }
 
     /**

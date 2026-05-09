@@ -3,6 +3,8 @@ import * as CANNON from "cannon-es"
 import { COLLISION_GROUPS, COLLISION_MASKS, detectCueTouchingBalls, OBJECT_MASSES } from "../physics/physicsHelper.js"
 import { CollisionManager } from "../utils/collisionManager.js"
 import { createImpactRingEffect } from "../effects/particles/particle7.js"
+import { playSound1, primeSound1Audio } from "../sounds/sound1.js"
+import { playSound5, primeSound5Audio } from "../sounds/sound5.js"
 
 // =============================================
 const PLAYER_CONFIG = {
@@ -57,6 +59,9 @@ const PLAYER_CONFIG = {
     uncollectedItemMarkerYOffset: 0.22,
     collectScanIntervalSec: 1 / 20,
     markerUpdateIntervalSec: 1 / 12,
+    movementTingMinSpeed: 0.35,
+    movementTingMaxInterval: 0.17,
+    movementTingMinInterval: 0.085,
     keys: {
         forward: "KeyW",
         backward: "KeyS", left: "KeyA", right: "KeyD",
@@ -116,10 +121,13 @@ export class PlayerMovementController {
         this._lastUpdateTs = performance.now()
         this._collectScanAccumulator = 0
         this._markerUpdateAccumulator = 0
+        this._movementSoundAccumulator = 0
 
         this._tmpCollectTriggerCenter = new THREE.Vector3()
         this._tmpCollectItemPos = new THREE.Vector3()
         this._tmpCarryTargetQuat = new THREE.Quaternion()
+        this._tmpMovementSoundSource = new THREE.Vector3()
+        this._tmpMovementSoundListener = new THREE.Vector3()
 
         // Keep stable handler references for proper cleanup.
         this._boundOnKeyDown = this._onKeyDown.bind(this)
@@ -184,6 +192,7 @@ export class PlayerMovementController {
         this.keys.s = false
         this.keys.d = false
         this.jumpPressed = false
+        this._movementSoundAccumulator = 0
         this.moveDir.set(0, 0, 0)
         if (this._isCharging) {
             this._isCharging = false
@@ -200,6 +209,14 @@ export class PlayerMovementController {
         if (e.code === PLAYER_CONFIG.keys.left) this.keys.a = true
         if (e.code === PLAYER_CONFIG.keys.backward) this.keys.s = true
         if (e.code === PLAYER_CONFIG.keys.right) this.keys.d = true
+        if (
+            e.code === PLAYER_CONFIG.keys.forward
+            || e.code === PLAYER_CONFIG.keys.left
+            || e.code === PLAYER_CONFIG.keys.backward
+            || e.code === PLAYER_CONFIG.keys.right
+        ) {
+            primeSound5Audio()
+        }
         if (e.code === PLAYER_CONFIG.keys.jump) this.jumpPressed = true
         if (e.code === PLAYER_CONFIG.keys.dropItem && !this.dropItemHeld) {
             this.dropItemHeld = true
@@ -213,6 +230,7 @@ export class PlayerMovementController {
         if (e.code === PLAYER_CONFIG.keys.charge && 
             !this._isCharging && 
             Date.now() - this.lastShotTime > PLAYER_CONFIG.shotCooldown * 1000) {
+            primeSound1Audio()
             this._isCharging = true
             this.chargeStartTime = Date.now()
             this.currentCharge = 0
@@ -246,6 +264,7 @@ export class PlayerMovementController {
         this.keys.s = false
         this.keys.d = false
         this.jumpPressed = false
+        this._movementSoundAccumulator = 0
         this.moveDir.set(0, 0, 0)
         this._isCharging = false
         this.currentCharge = 0
@@ -463,6 +482,52 @@ export class PlayerMovementController {
         this.canJump = false;
     }
 
+    _updateMovementTingSound(body, mesh, cameraController, frameDelta) {
+        if (!body || !mesh || mesh.name !== "Player") {
+            this._movementSoundAccumulator = 0
+            return
+        }
+
+        const hasMovementInput = this.keys.w || this.keys.a || this.keys.s || this.keys.d
+        const horizontalSpeed = Math.hypot(body.velocity.x || 0, body.velocity.z || 0)
+        if (
+            !this.canJump
+            || !hasMovementInput
+            || horizontalSpeed < PLAYER_CONFIG.movementTingMinSpeed
+            || this._inputDisabled
+            || !this.canAcceptInput
+        ) {
+            this._movementSoundAccumulator = 0
+            return
+        }
+
+        const speedNorm = THREE.MathUtils.clamp(horizontalSpeed / Math.max(0.001, PLAYER_CONFIG.maxSpeed), 0, 1)
+        const interval = THREE.MathUtils.lerp(
+            PLAYER_CONFIG.movementTingMaxInterval,
+            PLAYER_CONFIG.movementTingMinInterval,
+            speedNorm
+        )
+
+        this._movementSoundAccumulator += frameDelta
+        if (this._movementSoundAccumulator < interval) {
+            return
+        }
+
+        this._movementSoundAccumulator %= interval
+
+        const sourcePosition = this._tmpMovementSoundSource.set(body.position.x, body.position.y, body.position.z)
+        const listenerBase = cameraController?.camera?.position || this.camera?.position
+        const listenerPosition = listenerBase
+            ? this._tmpMovementSoundListener.copy(listenerBase)
+            : null
+
+        playSound5({
+            speed: horizontalSpeed,
+            sourcePosition,
+            listenerPosition,
+        })
+    }
+
     _animateLegs(mesh, body) {
         if (!mesh) return
 
@@ -605,16 +670,22 @@ export class PlayerMovementController {
                     bodyPos.y - tipPos.y,
                     bodyPos.z - tipPos.z
                 ).normalize();
+
+                const impactPoint = new THREE.Vector3(bodyPos.x, bodyPos.y, bodyPos.z)
+                    .addScaledVector(toBallVec, -(bodyRadius || 0.08));
+
+                const forceFactor = 1 - (distAlongDir / hitLength);
+                const finalForce = force * forceFactor;
                 
                 // ✨ Lưu lại ball hit info + normal
                 hitBalls.push({
                     body: body,
                     contactPos: new THREE.Vector3(bodyPos.x, bodyPos.y, bodyPos.z),
-                    impactNormal: toBallVec
+                    impactPoint: impactPoint,
+                    impactNormal: toBallVec,
+                    impactForce: finalForce,
+                    targetMass: body.mass || OBJECT_MASSES.BILLIARD_BALL
                 });
-                
-                const forceFactor = 1 - (distAlongDir / hitLength);
-                const finalForce = force * forceFactor;
                 
                 // ✨ Find ball name in syncList to check if it's Ball 8
                 const ballEntry = this.syncList ? this.syncList.find(e => e.body === body) : null;
@@ -716,22 +787,32 @@ export class PlayerMovementController {
             }
             
             // ✨ Trigger impact ring effect cho mỗi ball bị chạm
-            if (hitBalls.length > 0 && this.scene) {
+            if (hitBalls.length > 0) {
                 hitBalls.forEach(hit => {
-                    const impactEffect = createImpactRingEffect(
-                        this.scene,
-                        hit.contactPos,
-                        {
-                            lifetime: 0.3,
-                            initialOpacity: Math.min(this.currentCharge * 0.8, 0.9),
-                            impactNormal: hit.impactNormal
+                    if (this.scene) {
+                        const impactEffect = createImpactRingEffect(
+                            this.scene,
+                            hit.contactPos,
+                            {
+                                lifetime: 0.3,
+                                initialOpacity: Math.min(this.currentCharge * 0.8, 0.9),
+                                impactNormal: hit.impactNormal
+                            }
+                        );
+                        // Store effect để update trong loop
+                        if (!this.particleEffects) {
+                            this.particleEffects = [];
                         }
-                    );
-                    // Store effect để update trong loop
-                    if (!this.particleEffects) {
-                        this.particleEffects = [];
+                        this.particleEffects.push(impactEffect);
                     }
-                    this.particleEffects.push(impactEffect);
+
+                    playSound1({
+                        impactForce: hit.impactForce,
+                        targetMass: hit.targetMass,
+                        charge: this.currentCharge,
+                        sourcePosition: hit.impactPoint,
+                        listenerPosition: this.camera ? this.camera.position : null
+                    })
                 });
             }
         }
@@ -970,7 +1051,7 @@ export class PlayerMovementController {
     itemMesh.userData._cachedCarriedFlag = isCarried
     itemMesh.userData.isCarriedItem = isCarried
     itemMesh.userData.carriedByPlayer = isCarried
-    itemMesh.userData.ignoreRaycast = isCarried
+    itemMesh.userData.ignoreRaycast = isCarried || itemMesh.userData.cameraPassthrough === true
     if (isCarried) {
         itemMesh.userData.carriedByGuide = false
     }
@@ -988,7 +1069,7 @@ export class PlayerMovementController {
         if (!child.isMesh) return
         child.userData.isCarriedItem = isCarried
         child.userData.carriedByPlayer = isCarried
-        child.userData.ignoreRaycast = isCarried
+        child.userData.ignoreRaycast = isCarried || child.userData.cameraPassthrough === true
         if (isCarried) {
             child.userData.carriedByGuide = false
         }
@@ -998,6 +1079,29 @@ export class PlayerMovementController {
         this.cameraController.forceRefreshCollisionCache()
     }
 }
+
+    _setMeshCameraPassthroughFlag(itemMesh, enabled, itemBody = null) {
+        if (!itemMesh) return
+
+        itemMesh.userData = itemMesh.userData || {}
+        itemMesh.userData.cameraPassthrough = enabled
+        itemMesh.userData.ignoreRaycast = enabled || itemMesh.userData.isCarriedItem === true
+
+        if (itemBody) {
+            itemBody.userData = itemBody.userData || {}
+            itemBody.userData.cameraPassthrough = enabled
+        }
+
+        itemMesh.traverse(child => {
+            if (!child.isMesh) return
+            child.userData.cameraPassthrough = enabled
+            child.userData.ignoreRaycast = enabled || child.userData.isCarriedItem === true
+        })
+
+        if (this.cameraController) {
+            this.cameraController.forceRefreshCollisionCache()
+        }
+    }
 
     _setCarriedBodyLocked(carried, targetPos) {
         const body = carried?.entry?.body
@@ -1193,7 +1297,7 @@ export class PlayerMovementController {
             if (body.userData.isCollectedItem) continue
 
             delete body.userData.cameraPassthroughUntil
-            this._setMeshCarriedFlag(mesh, false, body)
+            this._setMeshCameraPassthroughFlag(mesh, false, body)
         }
     }
 
@@ -1269,17 +1373,11 @@ export class PlayerMovementController {
         body.velocity.set(0, 0, 0)
         body.angularVelocity.set(0, 0, 0)
 
-        const droppedByShuffle = !withImpulse && !withCooldown
+        body.userData.cameraPassthroughUntil = Date.now() + PLAYER_CONFIG.shuffleCameraPassthroughMs
 
-        if (droppedByShuffle) {
-            body.userData.cameraPassthroughUntil = Date.now() + PLAYER_CONFIG.shuffleCameraPassthroughMs
-        } else {
-            delete body.userData.cameraPassthroughUntil
-        }
-
-        // Keep camera-exclusion during Q shuffle window, clear for normal drops
         if (carried.entry?.mesh) {
-            this._setMeshCarriedFlag(carried.entry.mesh, droppedByShuffle, body)
+            this._setMeshCarriedFlag(carried.entry.mesh, false, body)
+            this._setMeshCameraPassthroughFlag(carried.entry.mesh, true, body)
         }
 
         if (withCooldown) {
@@ -1576,6 +1674,7 @@ export class PlayerMovementController {
         this._checkGrounded(body);
         this._handleMovement(body);
         this._handleJump(body);
+        this._updateMovementTingSound(body, mesh, cameraController, frameDelta)
         this._animateLegs(mesh, body);
         this._updateHeadRotation(mesh);
         this._applyBodyRotation(mesh);

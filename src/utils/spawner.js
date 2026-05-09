@@ -3,6 +3,7 @@ import * as CANNON from 'cannon-es'
 import { TABLE_WIDTH, TABLE_DEPTH } from "../assets/objects/BilliardTable.js"
 import { CollisionManager } from './collisionManager.js'
 import { COLLISION_GROUPS } from '../physics/physicsHelper.js'
+import { playSound2 } from '../sounds/sound2.js'
 
 // --- Simple Object Pool ---
 const _objectPools = new Map();
@@ -42,7 +43,8 @@ export function spawnObject({
   syncList,
   particleManager,
   fakeShadowManager = null,
-  destroySystem = null
+  destroySystem = null,
+  listenerPosition = null
 }) {
   // --- Only allow one instance for certain types ---
   const uniqueTypes = ['Bowling Ball', 'Guy', 'Dude', 'Player'];
@@ -123,6 +125,9 @@ export function spawnObject({
       entry.body.userData.hasBeenCollectedOnce = false;
       entry.body.userData.isCollectedItem = false;
       entry.body.userData.physicsEventRegistered = false; // Reset flag đăng ký physics event
+      entry.body.userData.floorGuardLastSafePosition = null;
+      delete entry.body.userData.floorGuardLastGroundY;
+      entry.body.userData.floorGuardArmed = false;
       
       entry.body.wakeUp();
       world.addBody(entry.body);
@@ -144,6 +149,9 @@ export function spawnObject({
       body.name = prefab.name || mesh.name;
       body.userData = body.userData || {};
       body.userData.spawnCategory = inferSpawnCategory(prefab, body);
+      body.userData.floorGuardLastSafePosition = null;
+      delete body.userData.floorGuardLastGroundY;
+      body.userData.floorGuardArmed = false;
       world.addBody(body);
     }
 
@@ -188,6 +196,10 @@ export function spawnObject({
 
   if (particleManager && particleManager.spawn) {
     particleManager.spawn('smoke', position.clone());
+    playSound2({
+      sourcePosition: position,
+      listenerPosition,
+    })
   }
 
   return entry;
@@ -216,10 +228,11 @@ export function spawnRandom({
   syncList,
   particleManager,
   height = 7,
-  baseY = 0
+  baseY = 0,
+  listenerPosition = null
 }) {
   if (!dynamicPrefabs.length) return
   const prefab = dynamicPrefabs[Math.floor(Math.random() * dynamicPrefabs.length)]
   const pos = randomPositionAboveTable(height, baseY)
-  return spawnObject({scene, prefab, position: pos, world, physicsMaterials, syncList, particleManager})
+  return spawnObject({scene, prefab, position: pos, world, physicsMaterials, syncList, particleManager, listenerPosition})
 }

@@ -1,5 +1,6 @@
 import * as THREE from "three"
 import { returnObjectToPool } from "./spawner.js"
+import { playSound3 } from "../sounds/sound3.js"
 
 const DESTROY_SYSTEM_CONFIG = {
   destroyTimeout: 3000,
@@ -12,12 +13,13 @@ const DESTROY_SYSTEM_CONFIG = {
 };
 
 export class DestroySystem {
-  constructor({ syncList, world, scene, hitboxManager = null, particleManager = null }) {
+  constructor({ syncList, world, scene, hitboxManager = null, particleManager = null, listenerPositionProvider = null }) {
     this.syncList = syncList;
     this.world = world;
     this.scene = scene;
     this.hbManager = hitboxManager;
     this.particleManager = particleManager;
+    this.listenerPositionProvider = typeof listenerPositionProvider === 'function' ? listenerPositionProvider : null;
 
     this.planeY = null;
     this.pending = new Map();
@@ -290,6 +292,10 @@ export class DestroySystem {
     this.particleManager = pm;
   }
 
+  setListenerPositionProvider(provider) {
+    this.listenerPositionProvider = typeof provider === 'function' ? provider : null;
+  }
+
   destroyObject(entry) {
     if (!entry) return;
     this._queueDestroy(entry);
@@ -521,6 +527,10 @@ export class DestroySystem {
     if (this.particleManager && character.mesh && !character._destroyFxSpawned) {
       const spawnPos = character.mesh.position.clone();
       this.particleManager.spawn('smoke', spawnPos, { color: 0x999999 });
+      playSound3({
+        sourcePosition: spawnPos,
+        listenerPosition: this.listenerPositionProvider ? this.listenerPositionProvider() : null,
+      })
       character._destroyFxSpawned = true;
     }
 
