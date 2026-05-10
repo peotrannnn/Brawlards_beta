@@ -34,6 +34,9 @@ const CHEST_CONFIG = {
   HINGE_FRONT_OFFSET: 0.12
 }
 
+const clueTextureLoader = new THREE.TextureLoader()
+let cachedClue2Texture = null
+
 const CHEST_LAYOUT = {
   bottomOuterY: (-CHEST_CONFIG.OUTER_SIZE_Y * 0.5) + (CHEST_CONFIG.WALL_THICKNESS * 0.5),
   topOuterY: (CHEST_CONFIG.OUTER_SIZE_Y * 0.5) - (CHEST_CONFIG.WALL_THICKNESS * 0.5),
@@ -108,6 +111,7 @@ function createChestPhysicsDef() {
       ...CHEST_SURFACES.map((surface) => ({
         type: 'box',
         role: surface.role,
+        surfaceAudioType: 'chest-wood',
         size: [...surface.size],
         offset: [...surface.offset]
       })),
@@ -159,6 +163,18 @@ function createWoodTexture(baseColor = '#6f3f1f') {
   texture.repeat.set(1.6, 1.6)
   texture.needsUpdate = true
   return texture
+}
+
+function getClue2Texture() {
+  if (cachedClue2Texture) return cachedClue2Texture
+
+  const texturePath = new URL('../../pictures/clue2.png', import.meta.url).href
+  cachedClue2Texture = clueTextureLoader.load(texturePath)
+  cachedClue2Texture.colorSpace = THREE.SRGBColorSpace
+  cachedClue2Texture.minFilter = THREE.LinearMipmapLinearFilter
+  cachedClue2Texture.magFilter = THREE.LinearFilter
+  cachedClue2Texture.anisotropy = 8
+  return cachedClue2Texture
 }
 
 function createChestMesh() {
@@ -234,6 +250,27 @@ function createChestMesh() {
   lid.receiveShadow = true
   lid.name = 'Lid'
   lid.position.set((doorWidth * 0.5) - (t * 0.38), 0, 0)
+
+  const clueStickerWidth = 1.7
+  const clueStickerAspect = 1082 / 831
+  const clueStickerHeight = clueStickerWidth / clueStickerAspect
+  const clueSticker = new THREE.Mesh(
+    new THREE.PlaneGeometry(clueStickerWidth, clueStickerHeight),
+    new THREE.MeshStandardMaterial({
+      map: getClue2Texture(),
+      transparent: true,
+      alphaTest: 0.08,
+      roughness: 1.0,
+      metalness: 0.0,
+      depthWrite: false,
+      side: THREE.DoubleSide
+    })
+  )
+  clueSticker.name = 'Chest Clue 2'
+  clueSticker.position.set(-0.22, 0.04, (CHEST_CONFIG.DOOR_DEPTH * 0.5) + 0.012)
+  clueSticker.renderOrder = 1
+  lid.add(clueSticker)
+
   lidPivot.add(lid)
 
   const latchRightEdgeX = lid.position.x + (doorWidth * 0.5)

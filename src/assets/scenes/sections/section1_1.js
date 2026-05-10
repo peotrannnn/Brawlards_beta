@@ -754,7 +754,9 @@ export function createSection1(rootGroup, lightingOverrides = {}) {
       {
         type: 'box',
         size: [ROOM_CONFIG.width, 0.5, ROOM_CONFIG.depth],
-        offset: [0, 0, 0]
+        offset: [0, 0, 0],
+        role: 'section1Floor',
+        surfaceAudioType: 'section1-floor'
       },
       // Ceiling
       {

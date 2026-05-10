@@ -5,6 +5,8 @@ import { CollisionManager } from "../utils/collisionManager.js"
 import { createImpactRingEffect } from "../effects/particles/particle7.js"
 import { playSound1, primeSound1Audio } from "../sounds/sound1.js"
 import { playSound5, primeSound5Audio } from "../sounds/sound5.js"
+import { playSound7 } from "../sounds/sound7.js"
+import { playSound8 } from "../sounds/sound8.js"
 
 // =============================================
 const PLAYER_CONFIG = {
@@ -122,12 +124,16 @@ export class PlayerMovementController {
         this._collectScanAccumulator = 0
         this._markerUpdateAccumulator = 0
         this._movementSoundAccumulator = 0
+        this._movementSurfaceAudioType = "default-ground"
+        this._movementSurfaceAudioCache = new WeakMap()
 
         this._tmpCollectTriggerCenter = new THREE.Vector3()
         this._tmpCollectItemPos = new THREE.Vector3()
         this._tmpCarryTargetQuat = new THREE.Quaternion()
         this._tmpMovementSoundSource = new THREE.Vector3()
         this._tmpMovementSoundListener = new THREE.Vector3()
+        this._tmpInteractionSoundSource = new THREE.Vector3()
+        this._tmpInteractionSoundListener = new THREE.Vector3()
 
         // Keep stable handler references for proper cleanup.
         this._boundOnKeyDown = this._onKeyDown.bind(this)
@@ -193,6 +199,7 @@ export class PlayerMovementController {
         this.keys.d = false
         this.jumpPressed = false
         this._movementSoundAccumulator = 0
+        this._movementSurfaceAudioType = "default-ground"
         this.moveDir.set(0, 0, 0)
         if (this._isCharging) {
             this._isCharging = false
@@ -307,9 +314,13 @@ export class PlayerMovementController {
 
     _checkGrounded(body) {
         this.canJump = false;
+        this._movementSurfaceAudioType = "default-ground"
         if (!body.world) return
 
         const up = new CANNON.Vec3(0, 1, 0)
+        let groundedBody = null
+        let groundedShape = null
+        let bestGroundDot = -Infinity
 
         for (let contact of body.world.contacts) {
             if (contact.bi !== body && contact.bj !== body) continue
@@ -321,11 +332,110 @@ export class PlayerMovementController {
                 normal.copy(contact.ni)
             }
 
-            if (normal.dot(up) > this.maxSlopeDot) {
-                this.canJump = true;
-                return
+            const groundDot = normal.dot(up)
+            if (groundDot > this.maxSlopeDot && groundDot > bestGroundDot) {
+                bestGroundDot = groundDot
+                groundedBody = contact.bi === body ? contact.bj : contact.bi
+                groundedShape = contact.bi === body ? contact.sj : contact.si
             }
         }
+
+        if (groundedBody) {
+            this.canJump = true;
+            this._movementSurfaceAudioType = this._resolveGroundedSurfaceAudioType(groundedBody, groundedShape)
+        }
+    }
+
+    _resolveGroundedSurfaceAudioType(groundedBody, groundedShape) {
+        const directShapeType = groundedShape?.userData?.surfaceAudioType
+        if (typeof directShapeType === "string" && directShapeType.trim().length > 0) {
+            return directShapeType.trim()
+        }
+
+        const indexedShapeTypes = groundedBody?.userData?.surfaceAudioTypesByShapeIndex
+        if (Array.isArray(indexedShapeTypes) && groundedShape && Array.isArray(groundedBody?.shapes)) {
+            const shapeIndex = groundedBody.shapes.indexOf(groundedShape)
+            if (shapeIndex >= 0) {
+                const indexedType = indexedShapeTypes[shapeIndex]
+                if (typeof indexedType === "string" && indexedType.trim().length > 0) {
+                    return indexedType.trim()
+                }
+            }
+        }
+
+        const bodySurfaceType = groundedBody?.userData?.surfaceAudioType
+        if (typeof bodySurfaceType === "string" && bodySurfaceType.trim().length > 0) {
+            return bodySurfaceType.trim()
+        }
+
+        return this._getMovementSurfaceAudioType(groundedBody, groundedShape)
+    }
+
+    _getMovementSurfaceAudioType(surfaceBody, groundedShape = null) {
+        if (!surfaceBody || typeof surfaceBody !== "object") return "default-ground"
+
+        const cachedType = this._movementSurfaceAudioCache.get(surfaceBody)
+        if (cachedType !== undefined) {
+            return this._appendMovementShapeRole(cachedType, groundedShape)
+        }
+
+        const surfaceEntry = Array.isArray(this.syncList)
+            ? this.syncList.find((entry) => entry?.body === surfaceBody && entry.mesh)
+            : null
+        const surfaceType = this._resolveMovementSurfaceAudioType(surfaceEntry?.mesh || null, surfaceBody?.name)
+
+        this._movementSurfaceAudioCache.set(surfaceBody, surfaceType)
+        return this._appendMovementShapeRole(surfaceType, groundedShape)
+    }
+
+    _resolveMovementSurfaceAudioType(surfaceMesh, fallbackName = "") {
+        if (typeof surfaceMesh?.userData?.surfaceAudioType === "string" && surfaceMesh.userData.surfaceAudioType.trim().length > 0) {
+            return surfaceMesh.userData.surfaceAudioType.trim()
+        }
+
+        let resolvedSurfaceType = ""
+        let fallbackMeshName = ""
+        if (surfaceMesh && typeof surfaceMesh.traverse === "function") {
+            surfaceMesh.traverse((child) => {
+                if (!resolvedSurfaceType && typeof child?.userData?.surfaceAudioType === "string" && child.userData.surfaceAudioType.trim().length > 0) {
+                    resolvedSurfaceType = child.userData.surfaceAudioType.trim()
+                    return
+                }
+
+                if (!fallbackMeshName && child?.isMesh && typeof child.name === "string" && child.name.trim().length > 0) {
+                    fallbackMeshName = child.name.trim()
+                }
+            })
+        }
+
+        if (resolvedSurfaceType) {
+            return resolvedSurfaceType
+        }
+
+        const normalizedName = this._normalizeMovementSurfaceToken(surfaceMesh?.name || fallbackMeshName || fallbackName)
+        return normalizedName ? `object:${normalizedName}` : "default-ground"
+    }
+
+    _appendMovementShapeRole(baseSurfaceType, groundedShape) {
+        const normalizedBaseType = typeof baseSurfaceType === "string" && baseSurfaceType.trim().length > 0
+            ? baseSurfaceType.trim()
+            : "default-ground"
+        const normalizedRole = this._normalizeMovementSurfaceToken(groundedShape?.userData?.role)
+        if (!normalizedRole || normalizedBaseType.startsWith("shape:")) {
+            return normalizedBaseType
+        }
+
+        return `${normalizedBaseType}:shape-${normalizedRole}`
+    }
+
+    _normalizeMovementSurfaceToken(value) {
+        if (typeof value !== "string") return ""
+
+        return value
+            .trim()
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, "-")
+            .replace(/^-+|-+$/g, "")
     }
 
     _isItemEntry(entry) {
@@ -523,9 +633,25 @@ export class PlayerMovementController {
 
         playSound5({
             speed: horizontalSpeed,
+            surfaceAudioType: this._movementSurfaceAudioType,
             sourcePosition,
             listenerPosition,
         })
+    }
+
+    _getPlayerInteractionSoundPositions(mesh) {
+        const sourcePosition = this.currentBody
+            ? this._tmpInteractionSoundSource.set(this.currentBody.position.x, this.currentBody.position.y, this.currentBody.position.z)
+            : mesh?.position
+                ? this._tmpInteractionSoundSource.copy(mesh.position)
+                : null
+
+        const listenerBase = this.cameraController?.camera?.position || this.camera?.position
+        const listenerPosition = listenerBase
+            ? this._tmpInteractionSoundListener.copy(listenerBase)
+            : null
+
+        return { sourcePosition, listenerPosition }
     }
 
     _animateLegs(mesh, body) {
@@ -1165,6 +1291,13 @@ export class PlayerMovementController {
 
         const targetPos = this._getStackTargetForIndex(this.carriedItems.length - 1, mesh, this.currentBody)
         this._setCarriedBodyLocked(carried, targetPos)
+
+        const { sourcePosition, listenerPosition } = this._getPlayerInteractionSoundPositions(mesh)
+        playSound7({
+            sourcePosition,
+            listenerPosition,
+        })
+
         return true
     }
 
@@ -1409,6 +1542,12 @@ export class PlayerMovementController {
                 body.position
             )
         }
+
+        const { sourcePosition, listenerPosition } = this._getPlayerInteractionSoundPositions(mesh)
+        playSound8({
+            sourcePosition,
+            listenerPosition,
+        })
 
         return true
     }

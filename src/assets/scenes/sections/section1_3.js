@@ -1372,7 +1372,9 @@ export function createSection3(rootGroup) {
       radiusBottom: SECTION3_RADIUS,
       height: SECTION3_THICKNESS,
       segments: 24,
-      offset: [SECTION3_CENTER_X, SECTION3_CENTER_Y - SECTION3_THICKNESS / 2, SECTION3_CENTER_Z]
+      offset: [SECTION3_CENTER_X, SECTION3_CENTER_Y - SECTION3_THICKNESS / 2, SECTION3_CENTER_Z],
+      role: 'section3PlatformGround',
+      surfaceAudioType: 'section3-ground'
     })
     rootGroup.userData.physics.shapes.push({
       type: 'cylinder',
@@ -1380,7 +1382,9 @@ export function createSection3(rootGroup) {
       radiusBottom: 4.6,
       height: 0.18,
       segments: 24,
-      offset: [SECTION3_CENTER_X, SECTION3_CENTER_Y + 0.09, SECTION3_CENTER_Z]
+      offset: [SECTION3_CENTER_X, SECTION3_CENTER_Y + 0.09, SECTION3_CENTER_Z],
+      role: 'section3PedestalTop',
+      surfaceAudioType: 'section3-pedestal'
     })
   }
 

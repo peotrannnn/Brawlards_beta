@@ -1,0 +1,86 @@
+import { playSound10, primeSound10Audio } from '../sounds/sound10.js'
+import { playSound11, primeSound11Audio } from '../sounds/sound11.js'
+
+const UI_SOUND_STATE = {
+  initialized: false,
+  hoveredControl: null,
+}
+
+const UI_SURFACE_SELECTOR = [
+  '#mainMenuOverlay',
+  '#pauseMenuScreen',
+  '#gameOverScreen',
+  '.settings-screen-overlay',
+  '#playContainer',
+  '.page-ui',
+].join(', ')
+
+function isVisibleControl(element) {
+  if (!(element instanceof HTMLElement)) return false
+  const style = window.getComputedStyle(element)
+  return style.display !== 'none' && style.visibility !== 'hidden' && style.pointerEvents !== 'none'
+}
+
+function findUiSoundTarget(target) {
+  let current = target instanceof Element ? target : null
+
+  while (current && current !== document.body) {
+    if (current instanceof HTMLButtonElement && isVisibleControl(current)) {
+      return current
+    }
+
+    const surface = current.closest(UI_SURFACE_SELECTOR)
+    if (surface && current !== surface && current instanceof HTMLElement) {
+      const style = window.getComputedStyle(current)
+      if (style.cursor === 'pointer' && isVisibleControl(current)) {
+        return current
+      }
+    }
+
+    current = current.parentElement
+  }
+
+  return null
+}
+
+function handlePointerOver(event) {
+  const target = findUiSoundTarget(event.target)
+  if (!target || target === UI_SOUND_STATE.hoveredControl) return
+
+  UI_SOUND_STATE.hoveredControl = target
+  playSound10()
+}
+
+function handlePointerOut(event) {
+  const hovered = UI_SOUND_STATE.hoveredControl
+  if (!hovered) return
+
+  const target = findUiSoundTarget(event.target)
+  if (target !== hovered) return
+
+  const relatedTarget = event.relatedTarget instanceof Node ? event.relatedTarget : null
+  if (relatedTarget && hovered.contains(relatedTarget)) return
+
+  UI_SOUND_STATE.hoveredControl = null
+}
+
+function handleClick(event) {
+  const target = findUiSoundTarget(event.target)
+  if (!target) return
+  playSound11()
+}
+
+export function initUISoundEffects() {
+  if (UI_SOUND_STATE.initialized || typeof document === 'undefined') return
+
+  UI_SOUND_STATE.initialized = true
+  primeSound10Audio()
+  primeSound11Audio()
+
+  document.addEventListener('pointerover', handlePointerOver, true)
+  document.addEventListener('pointerout', handlePointerOut, true)
+  document.addEventListener('click', handleClick, true)
+  window.addEventListener('blur', () => {
+    UI_SOUND_STATE.hoveredControl = null
+  })
+}

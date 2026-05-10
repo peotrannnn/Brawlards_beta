@@ -1,17 +1,116 @@
 const SCREEN_MAT_STYLE_ID = 'scene1-screenmat-style'
 
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value))
+}
+
+function lerp(start, end, alpha) {
+  return start + ((end - start) * alpha)
+}
+
+function smoothstep(edge0, edge1, value) {
+  const t = clamp((value - edge0) / Math.max(1e-5, edge1 - edge0), 0, 1)
+  return t * t * (3 - (2 * t))
+}
+
 function ensureStyles() {
   if (document.getElementById(SCREEN_MAT_STYLE_ID)) return
 
   const style = document.createElement('style')
   style.id = SCREEN_MAT_STYLE_ID
   style.textContent = `
-    .screen-mat {
+    .screen-mat-blood-layer,
+    .screen-mat-guy-layer,
+    .screen-mat-stun-layer,
+    .white-flash-layer {
       position: fixed;
       inset: 0;
       pointer-events: none;
-      z-index: 1800;
+    }
 
+    .screen-mat-blood-layer {
+      z-index: 1700;
+      opacity: 0;
+      --blood-mid-alpha: 0;
+      --blood-edge-alpha: 0;
+      background:
+        radial-gradient(
+          circle at center,
+          rgba(55, 0, 0, 0) 36%,
+          rgba(125, 0, 0, var(--blood-mid-alpha)) 64%,
+          rgba(210, 10, 10, var(--blood-edge-alpha)) 100%
+        );
+      mix-blend-mode: screen;
+      filter: saturate(1.3) contrast(1.08);
+    }
+
+    .screen-mat-guy-layer {
+      z-index: 1800;
+      opacity: 0;
+      --blur: 0px;
+      --brightness: 1;
+      --contrast: 1;
+      --veil: 0;
+      --ghost-alpha: 0;
+      --noise-alpha: 0;
+      --dvx: 0px;
+      --dvy: 0px;
+      background: rgba(6, 8, 12, var(--veil));
+      backdrop-filter:
+        blur(var(--blur))
+        brightness(var(--brightness))
+        contrast(var(--contrast))
+        saturate(0.9);
+      -webkit-backdrop-filter:
+        blur(var(--blur))
+        brightness(var(--brightness))
+        contrast(var(--contrast))
+        saturate(0.9);
+    }
+
+    .screen-mat-guy-layer.low-cost,
+    .screen-mat-guy-layer.low-cost .screen-mat-guy-ghost,
+    .screen-mat-guy-layer.low-cost .screen-mat-guy-noise,
+    .screen-mat-stun-layer.low-cost,
+    .screen-mat-stun-layer.low-cost .screen-mat-stun-ghost,
+    .screen-mat-stun-layer.low-cost.active {
+      animation: none !important;
+      backdrop-filter: none !important;
+      -webkit-backdrop-filter: none !important;
+      filter: none !important;
+    }
+
+    .screen-mat-guy-ghost,
+    .screen-mat-stun-ghost {
+      position: absolute;
+      inset: 0;
+    }
+
+    .screen-mat-guy-ghost {
+      background: rgba(150, 170, 220, 0.06);
+      opacity: var(--ghost-alpha);
+      transform: translate(var(--dvx), var(--dvy));
+      mix-blend-mode: screen;
+    }
+
+    .screen-mat-guy-noise {
+      position: absolute;
+      inset: -4%;
+      opacity: var(--noise-alpha);
+      background-image:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.11) 0%, rgba(255, 255, 255, 0.03) 20%, rgba(255, 255, 255, 0.15) 52%, rgba(255, 255, 255, 0.02) 100%),
+        repeating-linear-gradient(180deg, rgba(0, 0, 0, 0) 0px, rgba(0, 0, 0, 0) 2px, rgba(255, 255, 255, 0.05) 3px, rgba(0, 0, 0, 0.12) 4px),
+        repeating-linear-gradient(90deg, rgba(255, 0, 0, 0.05) 0px, rgba(255, 0, 0, 0) 2px, rgba(0, 255, 255, 0.05) 3px, rgba(0, 255, 255, 0) 5px);
+      background-size: 100% 100%, 100% 6px, 240px 100%;
+      mix-blend-mode: screen;
+      transform: translate(calc(var(--dvx) * -0.7), calc(var(--dvy) * -0.35));
+      filter: blur(0.45px) contrast(1.14) saturate(1.08);
+      animation: screen-mat-vhs 0.18s steps(2) infinite;
+    }
+
+    .screen-mat-stun-layer {
+      z-index: 1900;
+      opacity: 0;
       --blur: 2px;
       --desat: 1;
       --brightness: 1;
@@ -20,22 +119,17 @@ function ensureStyles() {
       --dvx: 0px;
       --dvy: 0px;
       --ghost-alpha: 0;
-
-      opacity: 0;
       background: rgba(6, 8, 12, var(--veil));
-
       backdrop-filter:
         blur(var(--blur))
         grayscale(calc(1 - var(--desat)))
         brightness(var(--brightness))
         contrast(var(--contrast));
-
       -webkit-backdrop-filter:
         blur(var(--blur))
         grayscale(calc(1 - var(--desat)))
         brightness(var(--brightness))
         contrast(var(--contrast));
-
       filter:
         blur(var(--blur))
         grayscale(calc(1 - var(--desat)))
@@ -43,38 +137,20 @@ function ensureStyles() {
         contrast(var(--contrast));
     }
 
-    .screen-mat.active {
-      animation: pulse var(--pulse-duration, 4s) ease-in-out infinite;
+    .screen-mat-stun-layer.active {
+      animation: screen-mat-pulse var(--pulse-duration, 4s) ease-in-out infinite;
     }
 
-    .screen-mat.low-cost,
-    .screen-mat.low-cost .screen-mat-ghost,
-    .screen-mat.low-cost.active {
-      animation: none !important;
-      backdrop-filter: none !important;
-      -webkit-backdrop-filter: none !important;
-      filter: none !important;
-    }
-
-    .screen-mat.low-cost .screen-mat-ghost {
-      mix-blend-mode: normal;
-      background: rgba(180, 200, 255, 0.05);
-    }
-
-    .screen-mat-ghost {
-      position: absolute;
-      inset: 0;
+    .screen-mat-stun-ghost {
       background: rgba(150, 170, 220, 0.03);
       opacity: var(--ghost-alpha);
       transform: translate(var(--dvx), var(--dvy));
       mix-blend-mode: screen;
-
       backdrop-filter:
         blur(calc(var(--blur) * 0.5))
         grayscale(calc(1 - var(--desat)))
         brightness(calc(var(--brightness) * 0.95))
         contrast(calc(var(--contrast) * 1.05));
-
       -webkit-backdrop-filter:
         blur(calc(var(--blur) * 0.5))
         grayscale(calc(1 - var(--desat)))
@@ -83,22 +159,18 @@ function ensureStyles() {
     }
 
     .white-flash-layer {
-      position: fixed;
-      inset: 0;
-      pointer-events: none;
-      z-index: 1900;
+      z-index: 2000;
       background: white;
       opacity: 0;
     }
 
-    @keyframes pulse {
+    @keyframes screen-mat-pulse {
       0% {
         backdrop-filter:
           blur(var(--blur))
           grayscale(calc(1 - var(--desat)))
           brightness(var(--brightness))
           contrast(var(--contrast));
-
         filter:
           blur(var(--blur))
           grayscale(calc(1 - var(--desat)))
@@ -112,7 +184,6 @@ function ensureStyles() {
           grayscale(calc(1 - var(--desat)))
           brightness(calc(var(--brightness) * 0.9))
           contrast(calc(var(--contrast) * 1.15));
-
         filter:
           blur(calc(var(--blur) * 1.6))
           grayscale(calc(1 - var(--desat)))
@@ -126,12 +197,25 @@ function ensureStyles() {
           grayscale(calc(1 - var(--desat)))
           brightness(var(--brightness))
           contrast(var(--contrast));
-
         filter:
           blur(var(--blur))
           grayscale(calc(1 - var(--desat)))
           brightness(var(--brightness))
           contrast(var(--contrast));
+      }
+    }
+
+    @keyframes screen-mat-vhs {
+      0% {
+        transform: translate(calc(var(--dvx) * -0.7), calc(var(--dvy) * -0.35));
+      }
+
+      50% {
+        transform: translate(calc(var(--dvx) * -1.15), calc(var(--dvy) * -0.15));
+      }
+
+      100% {
+        transform: translate(calc(var(--dvx) * -0.55), calc(var(--dvy) * -0.5));
       }
     }
   `
@@ -145,28 +229,55 @@ export class ScreenMat {
     this.overlay = null
     this.ghostLayer = null
     this.whiteFlashLayer = null
-    this.remainingMs = 0
-    this.totalDurationMs = 0
-    this.active = false
-    this.elapsedMs = 0
+    this.guyLayer = null
+    this.guyGhostLayer = null
+    this.guyNoiseLayer = null
+    this.bloodLayer = null
+
+    this.stunRemainingMs = 0
+    this.stunTotalDurationMs = 0
+    this.stunActive = false
+    this.stunElapsedMs = 0
     this.isFlash = false
     this.flashRemainingMs = 0
     this.lowCost = false
     this.loadingTransition = null
 
+    this.runtimeMs = 0
+    this.guyTargetIntensity = 0
+    this.guyCurrentIntensity = 0
+    this.bloodHealthRatio = 1
+    this.damagePulse = 0
+
     if (typeof document !== 'undefined') {
       ensureStyles()
 
+      this.bloodLayer = document.createElement('div')
+      this.bloodLayer.className = 'screen-mat-blood-layer'
+
+      this.guyLayer = document.createElement('div')
+      this.guyLayer.className = 'screen-mat-guy-layer'
+
+      this.guyGhostLayer = document.createElement('div')
+      this.guyGhostLayer.className = 'screen-mat-guy-ghost'
+      this.guyLayer.appendChild(this.guyGhostLayer)
+
+      this.guyNoiseLayer = document.createElement('div')
+      this.guyNoiseLayer.className = 'screen-mat-guy-noise'
+      this.guyLayer.appendChild(this.guyNoiseLayer)
+
       this.overlay = document.createElement('div')
-      this.overlay.className = 'screen-mat'
+      this.overlay.className = 'screen-mat-stun-layer'
 
       this.ghostLayer = document.createElement('div')
-      this.ghostLayer.className = 'screen-mat-ghost'
+      this.ghostLayer.className = 'screen-mat-stun-ghost'
       this.overlay.appendChild(this.ghostLayer)
 
       this.whiteFlashLayer = document.createElement('div')
       this.whiteFlashLayer.className = 'white-flash-layer'
 
+      this.container.appendChild(this.bloodLayer)
+      this.container.appendChild(this.guyLayer)
       this.container.appendChild(this.overlay)
       this.container.appendChild(this.whiteFlashLayer)
     }
@@ -178,12 +289,108 @@ export class ScreenMat {
     if (this.overlay) {
       this.overlay.classList.toggle('low-cost', this.lowCost)
     }
+
+    if (this.guyLayer) {
+      this.guyLayer.classList.toggle('low-cost', this.lowCost)
+    }
   }
 
   _setWhiteLayerOpacity(opacity) {
     if (!this.whiteFlashLayer) return
-    const clamped = Number.isFinite(opacity) ? Math.max(0, Math.min(1, opacity)) : 0
+    const clamped = Number.isFinite(opacity) ? clamp(opacity, 0, 1) : 0
     this.whiteFlashLayer.style.opacity = clamped.toFixed(2)
+  }
+
+  _resetStun() {
+    this.stunActive = false
+    this.stunRemainingMs = 0
+    this.stunTotalDurationMs = 0
+    this.stunElapsedMs = 0
+    this.isFlash = false
+    this.flashRemainingMs = 0
+
+    if (this.overlay) {
+      this.overlay.classList.remove('active')
+      this.overlay.style.opacity = '0'
+      this.overlay.style.setProperty('--veil', '0')
+      this.overlay.style.setProperty('--ghost-alpha', '0')
+      this.overlay.style.setProperty('--dvx', '0px')
+      this.overlay.style.setProperty('--dvy', '0px')
+    }
+
+    this._setPerformanceMode(false)
+  }
+
+  _applyGuyVisuals(intensity) {
+    if (!this.guyLayer) return
+
+    const clamped = clamp(intensity, 0, 1)
+    if (clamped <= 0.0005) {
+      this.guyLayer.style.opacity = '0'
+      this.guyLayer.style.setProperty('--veil', '0')
+      this.guyLayer.style.setProperty('--ghost-alpha', '0')
+      this.guyLayer.style.setProperty('--noise-alpha', '0')
+      this.guyLayer.style.setProperty('--dvx', '0px')
+      this.guyLayer.style.setProperty('--dvy', '0px')
+      return
+    }
+
+    const drift = 0.18 + (clamped * 4.4)
+    const dvx = Math.sin(this.runtimeMs * 0.027) * drift
+    const dvy = Math.cos(this.runtimeMs * 0.019) * drift * 0.45
+    const blur = 0.12 + (clamped * 2.45)
+    const brightness = 1 - (clamped * 0.3)
+    const contrast = 1 + (clamped * 0.15)
+    const veil = 0.04 + (clamped * 0.42)
+    const ghostAlpha = 0.02 + (clamped * 0.22)
+    const noiseAlpha = 0.04 + (clamped * 0.26)
+
+    if (!this.lowCost) {
+      this.guyLayer.style.setProperty('--blur', `${blur.toFixed(2)}px`)
+      this.guyLayer.style.setProperty('--brightness', brightness.toFixed(2))
+      this.guyLayer.style.setProperty('--contrast', contrast.toFixed(2))
+    }
+
+    this.guyLayer.style.setProperty('--veil', veil.toFixed(3))
+    this.guyLayer.style.setProperty('--ghost-alpha', ghostAlpha.toFixed(3))
+    this.guyLayer.style.setProperty('--noise-alpha', noiseAlpha.toFixed(3))
+    this.guyLayer.style.setProperty('--dvx', `${dvx.toFixed(2)}px`)
+    this.guyLayer.style.setProperty('--dvy', `${dvy.toFixed(2)}px`)
+    this.guyLayer.style.opacity = Math.min(1, clamped * 1.08).toFixed(2)
+  }
+
+  _applyBloodVisuals() {
+    if (!this.bloodLayer) return
+
+    const persistent = this.bloodHealthRatio < 0.3
+      ? clamp(1 - smoothstep(0, 0.3, this.bloodHealthRatio), 0, 1) * 0.92
+      : 0
+    const intensity = Math.max(persistent, this.damagePulse)
+
+    if (intensity <= 0.0005) {
+      this.bloodLayer.style.opacity = '0'
+      this.bloodLayer.style.setProperty('--blood-mid-alpha', '0')
+      this.bloodLayer.style.setProperty('--blood-edge-alpha', '0')
+      return
+    }
+
+    const midAlpha = 0.08 + (intensity * 0.36)
+    const edgeAlpha = 0.2 + (intensity * 0.78)
+    this.bloodLayer.style.opacity = Math.min(1, 0.28 + (intensity * 1.08)).toFixed(2)
+    this.bloodLayer.style.setProperty('--blood-mid-alpha', midAlpha.toFixed(3))
+    this.bloodLayer.style.setProperty('--blood-edge-alpha', edgeAlpha.toFixed(3))
+  }
+
+  setGuyEffectIntensity(intensity = 0) {
+    this.guyTargetIntensity = clamp(intensity, 0, 1)
+  }
+
+  setBloodHealthRatio(healthRatio = 1) {
+    this.bloodHealthRatio = clamp(healthRatio, 0, 1)
+  }
+
+  triggerDamagePulse({ intensity = 1 } = {}) {
+    this.damagePulse = Math.max(this.damagePulse, clamp(intensity, 0, 1))
   }
 
   start(durationMs = 8000, options = {}) {
@@ -191,18 +398,15 @@ export class ScreenMat {
 
     this._setPerformanceMode(options.lowCost)
 
-    this.remainingMs = durationMs
-    this.totalDurationMs = durationMs
-    this.active = true
-    this.elapsedMs = 0
+    this.stunRemainingMs = Math.max(1, durationMs)
+    this.stunTotalDurationMs = Math.max(1, durationMs)
+    this.stunActive = true
+    this.stunElapsedMs = 0
     this.isFlash = false
 
     this.overlay.classList.add('active')
     this.overlay.style.opacity = '1'
-
-    // fixed duration, no random
     this.overlay.style.setProperty('--pulse-duration', '4s')
-
     this.overlay.style.setProperty('--blur', '2px')
     this.overlay.style.setProperty('--desat', '1')
     this.overlay.style.setProperty('--brightness', '1')
@@ -218,22 +422,16 @@ export class ScreenMat {
 
     this._setPerformanceMode(options.lowCost)
 
-    this.remainingMs = durationMs
-    this.totalDurationMs = durationMs
-    this.active = true
-    this.elapsedMs = 0
+    this.stunRemainingMs = Math.max(1, durationMs)
+    this.stunTotalDurationMs = Math.max(1, durationMs)
+    this.stunActive = true
+    this.stunElapsedMs = 0
     this.isFlash = true
-    this.flashRemainingMs = 2000 // white flash duration 2s
+    this.flashRemainingMs = Math.min(Math.max(1, durationMs), 2000)
 
     this.overlay.classList.add('active')
     this.overlay.style.opacity = '1'
-
-    // White flash layer - trắng xóa màn hình hoàn toàn
-    if (this.whiteFlashLayer) {
-      this.whiteFlashLayer.style.opacity = '1'
-    }
-
-    // Flash effect parameters
+    this.whiteFlashLayer.style.background = '#ffffff'
     this.overlay.style.setProperty('--pulse-duration', '0.5s')
     this.overlay.style.setProperty('--blur', '0px')
     this.overlay.style.setProperty('--desat', '0')
@@ -257,7 +455,7 @@ export class ScreenMat {
       elapsedMs: 0,
       opacity: fadeInMs > 0 ? 0 : 1,
       phase: fadeInMs > 0 ? 'fadeIn' : 'hold',
-      readyToFadeOut: false
+      readyToFadeOut: false,
     }
 
     this.whiteFlashLayer.style.background = options.color || '#ffffff'
@@ -284,26 +482,28 @@ export class ScreenMat {
   }
 
   stop() {
-    this.active = false
-    this.remainingMs = 0
-    this.flashRemainingMs = 0
     this.loadingTransition = null
+    this.guyTargetIntensity = 0
+    this.guyCurrentIntensity = 0
+    this.bloodHealthRatio = 1
+    this.damagePulse = 0
 
-    if (this.overlay) {
-      this.overlay.classList.remove('active')
-      this.overlay.style.opacity = '0'
+    this._resetStun()
+    this._setWhiteLayerOpacity(0)
+    if (this.whiteFlashLayer) {
+      this.whiteFlashLayer.style.background = '#ffffff'
     }
 
-    this._setWhiteLayerOpacity(0)
+    this._applyGuyVisuals(0)
+    this._applyBloodVisuals()
   }
 
   update(deltaSeconds) {
-    if ((!this.active && !this.loadingTransition) || (!this.overlay && !this.whiteFlashLayer)) return
+    if (!this.overlay && !this.whiteFlashLayer && !this.guyLayer && !this.bloodLayer) return
 
-    // clamp delta to avoid jump
     deltaSeconds = Math.min(deltaSeconds, 0.033)
-
     const deltaMs = deltaSeconds * 1000
+    this.runtimeMs += deltaMs
 
     let flashOpacity = 0
     if (this.flashRemainingMs > 0) {
@@ -351,59 +551,80 @@ export class ScreenMat {
 
     this._setWhiteLayerOpacity(Math.max(flashOpacity, loadingOpacity))
 
-    if (!this.active || !this.overlay) return
+    const guyRiseAlpha = 1 - Math.exp(-Math.max(0, deltaSeconds) * 8.5)
+    const guyFallAlpha = 1 - Math.exp(-Math.max(0, deltaSeconds) * 4.2)
+    const guyAlpha = this.guyTargetIntensity > this.guyCurrentIntensity ? guyRiseAlpha : guyFallAlpha
+    this.guyCurrentIntensity = lerp(this.guyCurrentIntensity, this.guyTargetIntensity, clamp(guyAlpha, 0, 1))
+    if (Math.abs(this.guyCurrentIntensity - this.guyTargetIntensity) < 0.0005) {
+      this.guyCurrentIntensity = this.guyTargetIntensity
+    }
+    this._applyGuyVisuals(this.guyCurrentIntensity)
 
-    this.remainingMs -= deltaMs
-    this.elapsedMs += deltaMs
+    if (this.damagePulse > 0) {
+      this.damagePulse = Math.max(0, this.damagePulse - (deltaSeconds * 1.05))
+    }
+    this._applyBloodVisuals()
 
-    // Linear decay - tuyến tính giảm dần từ 1 đến 0
-    const intensity = Math.max(0, this.remainingMs / this.totalDurationMs)
+    if (!this.stunActive || !this.overlay) return
 
-    let blur, desat, brightness, contrast, veil, dvx, dvy, ghostAlpha
+    this.stunRemainingMs = Math.max(0, this.stunRemainingMs - deltaMs)
+    this.stunElapsedMs += deltaMs
+    const intensity = Math.max(0, this.stunRemainingMs / Math.max(1, this.stunTotalDurationMs))
+
+    let blur
+    let desat
+    let brightness
+    let contrast
+    let veil
+    let ghostAlpha
 
     if (this.isFlash) {
-      // Sáng chói flash effect - trắng xóa hoàn toàn lúc bắt đầu
-      blur = 0 + intensity * 0.3
-      desat = 0 + (intensity * 0.1)
-      brightness = 1 + intensity * 2.5
-      contrast = 0.5 + intensity * 0.4
-      veil = 0 + (intensity * 0.6)
+      blur = intensity * 0.3
+      desat = intensity * 0.1
+      brightness = 1 + (intensity * 2.5)
+      contrast = 0.5 + (intensity * 0.4)
+      veil = intensity * 0.6
       ghostAlpha = 0.05 + (intensity * 0.2)
     } else {
-      // Bình thường - làm sáng chói thay vì tối, giảm tuyến tính mạnh
-      blur = 0.3 + intensity * 1.5
+      blur = 0.3 + (intensity * 1.5)
       desat = 0.4 - (intensity * 0.35)
-      brightness = 1 + intensity * 0.6
-      contrast = 0.9 + intensity * 0.15
+      brightness = 1 + (intensity * 0.6)
+      contrast = 0.9 + (intensity * 0.15)
       veil = 0.08 + (intensity * 0.15)
       ghostAlpha = 0.02 + (intensity * 0.08)
     }
 
-    const drift = 0.1 + intensity * 1.2
-    dvx = Math.sin(this.elapsedMs * 0.0023) * drift
-    dvy = Math.cos(this.elapsedMs * 0.0017) * drift * 0.6
+    const drift = 0.1 + (intensity * 1.2)
+    const dvx = Math.sin(this.stunElapsedMs * 0.0023) * drift
+    const dvy = Math.cos(this.stunElapsedMs * 0.0017) * drift * 0.6
 
     if (!this.lowCost) {
-      this.overlay.style.setProperty('--blur', blur.toFixed(2) + 'px')
+      this.overlay.style.setProperty('--blur', `${blur.toFixed(2)}px`)
       this.overlay.style.setProperty('--desat', desat.toFixed(2))
       this.overlay.style.setProperty('--brightness', brightness.toFixed(2))
       this.overlay.style.setProperty('--contrast', contrast.toFixed(2))
     }
 
     this.overlay.style.setProperty('--veil', veil.toFixed(2))
-    this.overlay.style.setProperty('--dvx', dvx.toFixed(2) + 'px')
-    this.overlay.style.setProperty('--dvy', dvy.toFixed(2) + 'px')
+    this.overlay.style.setProperty('--dvx', `${dvx.toFixed(2)}px`)
+    this.overlay.style.setProperty('--dvy', `${dvy.toFixed(2)}px`)
     this.overlay.style.setProperty('--ghost-alpha', ghostAlpha.toFixed(2))
-
-    // Linear opacity fade - hết hoàn toàn sau 8s
     this.overlay.style.opacity = intensity.toFixed(2)
 
-    if (this.remainingMs <= 0) {
-      this.stop()
+    if (this.stunRemainingMs <= 0) {
+      this._resetStun()
     }
   }
 
   dispose() {
+    if (this.bloodLayer && this.bloodLayer.parentElement) {
+      this.bloodLayer.parentElement.removeChild(this.bloodLayer)
+    }
+
+    if (this.guyLayer && this.guyLayer.parentElement) {
+      this.guyLayer.parentElement.removeChild(this.guyLayer)
+    }
+
     if (this.overlay && this.overlay.parentElement) {
       this.overlay.parentElement.removeChild(this.overlay)
     }
@@ -412,6 +633,10 @@ export class ScreenMat {
       this.whiteFlashLayer.parentElement.removeChild(this.whiteFlashLayer)
     }
 
+    this.bloodLayer = null
+    this.guyLayer = null
+    this.guyGhostLayer = null
+    this.guyNoiseLayer = null
     this.ghostLayer = null
     this.overlay = null
     this.whiteFlashLayer = null

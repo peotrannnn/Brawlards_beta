@@ -1,17 +1,131 @@
 import { IT_STYLE } from '../main.js';
 import { settingsManager } from '../core/SettingsManager.js';
 
-export function createSettingsScreen(onBack, isGameplayMode = false) {
-        if (!document.getElementById('settings-slider-style')) {
-                const style = document.createElement('style');
-                style.id = 'settings-slider-style';
-                style.textContent = `
+const SETTINGS_SCREEN_STYLE_ID = 'settings-screen-style';
+
+function ensureSettingsScreenStyles() {
+        if (document.getElementById(SETTINGS_SCREEN_STYLE_ID)) return;
+
+        const style = document.createElement('style');
+        style.id = SETTINGS_SCREEN_STYLE_ID;
+        style.textContent = `
+            .settings-screen-overlay {
+                position: fixed;
+                inset: 0;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                padding: clamp(14px, 3vw, 32px);
+                box-sizing: border-box;
+                z-index: 20005;
+                background: rgba(0, 0, 0, 0.46);
+                backdrop-filter: blur(10px);
+                pointer-events: auto;
+            }
+            .settings-screen-box {
+                width: min(92vw, 560px);
+                max-height: min(86vh, 760px);
+                display: flex;
+                flex-direction: column;
+                gap: 0;
+                background: ${IT_STYLE.colors.darkBg};
+                border: 2px solid ${IT_STYLE.colors.accentBlue};
+                color: ${IT_STYLE.colors.neonGreen};
+                font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+                font-size: clamp(11px, 0.35vw + 9px, 13px);
+                line-height: 1.6;
+                box-shadow: 0 2px 16px #0008;
+                overflow: hidden;
+            }
+            .settings-screen-title {
+                background: ${IT_STYLE.colors.accentBlue};
+                color: #000;
+                padding: 12px 20px;
+                border-bottom: 2px solid ${IT_STYLE.colors.borderBlue};
+                font-weight: bold;
+                font-size: 14px;
+                letter-spacing: 1px;
+                text-transform: uppercase;
+                text-align: center;
+            }
+            .settings-screen-content {
+                display: flex;
+                flex-direction: column;
+                gap: 10px;
+                max-height: min(64vh, 560px);
+                overflow-y: auto;
+                padding: 14px;
+                scrollbar-width: none;
+            }
+            .settings-screen-content::-webkit-scrollbar {
+                display: none;
+            }
+            .settings-section-header {
+                background: ${IT_STYLE.colors.accentBlue};
+                color: #000;
+                padding: 6px 12px;
+                font-weight: bold;
+                font-size: 11px;
+                letter-spacing: 1px;
+                text-transform: uppercase;
+                text-align: left;
+                border-bottom: 2px solid ${IT_STYLE.colors.borderBlue};
+                margin-top: 6px;
+            }
+            .settings-control-card {
+                display: flex;
+                flex-direction: column;
+                gap: 10px;
+                padding: 10px 12px;
+                background: rgba(0, 15, 38, 0.5);
+                border: 1px solid ${IT_STYLE.colors.borderBlue};
+                box-shadow: inset 0 0 8px rgba(0, 102, 255, 0.08);
+                min-width: 0;
+            }
+            .settings-control-card--inline {
+                flex-direction: row;
+                justify-content: space-between;
+                align-items: center;
+                gap: 16px;
+            }
+            .settings-control-row {
+                display: flex;
+                justify-content: space-between;
+                align-items: baseline;
+                gap: 12px;
+                min-width: 0;
+            }
+            .settings-control-label {
+                color: ${IT_STYLE.colors.neonGreen};
+                font-size: 11px;
+                letter-spacing: 0.08em;
+                text-transform: uppercase;
+                text-align: left;
+                flex: 1 1 auto;
+                min-width: 0;
+            }
+            .settings-value-badge {
+                display: inline-flex;
+                align-items: center;
+                justify-content: flex-end;
+                min-width: clamp(58px, 10vw, 76px);
+                padding: 4px 9px;
+                border: 1px solid ${IT_STYLE.colors.borderBlue};
+                background: rgba(0, 26, 77, 0.82);
+                color: #fff;
+                box-shadow: inset 0 0 8px rgba(0, 102, 255, 0.12);
+            }
+            .settings-value-text {
+                color: #fff;
+                font-weight: bold;
+                text-align: right;
+            }
             .settings-slider-shell {
                 position: relative;
                 width: 100%;
-                height: 14px;
-                background: #001a4d;
-                border-top: 1px solid #0066FF;
+                height: clamp(12px, 1.7vw, 14px);
+                background: ${IT_STYLE.colors.darkAccent};
+                border-top: 1px solid ${IT_STYLE.colors.accentBlue};
                 overflow: hidden;
                 box-shadow: inset 0 0 12px rgba(0, 0, 0, 0.45);
             }
@@ -19,7 +133,7 @@ export function createSettingsScreen(onBack, isGameplayMode = false) {
                 position: absolute;
                 inset: 0 auto 0 0;
                 width: 0%;
-                background: linear-gradient(90deg, #0066FF, #00FF00);
+                background: linear-gradient(90deg, ${IT_STYLE.colors.accentBlue}, ${IT_STYLE.colors.neonGreen});
                 box-shadow: 0 0 15px rgba(0, 255, 0, 0.8);
                 pointer-events: none;
             }
@@ -37,127 +151,199 @@ export function createSettingsScreen(onBack, isGameplayMode = false) {
                 outline: none;
             }
             .settings-slider-input::-webkit-slider-runnable-track {
-                height: 14px;
+                height: clamp(12px, 1.7vw, 14px);
                 background: transparent;
                 border: none;
             }
             .settings-slider-input::-webkit-slider-thumb {
                 -webkit-appearance: none;
                 appearance: none;
-                width: 14px;
-                height: 14px;
+                width: clamp(14px, 1.9vw, 16px);
+                height: clamp(14px, 1.9vw, 16px);
                 margin-top: 0;
                 border: 1px solid #0b1322;
                 background: #d7f6ff;
                 box-shadow: 0 0 0 2px rgba(0, 102, 255, 0.4), 0 0 10px rgba(0, 255, 0, 0.45);
             }
             .settings-slider-input::-moz-range-track {
-                height: 14px;
+                height: clamp(12px, 1.7vw, 14px);
                 background: transparent;
                 border: none;
             }
             .settings-slider-input::-moz-range-progress {
-                height: 14px;
+                height: clamp(12px, 1.7vw, 14px);
                 background: transparent;
             }
             .settings-slider-input::-moz-range-thumb {
-                width: 14px;
-                height: 14px;
+                width: clamp(14px, 1.9vw, 16px);
+                height: clamp(14px, 1.9vw, 16px);
                 border: 1px solid #0b1322;
                 border-radius: 0;
                 background: #d7f6ff;
                 box-shadow: 0 0 0 2px rgba(0, 102, 255, 0.4), 0 0 10px rgba(0, 255, 0, 0.45);
             }
+            .settings-checkbox-input {
+                width: clamp(17px, 2vw, 20px);
+                height: clamp(17px, 2vw, 20px);
+                cursor: pointer;
+                accent-color: ${IT_STYLE.colors.accentBlue};
+                flex: 0 0 auto;
+            }
+            .settings-select {
+                flex: 0 1 auto;
+                min-width: 132px;
+                max-width: 100%;
+                background: ${IT_STYLE.colors.darkBg};
+                color: #fff;
+                border: 1px solid ${IT_STYLE.colors.borderBlue};
+                padding: 8px 10px;
+                font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+                font-size: 11px;
+                letter-spacing: 0.05em;
+                cursor: pointer;
+                outline: none;
+                box-shadow: inset 0 0 8px rgba(0, 102, 255, 0.12);
+            }
+            .settings-action-group {
+                display: flex;
+                flex-wrap: wrap;
+                justify-content: center;
+                gap: 10px;
+                padding: 0 14px 16px;
+            }
+            .settings-action-button {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                width: auto;
+                max-width: 100%;
+                padding: 9px 14px;
+                border: 2px solid ${IT_STYLE.colors.borderBlue};
+                background: linear-gradient(180deg, ${IT_STYLE.colors.accentBlue}, ${IT_STYLE.colors.borderBlue});
+                color: #000;
+                font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+                font-weight: bold;
+                font-size: 11px;
+                letter-spacing: 1px;
+                text-transform: uppercase;
+                cursor: pointer;
+                box-shadow: 0 0 15px rgba(0, 102, 255, 0.42), inset 0 0 8px rgba(0, 255, 0, 0.16);
+                transition: transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease;
+            }
+            .settings-action-button:hover {
+                transform: translateY(-1px);
+                box-shadow: 0 0 22px rgba(0, 102, 255, 0.58), inset 0 0 12px rgba(0, 255, 0, 0.24);
+                filter: brightness(1.04);
+            }
+            .settings-action-button--reset {
+                background: linear-gradient(180deg, #c09012, #8b650a);
+                border-color: #6c4f08;
+                color: #111;
+                box-shadow: 0 0 18px rgba(192, 144, 18, 0.3), inset 0 0 10px rgba(255, 239, 184, 0.12);
+            }
+            .settings-action-button--reset:hover {
+                box-shadow: 0 0 24px rgba(192, 144, 18, 0.42), inset 0 0 12px rgba(255, 239, 184, 0.18);
+            }
+            .settings-notice-popup {
+                position: fixed;
+                top: clamp(18px, 3vw, 40px);
+                right: clamp(18px, 3vw, 40px);
+                max-width: min(76vw, 420px);
+                padding: 0;
+                background: ${IT_STYLE.colors.darkBg};
+                border: 2px solid ${IT_STYLE.colors.accentBlue};
+                color: ${IT_STYLE.colors.neonGreen};
+                font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+                font-size: clamp(10px, 0.45vw + 8px, 12px);
+                line-height: 1.6;
+                box-shadow: 0 0 20px rgba(0, 102, 255, 0.6), inset 0 0 10px rgba(0, 102, 255, 0.3);
+                overflow: hidden;
+                z-index: 30000;
+                pointer-events: none;
+                animation: settingsNoticeFade 3.5s forwards;
+            }
+            .settings-notice-popup::before {
+                content: '> SYSTEM NOTICE';
+                display: block;
+                background: ${IT_STYLE.colors.accentBlue};
+                color: #000;
+                padding: 6px 12px;
+                border-bottom: 2px solid ${IT_STYLE.colors.borderBlue};
+                font-weight: bold;
+                letter-spacing: 0.1em;
+                text-transform: uppercase;
+            }
+            .settings-notice-popup__body {
+                padding: 12px;
+                text-transform: uppercase;
+                letter-spacing: 0.06em;
+            }
+            @keyframes settingsNoticeFade {
+                0% { opacity: 0; transform: translateX(20px); }
+                10% { opacity: 1; transform: translateX(0); }
+                85% { opacity: 1; transform: translateX(0); }
+                100% { opacity: 0; transform: translateX(20px); }
+            }
+            @media (max-width: 640px) {
+                .settings-screen-box {
+                    width: min(94vw, 560px);
+                }
+                .settings-screen-content {
+                    max-height: min(60vh, 500px);
+                }
+                .settings-control-card--inline {
+                    align-items: flex-start;
+                }
+                .settings-select {
+                    max-width: none;
+                    width: 100%;
+                }
+                .settings-action-group {
+                    justify-content: stretch;
+                }
+                .settings-action-button {
+                    width: 100%;
+                }
+            }
         `;
-                document.head.appendChild(style);
-        }
+        document.head.appendChild(style);
+}
+
+export function createSettingsScreen(onBack, isGameplayMode = false) {
+    ensureSettingsScreenStyles();
 
     const container = document.createElement('div');
     container.id = 'settingsScreen';
-    container.style.position = 'fixed';
-    container.style.top = '0';
-    container.style.left = '0';
-    container.style.width = '100vw';
-    container.style.height = '100vh';
-    container.style.display = 'flex';
-    container.style.justifyContent = 'center';
-    container.style.alignItems = 'center';
-    container.style.zIndex = '20005';
-    container.style.backgroundColor = 'rgba(0, 0, 0, 0.4)';
-    container.style.backdropFilter = 'blur(8px)';
-    container.style.pointerEvents = 'auto';
+    container.className = 'settings-screen-overlay';
 
     const settingsBox = document.createElement('div');
-    IT_STYLE.applyToElement(settingsBox, 'box');
-    settingsBox.style.width = '460px';
-    settingsBox.style.maxWidth = '90vw';
-    settingsBox.style.display = 'flex';
-    settingsBox.style.flexDirection = 'column';
-    settingsBox.style.gap = '18px';
-    settingsBox.style.padding = '18px';
-    settingsBox.style.background = 'linear-gradient(180deg, rgba(10, 26, 61, 0.98), rgba(4, 12, 28, 0.98))';
-    settingsBox.style.boxShadow = '0 0 34px rgba(0, 102, 255, 0.55), inset 0 0 18px rgba(0, 102, 255, 0.18)';
-    settingsBox.style.border = '1px solid rgba(0, 102, 255, 0.8)';
+    settingsBox.className = 'settings-screen-box';
 
     const title = document.createElement('div');
-    title.textContent = 'SETTINGS';
-    IT_STYLE.applyToElement(title, 'header');
-    title.style.textAlign = 'center';
-    title.style.marginBottom = '2px';
-    title.style.fontSize = '16px';
+    title.textContent = '> SETTINGS.exe';
+    title.className = 'settings-screen-title';
     settingsBox.appendChild(title);
 
     const contentArea = document.createElement('div');
-    contentArea.style.display = 'flex';
-    contentArea.style.flexDirection = 'column';
-    contentArea.style.gap = '18px';
-    contentArea.style.maxHeight = '65vh';
-    contentArea.style.overflowY = 'auto';
-    contentArea.style.paddingRight = '8px';
-
-    // Customize scrollbar for contentArea
-    contentArea.style.scrollbarWidth = 'thin';
-    contentArea.style.scrollbarColor = `${IT_STYLE.colors.accentBlue} ${IT_STYLE.colors.darkBg}`;
+    contentArea.className = 'settings-screen-content';
 
     const createSlider = (label, key, min, max, step) => {
         const wrap = document.createElement('div');
-        wrap.style.display = 'flex';
-        wrap.style.flexDirection = 'column';
-        wrap.style.gap = '10px';
-        wrap.style.padding = '10px 12px';
-        wrap.style.background = 'rgba(0, 15, 38, 0.55)';
-        wrap.style.border = '1px solid rgba(0, 102, 255, 0.22)';
-        wrap.style.boxShadow = 'inset 0 0 10px rgba(0, 102, 255, 0.06)';
+        wrap.className = 'settings-control-card';
 
         const topRow = document.createElement('div');
-        topRow.style.display = 'flex';
-        topRow.style.justifyContent = 'space-between';
-        topRow.style.alignItems = 'baseline';
-        topRow.style.gap = '12px';
+        topRow.className = 'settings-control-row';
 
         const labelEl = document.createElement('span');
         labelEl.textContent = label;
-        labelEl.style.color = IT_STYLE.colors.neonGreen;
-        labelEl.style.letterSpacing = '0.8px';
-        labelEl.style.fontSize = '11px';
-        labelEl.style.textTransform = 'uppercase';
+        labelEl.className = 'settings-control-label';
 
         const valEl = document.createElement('span');
         valEl.textContent = settingsManager.get(key);
-        valEl.style.color = '#fff';
-        valEl.style.fontWeight = 'bold';
-        valEl.style.minWidth = '40px';
-        valEl.style.textAlign = 'right';
+        valEl.className = 'settings-value-text';
 
         const valueBadge = document.createElement('span');
-        valueBadge.style.display = 'inline-flex';
-        valueBadge.style.alignItems = 'center';
-        valueBadge.style.justifyContent = 'center';
-        valueBadge.style.minWidth = '52px';
-        valueBadge.style.padding = '3px 8px';
-        valueBadge.style.border = `1px solid ${IT_STYLE.colors.borderBlue}`;
-        valueBadge.style.background = 'rgba(0, 26, 77, 0.85)';
-        valueBadge.style.boxShadow = 'inset 0 0 8px rgba(0, 102, 255, 0.12)';
+        valueBadge.className = 'settings-value-badge';
         valueBadge.appendChild(valEl);
 
         topRow.appendChild(labelEl);
@@ -200,27 +386,16 @@ export function createSettingsScreen(onBack, isGameplayMode = false) {
 
     const createCheckbox = (label, key) => {
         const wrap = document.createElement('div');
-        wrap.style.display = 'flex';
-        wrap.style.justifyContent = 'space-between';
-        wrap.style.alignItems = 'center';
-        wrap.style.padding = '10px 12px';
-        wrap.style.background = 'rgba(0, 15, 38, 0.55)';
-        wrap.style.border = '1px solid rgba(0, 102, 255, 0.22)';
+        wrap.className = 'settings-control-card settings-control-card--inline';
 
         const labelEl = document.createElement('span');
         labelEl.textContent = label;
-        labelEl.style.color = IT_STYLE.colors.neonGreen;
-        labelEl.style.fontSize = '11px';
-        labelEl.style.letterSpacing = '0.8px';
-        labelEl.style.textTransform = 'uppercase';
+        labelEl.className = 'settings-control-label';
 
         const input = document.createElement('input');
         input.type = 'checkbox';
         input.checked = settingsManager.get(key);
-        input.style.accentColor = IT_STYLE.colors.accentBlue;
-        input.style.width = '18px';
-        input.style.height = '18px';
-        input.style.cursor = 'pointer';
+        input.className = 'settings-checkbox-input';
 
         input.onchange = (e) => {
             settingsManager.set(key, e.target.checked);
@@ -234,31 +409,14 @@ export function createSettingsScreen(onBack, isGameplayMode = false) {
 
     const createSelect = (label, key, options) => {
         const wrap = document.createElement('div');
-        wrap.style.display = 'flex';
-        wrap.style.justifyContent = 'space-between';
-        wrap.style.alignItems = 'center';
-        wrap.style.gap = '12px';
-        wrap.style.padding = '10px 12px';
-        wrap.style.background = 'rgba(0, 15, 38, 0.55)';
-        wrap.style.border = '1px solid rgba(0, 102, 255, 0.22)';
+        wrap.className = 'settings-control-card settings-control-card--inline';
 
         const labelEl = document.createElement('span');
         labelEl.textContent = label;
-        labelEl.style.color = IT_STYLE.colors.neonGreen;
-        labelEl.style.fontSize = '11px';
-        labelEl.style.letterSpacing = '0.8px';
-        labelEl.style.textTransform = 'uppercase';
+        labelEl.className = 'settings-control-label';
 
         const select = document.createElement('select');
-        select.style.background = IT_STYLE.colors.darkBg;
-        select.style.color = '#fff';
-        select.style.border = `1px solid ${IT_STYLE.colors.borderBlue}`;
-        select.style.padding = '8px 10px';
-        select.style.fontFamily = 'inherit';
-        select.style.cursor = 'pointer';
-        select.style.outline = 'none';
-        select.style.minWidth = '120px';
-        select.style.boxShadow = 'inset 0 0 8px rgba(0, 102, 255, 0.12)';
+        select.className = 'settings-select';
 
         options.forEach(opt => {
             const optionEl = document.createElement('option');
@@ -282,13 +440,8 @@ export function createSettingsScreen(onBack, isGameplayMode = false) {
 
     const createHeader = (text) => {
         const header = document.createElement('div');
-        header.textContent = `--- ${text} ---`;
-        header.style.color = IT_STYLE.colors.accentBlue;
-        header.style.textAlign = 'center';
-        header.style.fontWeight = 'bold';
-        header.style.marginTop = '6px';
-        header.style.marginBottom = '0';
-        header.style.letterSpacing = '2px';
+        header.textContent = text;
+        header.className = 'settings-section-header';
         return header;
     };
 
@@ -318,68 +471,35 @@ export function createSettingsScreen(onBack, isGameplayMode = false) {
 
     const showPopup = (msg) => {
         const popup = document.createElement('div');
-        popup.style.cssText = `
-      position: fixed;
-      top: 40px;
-      left: 50%;
-      transform: translateX(-50%);
-      background: #ffcc00;
-      color: #000;
-      padding: 12px 24px;
-      font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-      font-weight: bold;
-      font-size: 11px;
-      z-index: 30000;
-      box-shadow: 0 0 30px rgba(255, 204, 0, 0.4), 0 0 10px rgba(0,0,0,0.5);
-      border: 2px solid #000;
-      pointer-events: none;
-      animation: fadeInOutSettings 3.5s forwards;
-      text-align: center;
-      text-transform: uppercase;
-      letter-spacing: 1px;
-    `;
-        popup.textContent = msg;
-
-        if (!document.getElementById('settings-popup-style')) {
-            const style = document.createElement('style');
-            style.id = 'settings-popup-style';
-            style.innerHTML = `
-        @keyframes fadeInOutSettings {
-          0% { opacity: 0; transform: translate(-50%, -40px); }
-          10% { opacity: 1; transform: translate(-50%, 0); }
-          85% { opacity: 1; transform: translate(-50%, 0); }
-          100% { opacity: 0; transform: translate(-50%, -40px); }
-        }
-      `;
-            document.head.appendChild(style);
-        }
+        popup.className = 'settings-notice-popup';
+        const popupBody = document.createElement('div');
+        popupBody.className = 'settings-notice-popup__body';
+        popupBody.textContent = msg;
+        popup.appendChild(popupBody);
 
         document.body.appendChild(popup);
         setTimeout(() => popup.remove(), 3500);
     };
 
+    const actionGroup = document.createElement('div');
+    actionGroup.className = 'settings-action-group';
+
     // Reset button
     const resetBtn = document.createElement('button');
     resetBtn.textContent = 'RESET DEFAULTS';
-    IT_STYLE.applyToElement(resetBtn, 'backButton');
-    resetBtn.style.marginTop = '15px';
-    resetBtn.style.background = '#b8860b'; // Dark Goldenrod for reset
-    resetBtn.style.border = '2px solid #936c09';
-    resetBtn.style.width = '100%';
+    resetBtn.className = 'settings-action-button settings-action-button--reset';
     resetBtn.onclick = () => {
         settingsManager.reset();
+        window.removeEventListener('keydown', handleEsc);
         container.remove();
         createSettingsScreen(onBack, isGameplayMode);
     };
-    settingsBox.appendChild(resetBtn);
+    actionGroup.appendChild(resetBtn);
 
     // Back button
     const backBtn = document.createElement('button');
     backBtn.textContent = 'BACK TO MENU';
-    IT_STYLE.applyToElement(backBtn, 'backButton');
-    backBtn.style.marginTop = '15px';
-    backBtn.style.alignSelf = 'center';
-    backBtn.style.width = '100%';
+    backBtn.className = 'settings-action-button';
 
     const closeSettings = () => {
         window.removeEventListener('keydown', handleEsc);
@@ -399,7 +519,8 @@ export function createSettingsScreen(onBack, isGameplayMode = false) {
         closeSettings();
     };
 
-    settingsBox.appendChild(backBtn);
+    actionGroup.appendChild(backBtn);
+    settingsBox.appendChild(actionGroup);
     container.appendChild(settingsBox);
     document.body.appendChild(container);
 

@@ -4,10 +4,17 @@ import { createInspector } from "./core/Inspector.js"
 import { startPlay } from "./core/Play.js"
 import { musicPlayer } from "./music/MusicPlayer.js"
 import { preloadCoreAssets } from "./assets/preloadAssets.js"
+import { createSection1 } from "./assets/scenes/sections/section1_1.js"
 import { runWithLoadingOverlay } from "./utils/loadingOverlay.js"
 import { settingsManager } from "./core/SettingsManager.js"
 import { createSettingsScreen } from "./ui/SettingsMenuScreen.js"
 import { initFPSCounter } from "./ui/FPSCounter.js"
+import { initUISoundEffects } from "./ui/uiSoundEffects.js"
+
+const EPSILON_STUDIO_FONT_PRECONNECT_ID = 'epsilon-studio-font-preconnect'
+const EPSILON_STUDIO_FONT_PRECONNECT_CROSS_ID = 'epsilon-studio-font-preconnect-cross'
+const EPSILON_STUDIO_FONT_LINK_ID = 'epsilon-studio-font-link'
+const EPSILON_STUDIO_FONT_HREF = 'https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap'
 
 // ==================== IT-STYLE UI THEME ====================
 export const IT_STYLE = {
@@ -101,20 +108,32 @@ renderer.setSize(window.innerWidth, window.innerHeight)
 renderer.shadowMap.enabled = true
 renderer.shadowMap.type = THREE.PCFShadowMap // Use PCFShadowMap to avoid deprecation warning
 
+let rendererMenuBlurPx = 0
+let rendererShadowOverride = null
+
+function syncRendererPresentation() {
+  renderer.shadowMap.enabled = rendererShadowOverride ?? settingsManager.get('shadows')
+
+  const filterParts = [`brightness(${settingsManager.get('brightness')})`]
+  if (rendererMenuBlurPx > 0) {
+    filterParts.push(`blur(${rendererMenuBlurPx}px)`)
+  }
+
+  renderer.domElement.style.filter = filterParts.join(' ')
+}
+
 // Apply initial settings
-renderer.shadowMap.enabled = settingsManager.get('shadows')
 const initialQuality = settingsManager.get('quality')
 const baseRatio = window.devicePixelRatio || 1
 renderer.setPixelRatio(initialQuality === 'high' ? baseRatio : initialQuality === 'medium' ? baseRatio * 0.5 : baseRatio * 0.25)
-renderer.domElement.style.filter = `brightness(${settingsManager.get('brightness')})`
+syncRendererPresentation()
 
 // Listen to settings changes
 settingsManager.onChange((settings) => {
-  renderer.shadowMap.enabled = settings.shadows
   const baseRatio = window.devicePixelRatio || 1
   const pR = settings.quality === 'high' ? baseRatio : settings.quality === 'medium' ? baseRatio * 0.5 : baseRatio * 0.25
   renderer.setPixelRatio(pR)
-  renderer.domElement.style.filter = `brightness(${settings.brightness})`
+  syncRendererPresentation()
   // We can't easily force all materials to update shadow maps without traversing the scene,
   // but it will apply on the next play or scene load.
 })
@@ -124,21 +143,306 @@ document.body.style.overflow = "hidden"
 document.body.appendChild(renderer.domElement)
 
 let currentCleanup = null
+let currentHomePageCleanup = null
+
+function cleanupHomePageState() {
+  if (typeof currentHomePageCleanup === 'function') {
+    currentHomePageCleanup()
+    currentHomePageCleanup = null
+  }
+}
+
+function ensureEpsilonStudioFont() {
+  if (!document.getElementById(EPSILON_STUDIO_FONT_PRECONNECT_ID)) {
+    const preconnect = document.createElement('link')
+    preconnect.id = EPSILON_STUDIO_FONT_PRECONNECT_ID
+    preconnect.rel = 'preconnect'
+    preconnect.href = 'https://fonts.googleapis.com'
+    document.head.appendChild(preconnect)
+  }
+
+  if (!document.getElementById(EPSILON_STUDIO_FONT_PRECONNECT_CROSS_ID)) {
+    const preconnectCross = document.createElement('link')
+    preconnectCross.id = EPSILON_STUDIO_FONT_PRECONNECT_CROSS_ID
+    preconnectCross.rel = 'preconnect'
+    preconnectCross.href = 'https://fonts.gstatic.com'
+    preconnectCross.crossOrigin = 'anonymous'
+    document.head.appendChild(preconnectCross)
+  }
+
+  if (!document.getElementById(EPSILON_STUDIO_FONT_LINK_ID)) {
+    const fontLink = document.createElement('link')
+    fontLink.id = EPSILON_STUDIO_FONT_LINK_ID
+    fontLink.rel = 'stylesheet'
+    fontLink.href = EPSILON_STUDIO_FONT_HREF
+    document.head.appendChild(fontLink)
+  }
+}
+
+function createBootLoadingScreen() {
+  ensureEpsilonStudioFont()
+
+  const overlay = document.createElement('div')
+  overlay.id = 'bootLoadingOverlay'
+  overlay.style.position = 'fixed'
+  overlay.style.inset = '0'
+  overlay.style.zIndex = '40000'
+  overlay.style.display = 'flex'
+  overlay.style.alignItems = 'center'
+  overlay.style.justifyContent = 'center'
+  overlay.style.background = '#000'
+  overlay.style.opacity = '1'
+  overlay.style.transition = 'opacity 0.9s ease'
+  overlay.style.pointerEvents = 'auto'
+
+  const shell = document.createElement('div')
+  shell.style.display = 'flex'
+  shell.style.flexDirection = 'column'
+  shell.style.alignItems = 'center'
+  shell.style.justifyContent = 'center'
+  shell.style.gap = '12px'
+  shell.style.padding = '32px'
+  shell.style.width = 'min(88vw, 680px)'
+
+  const brand = document.createElement('div')
+  brand.textContent = 'epsilon'
+  brand.style.display = 'inline-block'
+  brand.style.fontFamily = '"Plus Jakarta Sans", sans-serif'
+  brand.style.fontWeight = '800'
+  brand.style.fontSize = 'clamp(56px, 12vw, 132px)'
+  brand.style.lineHeight = '1.04'
+  brand.style.letterSpacing = '-0.085em'
+  brand.style.padding = '0.06em 0.04em 0.1em'
+  brand.style.textTransform = 'lowercase'
+  brand.style.background = 'linear-gradient(90deg, #E85E97 0%, #F6A623 100%)'
+  brand.style.backgroundClip = 'text'
+  brand.style.webkitBackgroundClip = 'text'
+  brand.style.color = 'transparent'
+  brand.style.webkitTextFillColor = 'transparent'
+  brand.style.textShadow = 'none'
+
+  const studio = document.createElement('div')
+  studio.textContent = 'studio'
+  studio.style.display = 'inline-block'
+  studio.style.fontFamily = '"Plus Jakarta Sans", sans-serif'
+  studio.style.fontWeight = '600'
+  studio.style.fontSize = 'clamp(12px, 1.5vw, 16px)'
+  studio.style.lineHeight = '1.1'
+  studio.style.letterSpacing = '0.58em'
+  studio.style.textTransform = 'uppercase'
+  studio.style.paddingLeft = '0.58em'
+  studio.style.color = '#3A7FF2'
+  studio.style.textShadow = 'none'
+
+  const status = document.createElement('div')
+  status.textContent = 'Loading scene assets'
+  status.style.marginTop = '18px'
+  status.style.fontFamily = '"Plus Jakarta Sans", sans-serif'
+  status.style.fontSize = '12px'
+  status.style.fontWeight = '500'
+  status.style.letterSpacing = '0.2em'
+  status.style.textTransform = 'uppercase'
+  status.style.color = 'rgba(148, 163, 184, 0.92)'
+
+  const progressTrack = document.createElement('div')
+  progressTrack.style.width = 'min(340px, 62vw)'
+  progressTrack.style.height = '2px'
+  progressTrack.style.marginTop = '8px'
+  progressTrack.style.background = 'rgba(255, 255, 255, 0.14)'
+  progressTrack.style.overflow = 'hidden'
+
+  const progressFill = document.createElement('div')
+  progressFill.style.width = '0%'
+  progressFill.style.height = '100%'
+  progressFill.style.background = 'linear-gradient(90deg, #f8fafc, #94a3b8)'
+  progressFill.style.transition = 'width 0.18s ease'
+  progressTrack.appendChild(progressFill)
+
+  const detail = document.createElement('div')
+  detail.textContent = 'Preparing Section 1'
+  detail.style.minHeight = '18px'
+  detail.style.fontFamily = '"Plus Jakarta Sans", sans-serif'
+  detail.style.fontSize = '11px'
+  detail.style.fontWeight = '400'
+  detail.style.letterSpacing = '0.12em'
+  detail.style.textTransform = 'uppercase'
+  detail.style.color = 'rgba(100, 116, 139, 0.92)'
+
+  shell.appendChild(brand)
+  shell.appendChild(studio)
+  shell.appendChild(status)
+  shell.appendChild(progressTrack)
+  shell.appendChild(detail)
+  overlay.appendChild(shell)
+  document.body.appendChild(overlay)
+
+  return {
+    update(progress, label) {
+      const clamped = Number.isFinite(progress) ? Math.max(0, Math.min(1, progress)) : 0
+      progressFill.style.width = `${Math.round(clamped * 100)}%`
+      if (label) {
+        detail.textContent = String(label).replace(/[_-]+/g, ' ')
+      }
+    },
+    fadeOut() {
+      return new Promise((resolve) => {
+        overlay.style.opacity = '0'
+        window.setTimeout(() => {
+          overlay.remove()
+          resolve()
+        }, 920)
+      })
+    },
+    close() {
+      overlay.remove()
+    }
+  }
+}
+
+function startHomePageBackgroundScene() {
+  const menuScene = new THREE.Scene()
+  const section1Root = new THREE.Group()
+  const menuCamera = new THREE.PerspectiveCamera(54, window.innerWidth / window.innerHeight, 0.1, 220)
+  const orbitTarget = new THREE.Vector3(0, 3.3, 0)
+  const orbitPosition = new THREE.Vector3()
+  const lookTarget = new THREE.Vector3()
+  const orbitOffset = new THREE.Vector3(0, 0, 0)
+  let animationId = 0
+  let disposed = false
+  let lightingController = null
+
+  rendererShadowOverride = true
+  rendererMenuBlurPx = 2.6
+  syncRendererPresentation()
+  renderer.setClearColor(0x090c11, 1)
+
+  createSection1(section1Root, {
+    fog: {
+      color: '#211b17',
+      near: 18,
+      far: 145,
+    },
+    shadows: {
+      enabled: true,
+      mapSize: 512,
+      cameraSize: 18,
+    },
+    ambientLight: {
+      color: '#ffe1b3',
+      intensity: 0.56,
+    },
+    directionalLight: {
+      intensity: 0.18,
+      position: [14, 26, 8],
+      castShadow: false,
+    },
+  })
+
+  if (typeof section1Root.userData?.applyLighting === 'function') {
+    lightingController = section1Root.userData.applyLighting(menuScene, renderer)
+  }
+
+  menuScene.add(section1Root)
+
+  function onResize() {
+    renderer.setSize(window.innerWidth, window.innerHeight)
+    menuCamera.aspect = window.innerWidth / window.innerHeight
+    menuCamera.updateProjectionMatrix()
+  }
+
+  function animateMenuBackground(now = 0) {
+    if (disposed) return
+
+    animationId = window.requestAnimationFrame(animateMenuBackground)
+
+    const orbitAngle = now * 0.00022
+    const radiusX = 18.2 + Math.sin(now * 0.00027) * 0.6
+    const radiusZ = 13.4 + Math.cos(now * 0.00021) * 0.45
+
+    orbitOffset.set(
+      Math.cos(orbitAngle) * radiusX,
+      2.25 + Math.sin(now * 0.00034) * 0.18,
+      Math.sin(orbitAngle) * radiusZ
+    )
+    orbitPosition.copy(orbitTarget).add(orbitOffset)
+    lookTarget.set(
+      orbitTarget.x + Math.cos(now * 0.00012) * 1.4,
+      orbitTarget.y - 0.28 + Math.sin(now * 0.00028) * 0.12,
+      orbitTarget.z + Math.sin(now * 0.00016) * 1.05
+    )
+
+    menuCamera.position.copy(orbitPosition)
+    menuCamera.lookAt(lookTarget)
+    renderer.render(menuScene, menuCamera)
+  }
+
+  window.addEventListener('resize', onResize)
+  onResize()
+  animateMenuBackground(0)
+
+  return () => {
+    if (disposed) return
+    disposed = true
+
+    window.cancelAnimationFrame(animationId)
+    window.removeEventListener('resize', onResize)
+
+    rendererMenuBlurPx = 0
+    rendererShadowOverride = null
+    syncRendererPresentation()
+
+    if (lightingController && typeof lightingController.toggleShadows === 'function') {
+      lightingController.toggleShadows(false)
+    }
+
+    if (section1Root.parent) {
+      section1Root.parent.remove(section1Root)
+    }
+
+    menuScene.fog = null
+  }
+}
 
 // Initialize FPS Counter
 initFPSCounter()
+initUISoundEffects()
 
-showHomePage()
+void bootIntoHomePage()
+
+async function bootIntoHomePage() {
+  const bootLoadingScreen = createBootLoadingScreen()
+  let homeShown = false
+
+  try {
+    rendererMenuBlurPx = 0
+    rendererShadowOverride = null
+    syncRendererPresentation()
+    renderer.setClearColor(0x000000, 1)
+    renderer.clear()
+
+    bootLoadingScreen.update(0, 'Preparing Section 1')
+    await preloadCoreAssets((progress, label) => bootLoadingScreen.update(progress, label))
+
+    showHomePage({ fadeIn: true })
+    homeShown = true
+  } catch (error) {
+    console.error('Failed to preload homepage assets:', error)
+    if (!homeShown) {
+      showHomePage({ fadeIn: true })
+    }
+  } finally {
+    await bootLoadingScreen.fadeOut()
+  }
+}
 
 // ==================== MAIN MENU ====================
-function showHomePage() {
+function showHomePage(options = {}) {
+  const { fadeIn = false } = options
   clearEntireUI();
   void musicPlayer.requestLobby({ immediate: true })
 
 
-  // Clear renderer and set transparent so menu background image is visible
-  renderer.setClearColor(0x000000, 0);
-  renderer.clear();
+  currentHomePageCleanup = startHomePageBackgroundScene()
 
   const menuOverlay = document.createElement('div');
   menuOverlay.id = 'mainMenuOverlay';
@@ -152,9 +456,10 @@ function showHomePage() {
   menuOverlay.style.justifyContent = 'center';
   menuOverlay.style.alignItems = 'center';
   menuOverlay.style.zIndex = '20003';
-  menuOverlay.style.background = `url('${import.meta.env.BASE_URL}pictures/jd_thick.png') center center / cover no-repeat`;
+  menuOverlay.style.background = 'linear-gradient(180deg, rgba(7, 11, 17, 0.2), rgba(7, 11, 17, 0.42))';
   menuOverlay.style.pointerEvents = 'auto';
   menuOverlay.style.transition = 'opacity 1s';
+  menuOverlay.style.opacity = fadeIn ? '0' : '1';
 
   const menuBox = document.createElement('div');
   menuBox.style.background = IT_STYLE.colors.darkBg;
@@ -323,12 +628,29 @@ function showHomePage() {
   menuBox.appendChild(menuListArea);
   menuOverlay.appendChild(menuBox);
   document.body.appendChild(menuOverlay);
+
+  if (fadeIn) {
+    window.requestAnimationFrame(() => {
+      menuOverlay.style.opacity = '1'
+    })
+  }
+
+  const cleanupHomePage = currentHomePageCleanup
+  currentHomePageCleanup = () => {
+    window.removeEventListener('keydown', handleKeyDown)
+    observer.disconnect()
+    if (typeof cleanupHomePage === 'function') {
+      cleanupHomePage()
+    }
+  }
   
   updateSelection();
 }
 
 // ==================== NAVIGATION ====================
 async function navigateToSimulation() {
+  clearEntireUI()
+
   try {
     void musicPlayer.requestSilence({ fadeOutSec: 1.1 })
     await runWithLoadingOverlay(
@@ -336,12 +658,12 @@ async function navigateToSimulation() {
       { title: 'Loading Simulation' }
     )
 
-    clearEntireUI()
     currentCleanup = startSimulationTest(renderer, () => {
       showHomePage()
     }, false)
   } catch (error) {
     console.error('Failed to preload simulation assets:', error)
+    showHomePage()
   }
 }
 
@@ -353,28 +675,33 @@ function navigateToPlay() {
 }
 
 function navigateToSettings() {
+  clearEntireUI()
+
   const cleanupSettings = createSettingsScreen(() => {
     if (currentCleanup === cleanupSettings) {
-      currentCleanup = null;
+      currentCleanup = null
     }
-  });
-  currentCleanup = cleanupSettings;
+    showHomePage()
+  })
+  currentCleanup = cleanupSettings
 }
 
 async function navigateToInspector() {
+  clearEntireUI()
+
   try {
     await runWithLoadingOverlay(
       (updateProgress) => preloadCoreAssets(updateProgress),
       { title: 'Loading Inspector' }
     )
 
-    clearEntireUI()
     currentCleanup = createInspector(renderer, () => {
       clearEntireUI(); // cleanup inspector UI and logic
       showHomePage();
-    });
+    })
   } catch (error) {
     console.error('Failed to preload inspector assets:', error)
+    showHomePage()
   }
 }
 
@@ -385,6 +712,10 @@ function clearEntireUI() {
     currentCleanup();
     currentCleanup = null;
   }
+
+  cleanupHomePageState()
+  renderer.setClearColor(0x000000, 1)
+  renderer.clear()
 
   const menuOverlay = document.getElementById("mainMenuOverlay")
   if (menuOverlay) menuOverlay.remove()

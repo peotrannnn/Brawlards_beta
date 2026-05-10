@@ -256,6 +256,9 @@ export function createPhysicsBodyFromUserData(mesh, userData, materials) {
   });
 
   body.name = mesh.name;
+  body.userData = body.userData || {};
+  body.userData.surfaceAudioType = physics.surfaceAudioType || mesh.userData?.surfaceAudioType || null;
+  body.userData.surfaceAudioTypesByShapeIndex = [];
 
   if (physics.fixedRotation) {
     body.fixedRotation = true;
@@ -282,10 +285,16 @@ export function createPhysicsBodyFromUserData(mesh, userData, materials) {
     physics.shapes.filter(s => !s.isTrigger).forEach(shapeData => {
       const shape = createShape(shapeData);
       if (!shape) return;
+      shape.userData = {
+        role: shapeData.role,
+        surfaceAudioType: shapeData.surfaceAudioType,
+        material: shapeData.material,
+      };
       const offset = new CANNON.Vec3(shapeData.offset?.[0] || 0, shapeData.offset?.[1] || 0, shapeData.offset?.[2] || 0);
       const quat = new CANNON.Quaternion();
       if (shapeData.rotation) quat.setFromEuler(shapeData.rotation[0] || 0, shapeData.rotation[1] || 0, shapeData.rotation[2] || 0, 'XYZ');
       body.addShape(shape, offset, quat);
+      body.userData.surfaceAudioTypesByShapeIndex[body.shapes.length - 1] = shapeData.surfaceAudioType || null;
     });
   }
 

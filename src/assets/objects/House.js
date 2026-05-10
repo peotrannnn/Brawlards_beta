@@ -63,7 +63,9 @@ const FUN_HOUSE_CONFIG = {
 }
 
 const goreTextureLoader = new THREE.TextureLoader()
+const clueTextureLoader = new THREE.TextureLoader()
 let cachedGoreTexture = null
+let cachedClue6Texture = null
 let cachedRoofTileTexture = null
 let cachedPortalMaterialData = null
 let cachedWallPlasterAlbedo = null
@@ -271,6 +273,18 @@ function getGoreTexture() {
   cachedGoreTexture.magFilter = THREE.LinearFilter
   cachedGoreTexture.anisotropy = 8
   return cachedGoreTexture
+}
+
+function getClue6Texture() {
+  if (cachedClue6Texture) return cachedClue6Texture
+
+  const texturePath = new URL('../../pictures/clue6.png', import.meta.url).href
+  cachedClue6Texture = clueTextureLoader.load(texturePath)
+  cachedClue6Texture.colorSpace = THREE.SRGBColorSpace
+  cachedClue6Texture.minFilter = THREE.LinearMipmapLinearFilter
+  cachedClue6Texture.magFilter = THREE.LinearFilter
+  cachedClue6Texture.anisotropy = 8
+  return cachedClue6Texture
 }
 
 function createRoofTileTexture(base = '#b12727', dark = '#7f1919') {
@@ -869,13 +883,41 @@ function createFunHouseMesh(options = {}) {
   powerBoxBody.castShadow = true
   powerBoxBody.receiveShadow = true
   powerBoxBody.name = 'Fun House Power Box Body'
+
+  const clueStickerWidth = 0.34
+  const clueStickerAspect = 1082 / 831
+  const clueStickerHeight = clueStickerWidth / clueStickerAspect
+  const powerBoxClueSticker = new THREE.Mesh(
+    new THREE.PlaneGeometry(clueStickerWidth, clueStickerHeight),
+    new THREE.MeshStandardMaterial({
+      map: getClue6Texture(),
+      transparent: true,
+      alphaTest: 0.08,
+      roughness: 1.0,
+      metalness: 0.0,
+      depthWrite: false,
+      side: THREE.DoubleSide
+    })
+  )
+  powerBoxClueSticker.name = 'Fun House Power Box Clue 6'
+  powerBoxClueSticker.position.set(
+    -0.14,
+    -0.06,
+    FUN_HOUSE_CONFIG.powerBox.depth * 0.5 + 0.006
+  )
+  powerBoxClueSticker.renderOrder = 1
+  powerBoxBody.add(powerBoxClueSticker)
+
   powerBox.add(powerBoxBody)
 
+  const powerBoxInnerWidth = FUN_HOUSE_CONFIG.powerBox.width - (FUN_HOUSE_CONFIG.powerBox.wallThickness * 1.2)
+  const powerBoxInnerHeight = FUN_HOUSE_CONFIG.powerBox.height - (FUN_HOUSE_CONFIG.powerBox.wallThickness * 1.2)
+  const powerBoxInnerDepth = FUN_HOUSE_CONFIG.powerBox.depth * 0.42
   const powerBoxInner = new THREE.Mesh(
     new THREE.BoxGeometry(
-      FUN_HOUSE_CONFIG.powerBox.width - (FUN_HOUSE_CONFIG.powerBox.wallThickness * 1.2),
-      FUN_HOUSE_CONFIG.powerBox.height - (FUN_HOUSE_CONFIG.powerBox.wallThickness * 1.2),
-      FUN_HOUSE_CONFIG.powerBox.depth * 0.42
+      powerBoxInnerWidth,
+      powerBoxInnerHeight,
+      powerBoxInnerDepth
     ),
     new THREE.MeshStandardMaterial({
       color: '#030405',
@@ -888,6 +930,7 @@ function createFunHouseMesh(options = {}) {
   powerBoxInner.position.z = -(FUN_HOUSE_CONFIG.powerBox.depth * 0.12)
   powerBoxInner.receiveShadow = true
   powerBoxInner.name = 'Fun House Power Box Interior'
+
   powerBox.add(powerBoxInner)
 
   const powerBoxDoorPivot = new THREE.Group()

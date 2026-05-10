@@ -1676,6 +1676,7 @@ export class Scene1Manager {
     this._updateVendingMachineCollector(syncList, delta)
     this._updateCartonBoxInteraction(syncList, delta)
     this._updateChestInteraction(syncList, delta)
+    if (this.screenMat) this.screenMat.update(delta)
     
     // ✨ NEW: CHECK FOR GAME OVER AFTER ALL COLLISIONS (not before!)
     // This triggers callback the SAME frame collision is detected
@@ -6254,10 +6255,15 @@ export class Scene1Manager {
         1
       )
       : 0
+    const guyIntensity = guyBlend * guyBlend
+
+    if (this.screenMat || guyIntensity > 0.0005) {
+      this._ensureScreenMat()?.setGuyEffectIntensity(guyIntensity)
+    }
 
     updateSoundFilter1({
       underwaterIntensity,
-      guyProximityIntensity: guyBlend * guyBlend,
+      guyProximityIntensity: guyIntensity,
       delta,
     })
   }
@@ -6277,7 +6283,6 @@ export class Scene1Manager {
 
   _updateDudeFogAndPenaltyState(syncList, delta) {
     if (!this.mainScene || !this.mainScene.fog || !(this.mainScene.fog instanceof THREE.Fog)) {
-      if (this.screenMat) this.screenMat.update(delta)
       return
     }
 
@@ -6379,8 +6384,6 @@ export class Scene1Manager {
         this._setSection1CeilingLightsState(true)
       }
     }
-
-    if (this.screenMat) this.screenMat.update(delta)
   }
 
   /**

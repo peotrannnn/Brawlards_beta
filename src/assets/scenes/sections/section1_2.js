@@ -1,6 +1,309 @@
 import * as THREE from 'three'
 import { getElevatorDoorAsset } from "../../objects/ElevatorDoor.js"
 
+const section2ClueTextureLoader = new THREE.TextureLoader()
+const section2ClueTextureCache = new Map()
+const section2ArtworkTextureLoader = new THREE.TextureLoader()
+const section2ArtworkTextureCache = new Map()
+const section2FrameTextureCache = new Map()
+
+function getSection2ClueTexture(fileName) {
+  if (section2ClueTextureCache.has(fileName)) {
+    return section2ClueTextureCache.get(fileName)
+  }
+
+  const texturePath = new URL(`../../../pictures/${fileName}`, import.meta.url).href
+  const texture = section2ClueTextureLoader.load(texturePath)
+  texture.colorSpace = THREE.SRGBColorSpace
+  texture.minFilter = THREE.LinearMipmapLinearFilter
+  texture.magFilter = THREE.LinearFilter
+  texture.anisotropy = 8
+  section2ClueTextureCache.set(fileName, texture)
+  return texture
+}
+
+function createSection2FrameTexture(style = 'walnut') {
+  const canvas = document.createElement('canvas')
+  const size = 256
+  canvas.width = size
+  canvas.height = size
+  const ctx = canvas.getContext('2d')
+
+  if (style === 'brass') {
+    const gradient = ctx.createLinearGradient(0, 0, size, size)
+    gradient.addColorStop(0, '#d7b977')
+    gradient.addColorStop(0.45, '#8f6d32')
+    gradient.addColorStop(1, '#e3cc8c')
+    ctx.fillStyle = gradient
+    ctx.fillRect(0, 0, size, size)
+
+    for (let i = 0; i < 160; i += 1) {
+      const y = (i / 160) * size
+      const alpha = 0.05 + ((i % 7) / 7) * 0.08
+      ctx.fillStyle = `rgba(255, 244, 214, ${alpha})`
+      ctx.fillRect(0, y, size, 1)
+    }
+
+    for (let i = 0; i < 90; i += 1) {
+      const x = ((i * 37) % size)
+      const y = ((i * 71) % size)
+      const radius = 1 + (i % 3)
+      ctx.fillStyle = `rgba(86, 58, 18, ${0.08 + (i % 5) * 0.015})`
+      ctx.beginPath()
+      ctx.arc(x, y, radius, 0, Math.PI * 2)
+      ctx.fill()
+    }
+  } else if (style === 'slate') {
+    const gradient = ctx.createLinearGradient(0, 0, size, size)
+    gradient.addColorStop(0, '#7b8795')
+    gradient.addColorStop(0.5, '#4c5561')
+    gradient.addColorStop(1, '#8b94a1')
+    ctx.fillStyle = gradient
+    ctx.fillRect(0, 0, size, size)
+
+    for (let i = 0; i < 110; i += 1) {
+      const strokeY = ((i * 23) % size)
+      ctx.strokeStyle = `rgba(220, 228, 236, ${0.035 + (i % 4) * 0.015})`
+      ctx.lineWidth = 2 + (i % 3)
+      ctx.beginPath()
+      ctx.moveTo(0, strokeY)
+      ctx.lineTo(size, Math.min(size, strokeY + 10 + (i % 9)))
+      ctx.stroke()
+    }
+
+    for (let i = 0; i < 45; i += 1) {
+      const x = ((i * 53) % size)
+      const y = ((i * 97) % size)
+      const s = 6 + (i % 5)
+      ctx.fillStyle = `rgba(33, 39, 47, ${0.05 + (i % 6) * 0.015})`
+      ctx.fillRect(x, y, s, s * 0.55)
+    }
+  } else {
+    const gradient = ctx.createLinearGradient(0, 0, size, size)
+    gradient.addColorStop(0, '#8b603c')
+    gradient.addColorStop(0.5, '#5c3921')
+    gradient.addColorStop(1, '#9b7048')
+    ctx.fillStyle = gradient
+    ctx.fillRect(0, 0, size, size)
+
+    for (let i = 0; i < 180; i += 1) {
+      const y = (i / 180) * size
+      const alpha = 0.04 + ((i % 8) / 8) * 0.08
+      ctx.fillStyle = `rgba(43, 24, 12, ${alpha})`
+      ctx.fillRect(0, y, size, 1)
+    }
+
+    for (let i = 0; i < 36; i += 1) {
+      const x = ((i * 47) % size)
+      const knotY = ((i * 29) % size)
+      ctx.fillStyle = `rgba(56, 30, 13, ${0.09 + (i % 4) * 0.03})`
+      ctx.beginPath()
+      ctx.ellipse(x, knotY, 7 + (i % 5), 3 + (i % 3), 0, 0, Math.PI * 2)
+      ctx.fill()
+    }
+  }
+
+  const texture = new THREE.CanvasTexture(canvas)
+  texture.colorSpace = THREE.SRGBColorSpace
+  texture.wrapS = THREE.RepeatWrapping
+  texture.wrapT = THREE.RepeatWrapping
+  texture.repeat.set(1.6, 1.6)
+  texture.magFilter = THREE.LinearFilter
+  texture.minFilter = THREE.LinearMipmapLinearFilter
+  return texture
+}
+
+function getSection2FrameTexture(style = 'walnut') {
+  if (section2FrameTextureCache.has(style)) {
+    return section2FrameTextureCache.get(style)
+  }
+
+  const texture = createSection2FrameTexture(style)
+  section2FrameTextureCache.set(style, texture)
+  return texture
+}
+
+function resolveSection2ArtworkSpec(spec) {
+  const sourceWidth = spec.sourceWidth || 1
+  const sourceHeight = spec.sourceHeight || 1
+  const aspect = sourceWidth / Math.max(1, sourceHeight)
+  const artworkLongSide = spec.artworkLongSide ?? 3.8
+
+  let artworkWidth = artworkLongSide
+  let artworkHeight = artworkWidth / Math.max(0.001, aspect)
+  if (aspect < 1) {
+    artworkHeight = artworkLongSide
+    artworkWidth = artworkHeight * aspect
+  }
+
+  const frameBorder = spec.frameBorder
+    ?? Math.max(0.12, Math.min(0.24, Math.min(artworkWidth, artworkHeight) * 0.075))
+
+  return {
+    ...spec,
+    aspect,
+    artworkWidth,
+    artworkHeight,
+    frameBorder,
+    width: artworkWidth + (frameBorder * 2),
+    height: artworkHeight + (frameBorder * 2),
+  }
+}
+
+function getSection2ArtworkTexture(fileName) {
+  if (section2ArtworkTextureCache.has(fileName)) {
+    return section2ArtworkTextureCache.get(fileName)
+  }
+
+  const texturePath = new URL(`../../../pictures/${fileName}`, import.meta.url).href
+  const texture = section2ArtworkTextureLoader.load(texturePath)
+
+  texture.colorSpace = THREE.SRGBColorSpace
+  texture.minFilter = THREE.LinearMipmapLinearFilter
+  texture.magFilter = THREE.LinearFilter
+  texture.anisotropy = 8
+  texture.wrapS = THREE.ClampToEdgeWrapping
+  texture.wrapT = THREE.ClampToEdgeWrapping
+  section2ArtworkTextureCache.set(fileName, texture)
+  return texture
+}
+
+function createSection2SeededRandom(seed) {
+  let state = seed >>> 0
+  return () => {
+    state = (Math.imul(state, 1664525) + 1013904223) >>> 0
+    return state / 0x100000000
+  }
+}
+
+function isSection2ArtworkPlacementOverlapping(candidate, placements, padding = 1.2) {
+  return placements.some((placement) => {
+    const minYDistance = ((candidate.height + placement.height) * 0.5) + padding
+    const minZDistance = ((candidate.width + placement.width) * 0.5) + padding
+    return Math.abs(candidate.y - placement.y) < minYDistance && Math.abs(candidate.z - placement.z) < minZDistance
+  })
+}
+
+function generateSection2ArtworkPlacements(specs, wallHeight, wallDepth) {
+  const random = createSection2SeededRandom(0x2a6f91)
+  const placements = []
+  const wallYMargin = 1.0
+  const wallZMargin = 16
+  const wallYLowerOffset = 1.35
+
+  specs.forEach((spec, index) => {
+    const minY = (-wallHeight * 0.5) + (spec.height * 0.5) + wallYMargin
+    const maxY = (wallHeight * 0.5) - (spec.height * 0.5) - wallYMargin
+    const minZ = (-wallDepth * 0.5) + (spec.width * 0.5) + wallZMargin
+    const maxZ = (wallDepth * 0.5) - (spec.width * 0.5) - wallZMargin
+
+    let placed = false
+    for (let attempt = 0; attempt < 180; attempt += 1) {
+      const y = THREE.MathUtils.clamp(
+        THREE.MathUtils.lerp(minY, maxY, random()) - wallYLowerOffset,
+        minY,
+        maxY
+      )
+      const z = THREE.MathUtils.lerp(minZ, maxZ, random())
+      const candidate = { ...spec, y, z }
+      if (!isSection2ArtworkPlacementOverlapping(candidate, placements)) {
+        placements.push(candidate)
+        placed = true
+        break
+      }
+    }
+
+    if (!placed) {
+      const fallbackZ = THREE.MathUtils.lerp(minZ, maxZ, (index + 1) / (specs.length + 1))
+      const fallbackY = THREE.MathUtils.clamp(
+        THREE.MathUtils.lerp(minY, maxY, 0.35 + (index * 0.22)) - wallYLowerOffset,
+        minY,
+        maxY
+      )
+      placements.push({ ...spec, y: fallbackY, z: fallbackZ })
+    }
+  })
+
+  return placements
+}
+
+function createSection2ArtworkFrame(spec) {
+  const group = new THREE.Group()
+  const frameDepth = spec.frameDepth ?? 0.18
+  const frameBorder = spec.frameBorder ?? Math.max(0.12, Math.min(0.24, Math.min(spec.width, spec.height) * 0.06))
+  const innerWidth = Math.max(0.6, spec.artworkWidth ?? (spec.width - (frameBorder * 2)))
+  const innerHeight = Math.max(0.6, spec.artworkHeight ?? (spec.height - (frameBorder * 2)))
+  const artworkTexture = getSection2ArtworkTexture(spec.fileName)
+  const frameTexture = getSection2FrameTexture(spec.frameTextureStyle)
+
+  const frameMaterial = new THREE.MeshStandardMaterial({
+    color: spec.frameColor,
+    map: frameTexture,
+    roughness: 0.72,
+    metalness: 0.08,
+  })
+  const backingMaterial = new THREE.MeshStandardMaterial({
+    color: spec.backingColor,
+    roughness: 0.92,
+    metalness: 0.02,
+  })
+  const artMaterial = new THREE.MeshStandardMaterial({
+    map: artworkTexture,
+    roughness: 0.86,
+    metalness: 0.0,
+  })
+
+  const backing = new THREE.Mesh(
+    new THREE.BoxGeometry(frameDepth * 0.74, innerHeight, innerWidth),
+    backingMaterial
+  )
+  backing.castShadow = false
+  backing.receiveShadow = false
+  group.add(backing)
+
+  const topBar = new THREE.Mesh(
+    new THREE.BoxGeometry(frameDepth, frameBorder, spec.width),
+    frameMaterial
+  )
+  topBar.position.y = (spec.height * 0.5) - (frameBorder * 0.5)
+  group.add(topBar)
+
+  const bottomBar = topBar.clone()
+  bottomBar.position.y = -topBar.position.y
+  group.add(bottomBar)
+
+  const leftBar = new THREE.Mesh(
+    new THREE.BoxGeometry(frameDepth, spec.height, frameBorder),
+    frameMaterial
+  )
+  leftBar.position.z = (-spec.width * 0.5) + (frameBorder * 0.5)
+  group.add(leftBar)
+
+  const rightBar = leftBar.clone()
+  rightBar.position.z = -leftBar.position.z
+  group.add(rightBar)
+
+  const artworkPlane = new THREE.Mesh(
+    new THREE.PlaneGeometry(innerWidth, innerHeight),
+    artMaterial
+  )
+  artworkPlane.rotation.y = -Math.PI * 0.5
+  artworkPlane.position.x = -(frameDepth * 0.5) - 0.008
+  artworkPlane.renderOrder = 1
+  group.add(artworkPlane)
+
+  group.name = spec.name
+  group.userData.frameDepth = frameDepth
+  group.traverse((child) => {
+    if (child.isMesh) {
+      child.castShadow = false
+      child.receiveShadow = false
+    }
+  })
+
+  return group
+}
+
 export function createSection2(rootGroup) {
   // ======================================================
   // SECTION 2: HÀNH LANG PHÍA TRÊN SECTION 1
@@ -228,6 +531,44 @@ export function createSection2(rootGroup) {
   wallBack.castShadow = false
   wallBack.receiveShadow = false
   wallBack.name = 'Section2 Wall Back'
+
+  const clueStickerWidth = 1.7
+  const clueStickerAspect = 1082 / 831
+  const clueStickerHeight = clueStickerWidth / clueStickerAspect
+  const section2Clues = [
+    {
+      name: 'Section2 Clue 4',
+      fileName: 'clue4.png',
+      x: -1.05,
+      y: -2.35
+    },
+    {
+      name: 'Section2 Clue 5',
+      fileName: 'clue5.png',
+      x: 1.05,
+      y: -2.15
+    }
+  ]
+
+  section2Clues.forEach(({ name, fileName, x, y }) => {
+    const clueSticker = new THREE.Mesh(
+      new THREE.PlaneGeometry(clueStickerWidth, clueStickerHeight),
+      new THREE.MeshStandardMaterial({
+        map: getSection2ClueTexture(fileName),
+        transparent: true,
+        alphaTest: 0.08,
+        roughness: 1.0,
+        metalness: 0.0,
+        depthWrite: false,
+        side: THREE.DoubleSide
+      })
+    )
+    clueSticker.name = name
+    clueSticker.position.set(x, y, 0.25 + 0.012)
+    clueSticker.renderOrder = 1
+    wallBack.add(clueSticker)
+  })
+
   rootGroup.add(wallBack)
 
   // --- Tường trái (-X): D × H ---
@@ -250,6 +591,50 @@ export function createSection2(rootGroup) {
   wallRight.castShadow = false
   wallRight.receiveShadow = false
   wallRight.name = 'Section2 Wall Right'
+
+  const section2ArtworkSpecs = [
+    {
+      name: 'Section2 Dog Artwork',
+      fileName: 'dog.png',
+      sourceWidth: 960,
+      sourceHeight: 943,
+      artworkLongSide: 3.15,
+      frameColor: '#70543a',
+      backingColor: '#16100c',
+      frameTextureStyle: 'walnut',
+    },
+    {
+      name: 'Section2 Lobster Artwork',
+      fileName: 'lobster.png',
+      sourceWidth: 750,
+      sourceHeight: 872,
+      artworkLongSide: 4.1,
+      frameColor: '#a68d68',
+      backingColor: '#120f0c',
+      frameTextureStyle: 'brass',
+    },
+    {
+      name: 'Section2 JD Thick Artwork',
+      fileName: 'jd_thick.png',
+      sourceWidth: 913,
+      sourceHeight: 960,
+      artworkLongSide: 3.55,
+      frameColor: '#4f5966',
+      backingColor: '#13161b',
+      frameTextureStyle: 'slate',
+    }
+  ].map(resolveSection2ArtworkSpec)
+
+  generateSection2ArtworkPlacements(section2ArtworkSpecs, H, D).forEach((placement) => {
+    const artworkFrame = createSection2ArtworkFrame(placement)
+    artworkFrame.position.set(
+      -(0.25 + (artworkFrame.userData.frameDepth * 0.5) + 0.012),
+      placement.y,
+      placement.z
+    )
+    wallRight.add(artworkFrame)
+  })
+
   rootGroup.add(wallRight)
 
   // ======================================================
@@ -804,7 +1189,7 @@ export function createSection2(rootGroup) {
   // Physics Section 2
   if (rootGroup.userData.physics) {
     rootGroup.userData.physics.shapes.push(
-      { type: 'box', size: [W, 0.5, D], offset: [0, SECTION2_BASE_Y, 0] },
+      { type: 'box', size: [W, 0.5, D], offset: [0, SECTION2_BASE_Y, 0], role: 'section2Floor', surfaceAudioType: 'section2-floor' },
       { type: 'box', size: [W, CEIL_THICK, D], offset: [0, SECTION2_BASE_Y + H, 0] },
       { type: 'box', size: [W, H, 0.5], offset: [0, SECTION2_BASE_Y + H / 2, D / 2] },
       { type: 'box', size: [W, H, 0.5], offset: [0, SECTION2_BASE_Y + H / 2, -D / 2] },

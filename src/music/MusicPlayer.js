@@ -2,7 +2,7 @@ import { settingsManager } from '../core/SettingsManager.js'
 import { registerSoundFilter1Target } from '../sounds/soundfilter1.js'
 
 const MUSIC_PLAYER_CONFIG = {
-  fadeInSec: 10,
+  fadeInSec: 15,
   fadeOutSec: 1.35,
   sectionTransitionDelayMs: [15000, 30000],
   nextSongDelayMs: [15000, 30000],
@@ -19,7 +19,6 @@ const MUSIC_GROUPS = {
   section1: [
     'mezhdunami-mezhdunami-little-world-141275.mp3',
     'mezhdunami-mezhdunami-eventide-1201.mp3',
-    '9jackjack8-dream-pool-ambient-dreamcore-486226.mp3',
     'papulina-waiting-room-for-no-one-485626.mp3',
     'tim_kulig_free_music-light-dreams-435308.mp3',
     'wanderingarc-the-calling-moonless-mountain-03-relaxing-ambient-music-255570.mp3',
@@ -83,6 +82,7 @@ export class MusicPlayer {
     this.playbackState = 'off'
     this._requestVersion = 0
     this._lastTrackByGroup = new Map()
+    this._nextTrackBlockName = null
     this._resumeBound = false
 
     this.initAudioContext()
@@ -193,6 +193,7 @@ export class MusicPlayer {
     const requestVersion = ++this._requestVersion
     this.requestedGroupKey = null
     this.pendingGroupKey = null
+    this._nextTrackBlockName = null
     this._clearPendingStartTimer()
 
     if (!this.currentSource || !this.currentGainNode) {
@@ -226,8 +227,11 @@ export class MusicPlayer {
     }
 
     const requestVersion = ++this._requestVersion
+    const currentTrackName = this.currentTrackName
+    const isCrossGroupSwitch = !!currentTrackName && !!this.currentGroupKey && this.currentGroupKey !== groupKey
     this.requestedGroupKey = groupKey
     this.pendingGroupKey = null
+    this._nextTrackBlockName = isCrossGroupSwitch ? currentTrackName : null
     this._clearPendingStartTimer()
 
     if (this.currentSource && this.currentGainNode) {
@@ -268,12 +272,14 @@ export class MusicPlayer {
     if (!tracks.length) return null
 
     const previousTrack = this._lastTrackByGroup.get(groupKey) || null
+    const blockedTrack = this._nextTrackBlockName || null
     if (tracks.length === 1) {
       return tracks[0]
     }
 
-    const candidates = tracks.filter(trackName => trackName !== previousTrack)
-    const pool = candidates.length ? candidates : tracks
+    const candidates = tracks.filter(trackName => trackName !== previousTrack && trackName !== blockedTrack)
+    const fallbackCandidates = tracks.filter(trackName => trackName !== previousTrack)
+    const pool = candidates.length ? candidates : (fallbackCandidates.length ? fallbackCandidates : tracks)
     return pool[Math.floor(Math.random() * pool.length)]
   }
 
@@ -364,6 +370,7 @@ export class MusicPlayer {
       this.currentGainNode = gainNode
       this.currentGroupKey = groupKey
       this.currentTrackName = trackName
+      this._nextTrackBlockName = null
       this._lastTrackByGroup.set(groupKey, trackName)
       this._setPlaybackState('playing')
     } catch (error) {

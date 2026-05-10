@@ -17,6 +17,9 @@ const CARTON_BOX_CONFIG = {
   FLAP_EDGE_COLOR: '#d0ab7a'
 }
 
+const clueTextureLoader = new THREE.TextureLoader()
+let cachedClue3Texture = null
+
 const CARTON_BOX_LAYOUT = {
   bottomOuterY: -CARTON_BOX_CONFIG.OUTER_SIZE_Y * 0.5,
   topOuterY: CARTON_BOX_CONFIG.OUTER_SIZE_Y * 0.5,
@@ -93,6 +96,7 @@ function createCartonBoxPhysicsDef() {
       ...CARTON_BOX_SURFACES.map((surface) => ({
         type: 'box',
         role: surface.role,
+        surfaceAudioType: 'carton-cardboard',
         size: [...surface.size],
         offset: [...surface.offset]
       })),
@@ -146,6 +150,18 @@ function createCardboardTexture(baseColor = '#8f6a43') {
   return texture
 }
 
+function getClue3Texture() {
+  if (cachedClue3Texture) return cachedClue3Texture
+
+  const texturePath = new URL('../../pictures/clue3.png', import.meta.url).href
+  cachedClue3Texture = clueTextureLoader.load(texturePath)
+  cachedClue3Texture.colorSpace = THREE.SRGBColorSpace
+  cachedClue3Texture.minFilter = THREE.LinearMipmapLinearFilter
+  cachedClue3Texture.magFilter = THREE.LinearFilter
+  cachedClue3Texture.anisotropy = 8
+  return cachedClue3Texture
+}
+
 function createCartonBoxMesh() {
   const root = new THREE.Group()
   root.name = 'Carton Box Mesh'
@@ -180,6 +196,9 @@ function createCartonBoxMesh() {
   const h = CARTON_BOX_CONFIG.OUTER_SIZE_Y
   const d = CARTON_BOX_CONFIG.OUTER_SIZE_Z
   const t = CARTON_BOX_CONFIG.WALL_THICKNESS
+  const clueStickerWidth = 1.7
+  const clueStickerAspect = 1082 / 831
+  const clueStickerHeight = clueStickerWidth / clueStickerAspect
 
   // Structural shell meshes are created from the exact same source as hitboxes.
   CARTON_BOX_SURFACES.forEach((surface) => {
@@ -192,6 +211,27 @@ function createCartonBoxMesh() {
     mesh.castShadow = true
     mesh.receiveShadow = true
     mesh.name = surface.meshName
+
+    if (surface.meshName === 'Carton Right Wall') {
+      const clueSticker = new THREE.Mesh(
+        new THREE.PlaneGeometry(clueStickerWidth, clueStickerHeight),
+        new THREE.MeshStandardMaterial({
+          map: getClue3Texture(),
+          transparent: true,
+          alphaTest: 0.08,
+          roughness: 1.0,
+          metalness: 0.0,
+          depthWrite: false,
+          side: THREE.DoubleSide
+        })
+      )
+      clueSticker.name = 'Carton Box Clue 3'
+      clueSticker.rotation.y = Math.PI * 0.5
+      clueSticker.position.set((surface.size[0] * 0.5) + 0.012, 0.04, -0.08)
+      clueSticker.renderOrder = 1
+      mesh.add(clueSticker)
+    }
+
     root.add(mesh)
   })
 

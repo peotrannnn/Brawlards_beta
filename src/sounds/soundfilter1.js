@@ -28,21 +28,21 @@ function createNoiseBuffer(audioContext, durationSec = 1.25) {
   let holdFrames = 0
   for (let i = 0; i < frameCount; i += 1) {
     if (holdFrames <= 0) {
-      heldSample = ((Math.random() * 2) - 1) * (0.45 + (Math.random() * 0.55))
-      holdFrames = 1 + Math.floor(Math.random() * 6)
+      heldSample = ((Math.random() * 2) - 1) * (0.22 + (Math.random() * 0.4))
+      holdFrames = 2 + Math.floor(Math.random() * 7)
     }
     holdFrames -= 1
 
     const white = (Math.random() * 2) - 1
-    const crackle = Math.random() > 0.9965 ? ((Math.random() * 2) - 1) * 1.8 : 0
-    lastSample = (lastSample * 0.58) + (white * 0.24) + (heldSample * 0.18) + (crackle * 0.65)
+    const crackle = Math.random() > 0.9984 ? ((Math.random() * 2) - 1) * 0.85 : 0
+    lastSample = (lastSample * 0.68) + (white * 0.16) + (heldSample * 0.14) + (crackle * 0.22)
     data[i] = clamp(lastSample, -1, 1)
   }
 
   return buffer
 }
 
-function createStaticDistortionCurve(amount = 90) {
+function createStaticDistortionCurve(amount = 38) {
   const samples = 2048
   const curve = new Float32Array(samples)
   const k = Math.max(1, amount)
@@ -62,23 +62,23 @@ function applyTargetState(target, intensity, immediate = false) {
   const previousIntensity = target.lastIntensity ?? SOUND_FILTER1_STATE.currentIntensity
   const timeConstant = immediate ? 0.001 : (intensity > previousIntensity ? 0.03 : 0.08)
   const isMusicTarget = target.key === 'music'
-  const muffleStrength = Math.pow(clamp(intensity, 0, 1), 0.42)
+  const muffleStrength = Math.pow(clamp(intensity, 0, 1), 0.34)
   const targetMuffleStrength = isMusicTarget
-    ? clamp((muffleStrength * 1.12) + 0.08, 0, 1)
-    : muffleStrength
-  const staticOnset = clamp((muffleStrength - 0.58) / 0.42, 0, 1)
-  const staticReveal = Math.pow(staticOnset, 3.2)
-  const cutoff = lerp(18000, isMusicTarget ? 170 : 240, targetMuffleStrength)
-  const resonance = lerp(0.0001, isMusicTarget ? 2.8 : 2.4, targetMuffleStrength)
-  const highShelfGain = lerp(0, isMusicTarget ? -34 : -26, targetMuffleStrength)
-  const midDipGain = lerp(0, isMusicTarget ? -14 : -10, targetMuffleStrength)
-  const loudness = lerp(1, isMusicTarget ? 0.3 : 0.52, targetMuffleStrength)
-  const staticGain = lerp(0.000001, 0.085, staticReveal) * Math.max(0.0001, target.inputNode?.gain?.value ?? 1)
-  const staticHighpass = lerp(950, 1900, muffleStrength)
-  const staticBandpass = lerp(1850, 3100, muffleStrength)
-  const staticBandQ = lerp(1.2, 4.8, staticReveal)
-  const staticPresenceGain = lerp(0, 14, staticReveal)
-  const staticLowpass = lerp(7600, 4200, muffleStrength)
+    ? clamp((muffleStrength * 1.18) + 0.1, 0, 1)
+    : clamp((muffleStrength * 1.08) + 0.03, 0, 1)
+  const staticOnset = clamp((intensity - 0.5) / 0.5, 0, 1)
+  const staticReveal = Math.pow(staticOnset, 2.35)
+  const cutoff = lerp(18000, isMusicTarget ? 120 : 170, targetMuffleStrength)
+  const resonance = lerp(0.0001, isMusicTarget ? 2.2 : 1.95, targetMuffleStrength)
+  const highShelfGain = lerp(0, isMusicTarget ? -38 : -30, targetMuffleStrength)
+  const midDipGain = lerp(0, isMusicTarget ? -16 : -12, targetMuffleStrength)
+  const loudness = lerp(1, isMusicTarget ? 0.22 : 0.44, targetMuffleStrength)
+  const staticGain = lerp(0.000001, isMusicTarget ? 0.02 : 0.028, staticReveal) * Math.max(0.0001, target.inputNode?.gain?.value ?? 1)
+  const staticHighpass = lerp(700, 1200, targetMuffleStrength)
+  const staticBandpass = lerp(1400, 2200, targetMuffleStrength)
+  const staticBandQ = lerp(0.9, 2.2, staticReveal)
+  const staticPresenceGain = lerp(0, 5.2, staticReveal)
+  const staticLowpass = lerp(5600, 3000, targetMuffleStrength)
 
   target.lowpass.frequency.cancelScheduledValues(now)
   target.lowpass.frequency.setTargetAtTime(cutoff, now, timeConstant)
@@ -151,7 +151,7 @@ export function registerSoundFilter1Target({ key, audioContext, inputNode, outpu
   staticHighpass.Q.value = 1.1
 
   const staticShaper = audioContext.createWaveShaper()
-  staticShaper.curve = createStaticDistortionCurve(90)
+  staticShaper.curve = createStaticDistortionCurve(42)
   staticShaper.oversample = '4x'
 
   const staticBandpass = audioContext.createBiquadFilter()

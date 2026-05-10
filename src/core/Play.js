@@ -8,6 +8,224 @@ import { DEFAULT_PLAYER_CUSTOMIZATION, PLAYER_EAR_TYPES, normalizePlayerCustomiz
 import { getPlayerAsset } from "../assets/objects/Player.js"
 
 const PLAYER_CUSTOMIZATION_STORAGE_KEY = "brawlards.playerCustomization"
+const PLAY_CUSTOMIZATION_STYLE_ID = "play-customization-style"
+
+function ensurePlayCustomizationStyles() {
+  if (document.getElementById(PLAY_CUSTOMIZATION_STYLE_ID)) return
+
+  const style = document.createElement("style")
+  style.id = PLAY_CUSTOMIZATION_STYLE_ID
+  style.textContent = `
+    .play-customization-panel {
+      --play-customization-preview-size: 212px;
+      width: min(92vw, 280px);
+      max-width: 92vw;
+      margin-top: 12px;
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 10px;
+      text-align: left;
+      transition: width 0.24s ease;
+    }
+    .play-customization-panel--expanded {
+      width: min(92vw, 470px);
+    }
+    .play-customization-window {
+      width: 100%;
+      background: ${IT_STYLE.colors.darkBg};
+      border: 2px solid ${IT_STYLE.colors.accentBlue};
+      box-shadow: 0 2px 16px #0008;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+    }
+    .play-customization-menu {
+      display: flex;
+      flex-direction: column;
+    }
+    .play-customization-menu-button {
+      width: 100%;
+      border: none;
+      border-bottom: 1px solid ${IT_STYLE.colors.borderBlue};
+      background: transparent;
+      color: ${IT_STYLE.colors.neonGreen};
+      padding: 14px 20px;
+      font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+      font-size: 14px;
+      font-weight: normal;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      text-align: left;
+      cursor: pointer;
+      transition: background-color 0.2s ease, color 0.2s ease, padding-left 0.2s ease, box-shadow 0.2s ease;
+    }
+    .play-customization-menu-button:hover {
+      background: rgba(0, 102, 255, 0.2);
+      color: #fff;
+      padding-left: 28px;
+    }
+    .play-customization-menu-button--active {
+      background: ${IT_STYLE.colors.accentBlue};
+      color: #000;
+      font-weight: bold;
+      padding-left: 28px;
+      box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.3);
+    }
+    .play-customization-menu-button--last {
+      border-bottom: none;
+    }
+    .play-customization-body {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      padding: 12px;
+      border-top: 1px solid ${IT_STYLE.colors.borderBlue};
+    }
+    .play-customization-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: auto;
+      max-width: 100%;
+      padding: 9px 14px;
+      border: 2px solid ${IT_STYLE.colors.borderBlue};
+      background: linear-gradient(180deg, ${IT_STYLE.colors.accentBlue}, ${IT_STYLE.colors.borderBlue});
+      color: #000;
+      font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+      font-weight: bold;
+      font-size: 11px;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      cursor: pointer;
+      box-shadow: 0 0 15px rgba(0, 102, 255, 0.42), inset 0 0 8px rgba(0, 255, 0, 0.16);
+      transition: transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease;
+    }
+    .play-customization-button:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 0 22px rgba(0, 102, 255, 0.58), inset 0 0 12px rgba(0, 255, 0, 0.24);
+      filter: brightness(1.04);
+    }
+    .play-customization-button--reset {
+      background: linear-gradient(180deg, #c09012, #8b650a);
+      border-color: #6c4f08;
+      color: #111;
+      box-shadow: 0 0 18px rgba(192, 144, 18, 0.3), inset 0 0 10px rgba(255, 239, 184, 0.12);
+    }
+    .play-customization-button--reset:hover {
+      box-shadow: 0 0 24px rgba(192, 144, 18, 0.42), inset 0 0 12px rgba(255, 239, 184, 0.18);
+    }
+    .play-customization-content {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) var(--play-customization-preview-size);
+      gap: 10px;
+      align-items: stretch;
+    }
+    .play-customization-column {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      min-width: 0;
+    }
+    .play-customization-controls-column {
+      height: var(--play-customization-preview-size);
+      max-height: var(--play-customization-preview-size);
+      overflow-y: auto;
+      scrollbar-width: none;
+      padding-right: 2px;
+    }
+    .play-customization-controls-column::-webkit-scrollbar {
+      display: none;
+    }
+    .play-customization-preview-column {
+      align-items: center;
+      justify-content: flex-start;
+      order: 0;
+    }
+    .play-customization-preview-frame {
+      width: min(var(--play-customization-preview-size), 100%);
+      aspect-ratio: 1;
+      position: relative;
+      margin: 0 auto;
+      background: radial-gradient(circle at 35% 25%, rgba(30, 75, 150, 0.32), rgba(8, 13, 22, 0.96) 70%);
+      border: 1px solid ${IT_STYLE.colors.accentBlue};
+      box-shadow: 0 0 16px rgba(0, 102, 255, 0.28), inset 0 0 12px rgba(0, 102, 255, 0.14);
+      overflow: hidden;
+    }
+    .play-customization-row {
+      display: grid;
+      grid-template-columns: 1fr;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 10px;
+      background: rgba(0, 15, 38, 0.55);
+      border: 1px solid rgba(0, 102, 255, 0.22);
+      box-shadow: inset 0 0 10px rgba(0, 102, 255, 0.08);
+    }
+    .play-customization-row-label {
+      color: ${IT_STYLE.colors.neonGreen};
+      font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .play-customization-control-wrap {
+      display: flex;
+      align-items: center;
+      justify-content: flex-start;
+      gap: 8px;
+      flex-wrap: wrap;
+      min-width: 0;
+    }
+    .play-customization-input {
+      box-sizing: border-box;
+      font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+      font-size: 11px;
+      border: 1px solid ${IT_STYLE.colors.accentBlue};
+      background: #090f18;
+      color: #eaf4ff;
+      padding: 6px 8px;
+      min-height: 30px;
+      max-width: 100%;
+      box-shadow: inset 0 0 8px rgba(0, 102, 255, 0.12);
+    }
+    .play-customization-color-input {
+      width: 58px;
+      padding: 2px;
+      min-height: 30px;
+    }
+    .play-customization-select {
+      width: 100%;
+      min-width: 0;
+    }
+    .play-customization-checkbox {
+      width: 18px;
+      height: 18px;
+      cursor: pointer;
+      accent-color: ${IT_STYLE.colors.accentBlue};
+    }
+    @media (max-width: 720px) {
+      .play-customization-panel--expanded {
+        width: min(92vw, 400px);
+      }
+      .play-customization-window {
+        width: 100%;
+      }
+      .play-customization-content {
+        grid-template-columns: 1fr;
+      }
+      .play-customization-controls-column {
+        height: auto;
+        max-height: 260px;
+      }
+      .play-customization-preview-column {
+        order: -1;
+      }
+    }
+  `
+  document.head.appendChild(style)
+}
 
 function loadStoredPlayerCustomization() {
   try {
@@ -35,6 +253,7 @@ function saveStoredPlayerCustomization(customization) {
 export function startPlay(renderer, onBack) {
   document.body.style.margin = "0"
   document.body.style.overflow = "hidden"
+  ensurePlayCustomizationStyles()
 
   // Background overlay (black)
   const background = document.createElement("div")
@@ -120,54 +339,47 @@ export function startPlay(renderer, onBack) {
   sceneGroup.appendChild(sceneDesc)
 
   const customizationPanel = document.createElement("div")
-  customizationPanel.style.display = "flex"
-  customizationPanel.style.flexDirection = "column"
-  customizationPanel.style.gap = "8px"
-  customizationPanel.style.marginTop = "10px"
-  customizationPanel.style.padding = "10px"
-  customizationPanel.style.backgroundColor = IT_STYLE.colors.darkBg
-  customizationPanel.style.border = `1px solid ${IT_STYLE.colors.accentBlue}`
-  customizationPanel.style.boxShadow = "0 0 10px rgba(0, 102, 255, 0.25), inset 0 0 4px rgba(0, 102, 255, 0.18)"
+  customizationPanel.className = "play-customization-panel"
   sceneGroup.appendChild(customizationPanel)
+
+  const customizationWindow = document.createElement("div")
+  customizationWindow.className = "play-customization-window"
+  customizationPanel.appendChild(customizationWindow)
+
+  const customizationMenu = document.createElement("div")
+  customizationMenu.className = "play-customization-menu"
+  customizationWindow.appendChild(customizationMenu)
 
   const customizationToggle = document.createElement("button")
   customizationToggle.innerText = "Customize Player"
-  IT_STYLE.applyToElement(customizationToggle, "button")
-  customizationToggle.style.marginTop = "0"
-  customizationPanel.appendChild(customizationToggle)
+  customizationToggle.className = "play-customization-menu-button"
+  customizationMenu.appendChild(customizationToggle)
+
+  const playGameBtn = document.createElement("button")
+  playGameBtn.innerText = "Start Game"
+  playGameBtn.className = "play-customization-menu-button play-customization-menu-button--last"
+  customizationMenu.appendChild(playGameBtn)
+
+  const customizationBody = document.createElement("div")
+  customizationBody.className = "play-customization-body"
+  customizationBody.style.display = "none"
+  customizationWindow.appendChild(customizationBody)
 
   const customizationContent = document.createElement("div")
-  customizationContent.style.display = "none"
-  customizationContent.style.gridTemplateColumns = "minmax(260px, 320px) 260px"
-  customizationContent.style.gap = "14px"
-  customizationContent.style.alignItems = "start"
-  customizationPanel.appendChild(customizationContent)
+  customizationContent.style.display = "grid"
+  customizationContent.className = "play-customization-content"
+  customizationBody.appendChild(customizationContent)
 
   const controlsColumn = document.createElement("div")
-  controlsColumn.style.display = "flex"
-  controlsColumn.style.flexDirection = "column"
-  controlsColumn.style.gap = "8px"
+  controlsColumn.className = "play-customization-column play-customization-controls-column"
   customizationContent.appendChild(controlsColumn)
 
   const previewColumn = document.createElement("div")
-  previewColumn.style.display = "flex"
-  previewColumn.style.flexDirection = "column"
-  previewColumn.style.gap = "8px"
-  previewColumn.style.alignItems = "center"
+  previewColumn.className = "play-customization-column play-customization-preview-column"
   customizationContent.appendChild(previewColumn)
 
-  const customizationTitle = createLabel("Player Customization", "12px", "bold", "#9ad1ff", false)
-  customizationTitle.style.padding = "0"
-  controlsColumn.appendChild(customizationTitle)
-
   const previewFrame = document.createElement("div")
-  previewFrame.style.width = "260px"
-  previewFrame.style.height = "260px"
-  previewFrame.style.position = "relative"
-  previewFrame.style.background = "radial-gradient(circle at 35% 25%, rgba(30, 75, 150, 0.32), rgba(8, 13, 22, 0.96) 70%)"
-  previewFrame.style.border = `1px solid ${IT_STYLE.colors.accentBlue}`
-  previewFrame.style.boxShadow = "0 0 16px rgba(0, 102, 255, 0.28), inset 0 0 12px rgba(0, 102, 255, 0.14)"
-  previewFrame.style.overflow = "hidden"
+  previewFrame.className = "play-customization-preview-frame"
   previewColumn.appendChild(previewFrame)
 
   const previewMount = document.createElement("div")
@@ -383,8 +595,10 @@ export function startPlay(renderer, onBack) {
   renderPreview()
 
   function syncCustomizationVisibility() {
-    customizationContent.style.display = isCustomizationOpen ? "grid" : "none"
+    customizationBody.style.display = isCustomizationOpen ? "flex" : "none"
+    customizationPanel.classList.toggle("play-customization-panel--expanded", isCustomizationOpen)
     customizationToggle.innerText = isCustomizationOpen ? "Hide Customization" : "Customize Player"
+    customizationToggle.classList.toggle("play-customization-menu-button--active", isCustomizationOpen)
     if (isCustomizationOpen) {
       resizePreviewRenderer()
       spawnPreviewPlayer()
@@ -398,58 +612,40 @@ export function startPlay(renderer, onBack) {
 
   function createCustomizeRow(labelText) {
     const row = document.createElement("label")
-    row.style.display = "grid"
-    row.style.gridTemplateColumns = "120px 1fr"
-    row.style.alignItems = "center"
-    row.style.gap = "8px"
-    row.style.color = "#d9e8ff"
-    row.style.fontFamily = "'Consolas', 'Monaco', 'Courier New', monospace"
-    row.style.fontSize = "11px"
+    row.className = "play-customization-row"
 
     const label = document.createElement("span")
     label.textContent = labelText
+    label.className = "play-customization-row-label"
     row.appendChild(label)
 
     const controlWrap = document.createElement("div")
-    controlWrap.style.display = "flex"
-    controlWrap.style.alignItems = "center"
-    controlWrap.style.justifyContent = "flex-end"
-    controlWrap.style.gap = "8px"
+    controlWrap.className = "play-customization-control-wrap"
     row.appendChild(controlWrap)
 
     controlsColumn.appendChild(row)
     return controlWrap
   }
 
-  function styleInput(input) {
-    input.style.fontFamily = "'Consolas', 'Monaco', 'Courier New', monospace"
-    input.style.fontSize = "11px"
-    input.style.border = `1px solid ${IT_STYLE.colors.accentBlue}`
-    input.style.backgroundColor = "#090f18"
-    input.style.color = "#eaf4ff"
-    input.style.padding = "4px 6px"
-    input.style.minHeight = "28px"
+  function styleInput(input, extraClassName = "") {
+    input.className = `play-customization-input ${extraClassName}`.trim()
     return input
   }
 
   const bodyColorWrap = createCustomizeRow("Body Color")
-  const bodyColorInput = styleInput(document.createElement("input"))
+  const bodyColorInput = styleInput(document.createElement("input"), "play-customization-color-input")
   bodyColorInput.type = "color"
   bodyColorInput.value = playerCustomization.bodyColor
-  bodyColorInput.style.width = "56px"
-  bodyColorInput.style.padding = "2px"
   bodyColorWrap.appendChild(bodyColorInput)
 
   const eyeColorWrap = createCustomizeRow("Eye Color")
-  const eyeColorInput = styleInput(document.createElement("input"))
+  const eyeColorInput = styleInput(document.createElement("input"), "play-customization-color-input")
   eyeColorInput.type = "color"
   eyeColorInput.value = playerCustomization.eyeColor
-  eyeColorInput.style.width = "56px"
-  eyeColorInput.style.padding = "2px"
   eyeColorWrap.appendChild(eyeColorInput)
 
   const earTypeWrap = createCustomizeRow("Ear Shape")
-  const earTypeSelect = styleInput(document.createElement("select"))
+  const earTypeSelect = styleInput(document.createElement("select"), "play-customization-select")
   const roundEarOption = document.createElement("option")
   roundEarOption.value = PLAYER_EAR_TYPES.ROUND
   roundEarOption.textContent = "Round"
@@ -465,21 +661,19 @@ export function startPlay(renderer, onBack) {
   const socksToggle = document.createElement("input")
   socksToggle.type = "checkbox"
   socksToggle.checked = playerCustomization.socksEnabled
+  socksToggle.className = "play-customization-checkbox"
   socksWrap.appendChild(socksToggle)
 
   const sockColorWrap = createCustomizeRow("Sock Color")
-  const sockColorInput = styleInput(document.createElement("input"))
+  const sockColorInput = styleInput(document.createElement("input"), "play-customization-color-input")
   sockColorInput.type = "color"
   sockColorInput.value = playerCustomization.sockColor
-  sockColorInput.style.width = "56px"
-  sockColorInput.style.padding = "2px"
   sockColorWrap.appendChild(sockColorInput)
 
   const resetWrap = createCustomizeRow("Reset")
   const resetButton = document.createElement("button")
   resetButton.innerText = "Default"
-  IT_STYLE.applyToElement(resetButton, "button")
-  resetButton.style.minWidth = "110px"
+  resetButton.className = "play-customization-button play-customization-button--reset"
   resetWrap.appendChild(resetButton)
 
   function syncCustomizationUI() {
@@ -532,17 +726,9 @@ export function startPlay(renderer, onBack) {
   syncCustomizationUI()
   syncCustomizationVisibility()
 
-  // Start Game button (IT style)
-  const playGameBtn = document.createElement("button")
-  playGameBtn.innerText = "Start Game"
-  IT_STYLE.applyToElement(playGameBtn, 'button')
-  playGameBtn.style.marginTop = "10px"
-
   playGameBtn.onclick = () => {
     startGameplay(currentSceneIndex)
   }
-
-  sceneGroup.appendChild(playGameBtn)
 
   // Arrow keys: Enter to start game
   const keyDownHandler = (event) => {

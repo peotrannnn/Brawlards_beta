@@ -51,6 +51,9 @@ import { primeSound2Audio } from "../sounds/sound2.js"
 import { primeSound3Audio } from "../sounds/sound3.js"
 import { primeSound4Audio } from "../sounds/sound4.js"
 import { primeSound6Audio } from "../sounds/sound6.js"
+import { primeSound7Audio } from "../sounds/sound7.js"
+import { primeSound8Audio } from "../sounds/sound8.js"
+import { primeSound9Audio } from "../sounds/sound9.js"
 import { settingsManager } from "./SettingsManager.js"
 
 // ==================== CONFIGURATION ====================
@@ -518,12 +521,22 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
           }
           if (!shape) return
 
+          const shapeSurfaceAudioType = def.surfaceAudioType || child.userData?.surfaceAudioType || phys.surfaceAudioType || null
+          shape.userData = {
+            role: def.role,
+            surfaceAudioType: shapeSurfaceAudioType,
+            material: def.material || phys.material,
+          }
+
           const body = new CANNON.Body({
             mass: 0,
             material: physicsMaterials[def.material || phys.material] || physicsMaterials.default,
             collisionFilterGroup: COLLISION_GROUPS.STATIC,
             collisionFilterMask: COLLISION_MASKS.STATIC,
           })
+          body.userData = body.userData || {}
+          body.userData.surfaceAudioType = shapeSurfaceAudioType
+          body.userData.surfaceAudioTypesByShapeIndex = []
 
           if (def.isTrigger) {
             body.collisionFilterMask = 0
@@ -549,6 +562,7 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
           }
 
           body.addShape(shape)
+          body.userData.surfaceAudioTypesByShapeIndex[body.shapes.length - 1] = shapeSurfaceAudioType
           body.name = child.name || 'DynamicSceneObject'
           world.addBody(body)
           sceneBodies.push(body)
@@ -572,12 +586,22 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
         }
         if (!shape) return
 
+        const shapeSurfaceAudioType = def.surfaceAudioType || phys.surfaceAudioType || currentSceneGroup.userData?.surfaceAudioType || null
+        shape.userData = {
+          role: def.role,
+          surfaceAudioType: shapeSurfaceAudioType,
+          material: def.material || phys.material,
+        }
+
         const body = new CANNON.Body({
           mass: 0,
           material: physicsMaterials[def.material || phys.material] || physicsMaterials.default,
           collisionFilterGroup: COLLISION_GROUPS.STATIC,
           collisionFilterMask: COLLISION_MASKS.STATIC,
         })
+        body.userData = body.userData || {}
+        body.userData.surfaceAudioType = shapeSurfaceAudioType
+        body.userData.surfaceAudioTypesByShapeIndex = []
 
         if (def.isTrigger) {
           body.collisionFilterMask = 0
@@ -594,6 +618,7 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
         if (def.rotation) body.quaternion.setFromEuler(...def.rotation)
 
         body.addShape(shape)
+        body.userData.surfaceAudioTypesByShapeIndex[body.shapes.length - 1] = shapeSurfaceAudioType
         body.name = asset.name || 'SceneObject'
         world.addBody(body)
         sceneBodies.push(body)
@@ -637,6 +662,9 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
   cameraController.setScene(scene)
   cameraController.setGameplayMode(gameplayMode)
   cameraController.enableControl()
+  if (typeof window !== 'undefined') {
+    window.uiManager = uiManager
+  }
 
   // ==================== PHYSICS ====================
   const world = new CANNON.World()
@@ -701,6 +729,12 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
   playerMovement.setParticleManager(particleManager)
   const physicsEventManager = new PhysicsEventManager({ particleManager, syncList, listenerPositionProvider: () => camera.position })
   let possessed = null
+  uiManager.setScreenMatProvider(() => (
+    currentSceneManager && typeof currentSceneManager._ensureScreenMat === 'function'
+      ? currentSceneManager._ensureScreenMat()
+      : null
+  ))
+  uiManager.setPlayerPositionProvider(() => possessed?.body?.position || possessed?.mesh?.position || null)
   const floorGuardRayFrom = new CANNON.Vec3()
   const floorGuardRayTo = new CANNON.Vec3()
   const floorGuardHit = new CANNON.RaycastResult()
@@ -1303,6 +1337,9 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
     primeSound3Audio()
     primeSound4Audio()
     primeSound6Audio()
+    primeSound7Audio()
+    primeSound8Audio()
+    primeSound9Audio()
 
     if (gameplayMode) {
       if (e.code === "Escape") {
@@ -2000,6 +2037,9 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
     dummyAIControllers.clear()
     CollisionManager.dispose()
     if (currentSceneManager) { currentSceneManager.reset(); currentSceneManager = null }
+    if (typeof window !== 'undefined' && window.uiManager === uiManager) {
+      delete window.uiManager
+    }
     if (uiManager) uiManager.dispose()
     if (pauseMenuScreen) { pauseMenuScreen.destroy(); pauseMenuScreen = null }
     fakeShadowManager.clearAll()

@@ -9,6 +9,9 @@ const tableColors = {
   leg: "#8b6f47"  // Wood color
 }
 
+const clueTextureLoader = new THREE.TextureLoader()
+let cachedClue1Texture = null
+
 // dimension constants so other modules can query the table size
 export const TABLE_WIDTH = 20
 export const TABLE_DEPTH = 11
@@ -129,6 +132,18 @@ function createMetallicTexture() {
   texture.minFilter = THREE.LinearMipmapLinearFilter
   texture.anisotropy = 16
   return texture
+}
+
+function getClue1Texture() {
+  if (cachedClue1Texture) return cachedClue1Texture
+
+  const texturePath = new URL('../../pictures/clue1.png', import.meta.url).href
+  cachedClue1Texture = clueTextureLoader.load(texturePath)
+  cachedClue1Texture.colorSpace = THREE.SRGBColorSpace
+  cachedClue1Texture.minFilter = THREE.LinearMipmapLinearFilter
+  cachedClue1Texture.magFilter = THREE.LinearFilter
+  cachedClue1Texture.anisotropy = 8
+  return cachedClue1Texture
 }
 
 function createBilliardTable() {
@@ -327,6 +342,34 @@ function createBilliardTable() {
   finalCloth.receiveShadow = true
 
   root.add(finalCloth)
+
+  const clueStickerWidth = 1.7
+  const clueStickerAspect = 1082 / 831
+  const clueStickerHeight = clueStickerWidth / clueStickerAspect
+
+  const clueSticker = new THREE.Mesh(
+    new THREE.PlaneGeometry(clueStickerWidth, clueStickerHeight),
+    new THREE.MeshStandardMaterial({
+      map: getClue1Texture(),
+      transparent: true,
+      alphaTest: 0.08,
+      roughness: 1.0,
+      metalness: 0.0,
+      depthWrite: false,
+      side: THREE.DoubleSide
+    })
+  )
+
+  clueSticker.name = 'Billiard Table Clue 1'
+  clueSticker.rotation.set(-Math.PI / 2, 0, THREE.MathUtils.degToRad(12))
+  clueSticker.position.set(
+    tableWidth / 2 - 2.8,
+    clothY + clothThickness / 2 + 0.02,
+    tableDepth / 2 - 1.8
+  )
+  clueSticker.renderOrder = 1
+
+  root.add(clueSticker)
 
   // ======================================================
 // RAIL CONFIG
@@ -563,10 +606,12 @@ const cornerPocketZ = tableDepth / 2 - pocketInset
 const centerBoxWidth = tableWidth
 const centerBoxDepth = tableDepth - 2 * pocketRadius - pocketInset * 2
 const centerBoxHeight = clothThickness
-const liftUpConst = 3
+const liftUpConst = 0
 
 hitboxShapes.push({
   type: "box",
+  role: 'tableClothCenter',
+  surfaceAudioType: 'billiard-cloth',
   size: [
     centerBoxWidth,          // full size
     centerBoxHeight,         // full size
@@ -591,6 +636,8 @@ const newSideBoxWidth = sideBoxWidth - 0.2   // đây vẫn là bán kính (half
 // box bên phải
 hitboxShapes.push({
   type: "box",
+  role: 'tableClothRight',
+  surfaceAudioType: 'billiard-cloth',
   size: [
     newSideBoxWidth * 2,      // chuyển thành full size
     centerBoxHeight,          // full size
@@ -606,6 +653,8 @@ hitboxShapes.push({
 // box bên trái
 hitboxShapes.push({
   type: "box",
+  role: 'tableClothLeft',
+  surfaceAudioType: 'billiard-cloth',
   size: [
     newSideBoxWidth * 2,      // full size
     centerBoxHeight,          // full size
@@ -780,7 +829,7 @@ export function getBilliardTableAsset() {
 
   return {
     name: "Billiard Table",
-    description: "Stay out of the hole… or find out for yourself.",
+    description: "Stay out of the holes… or find out for yourself.",
     factory: () => createBilliardTable()
   }
 

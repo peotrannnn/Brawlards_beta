@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { playSound9 } from '../sounds/sound9.js'
 
 /**
  * UIManager - Manages all UI elements
@@ -27,12 +28,17 @@ const UI_CONFIG = {
   HP_BAR_HEIGHT: 1,
   HP_BAR_BG: '#333333',
   HP_BAR_BORDER: '1px solid #000000',
-  HP_TRANSITION_DURATION: '0.2s' // Thời gian chuyển màu
+  HP_TRANSITION_DURATION: '0.2s', // Thời gian chuyển màu
+  DAMAGE_SOUND_COOLDOWN_MS: 360,
 }
 
 export class UIManager {
   constructor() {
     this.camera = null
+    this.screenMatProvider = null
+    this.playerPositionProvider = null
+    this._lastHpValue = null
+    this._lastDamageSoundTime = -Infinity
     this.elements = {
       crosshair: null,
       powerBarContainer: null,
@@ -52,6 +58,32 @@ export class UIManager {
    */
   setCamera(camera) {
     this.camera = camera
+  }
+
+  setScreenMatProvider(provider) {
+    this.screenMatProvider = typeof provider === 'function' ? provider : null
+  }
+
+  setPlayerPositionProvider(provider) {
+    this.playerPositionProvider = typeof provider === 'function' ? provider : null
+  }
+
+  _getScreenMat() {
+    if (typeof this.screenMatProvider !== 'function') return null
+    try {
+      return this.screenMatProvider()
+    } catch {
+      return null
+    }
+  }
+
+  _getPlayerSoundSource() {
+    if (typeof this.playerPositionProvider !== 'function') return null
+    try {
+      return this.playerPositionProvider()
+    } catch {
+      return null
+    }
   }
 
   /**
@@ -335,6 +367,10 @@ export class UIManager {
    */
   showHPBar(visible = true, hp = null, maxHP = null) {
     this.elements.hpBar.style.display = visible ? 'block' : 'none'
+    if (!visible) {
+      this._lastHpValue = null
+      this._getScreenMat()?.setBloodHealthRatio?.(1)
+    }
     // Always update HP bar fill and color to match the latest values when showing
     if (visible) {
       // If values are not provided, try to keep the current fill
@@ -406,6 +442,9 @@ export class UIManager {
 
     const percentage = Math.max(0, Math.min(1, hp / maxHP))
     const widthPercent = percentage * 100
+    const previousHp = typeof this._lastHpValue === 'number' ? this._lastHpValue : hp
+    const lostHp = Math.max(0, previousHp - hp)
+    const didTakeDamage = wasDamaged || lostHp > 0.0001
 
     // Cập nhật chiều rộng với transition mượt
     this.elements.hpFill.style.width = widthPercent + '%'
@@ -413,6 +452,29 @@ export class UIManager {
     // Lấy màu gradient mượt dựa trên phần trăm HP
     const color = this._getHealthColor(percentage)
     this.elements.hpFill.style.backgroundColor = color
+
+    const screenMat = this._getScreenMat()
+    if (screenMat?.setBloodHealthRatio) {
+      screenMat.setBloodHealthRatio(percentage)
+    }
+
+    if (didTakeDamage) {
+      const normalizedLoss = lostHp / Math.max(1, maxHP)
+      const pulseIntensity = Math.min(1, 0.42 + (normalizedLoss * 16))
+      screenMat?.triggerDamagePulse?.({ intensity: pulseIntensity })
+
+      const now = performance.now()
+      if (now - this._lastDamageSoundTime >= UI_CONFIG.DAMAGE_SOUND_COOLDOWN_MS) {
+        playSound9({
+          intensity: Math.min(1, 0.45 + (normalizedLoss * 12)),
+          sourcePosition: this._getPlayerSoundSource(),
+          listenerPosition: this.camera?.position || null,
+        })
+        this._lastDamageSoundTime = now
+      }
+    }
+
+    this._lastHpValue = hp
 
     // ...existing code...
   }
