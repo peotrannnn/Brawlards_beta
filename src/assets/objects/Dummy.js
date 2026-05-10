@@ -219,7 +219,7 @@ function createBodyGeometry() {
 
 // ==================== MAIN FACTORY ====================
 
-function createDummy() {
+function createDummyVisualRoot() {
   const root = new THREE.Group()
   root.name = "Dummy"
 
@@ -320,8 +320,6 @@ function createDummy() {
     shader.fragmentShader = shader.fragmentShader.replace('#include <dithering_fragment>', faceLogic + '\n#include <dithering_fragment>')
   }
 
-  // ----- Physics -----
-  root.userData.physics = dummyPhysicsDef
   root.userData.mainColor = new THREE.Color(DUMMY_CONFIG.BODY_COLOR)
 
   // Animation timer for blinking
@@ -340,9 +338,18 @@ function createDummy() {
     symbolMaterial.emissiveIntensity = intensity * DUMMY_CONFIG.SYMBOL_EMISSIVE_INTENSITY
   }
 
+  return root
+}
+
+function createDummy() {
+  const root = createDummyVisualRoot()
+
+  // ----- Physics -----
+  root.userData.physics = dummyPhysicsDef
+
   // Add trigger zones
   CollisionManager.addCharacterTriggerZones(root)
-  
+
   return root
 }
 
@@ -355,4 +362,17 @@ export function getDummyAsset() {
     factory: () => createDummy(),
     physics: dummyPhysicsDef
   }
+}
+
+export function createDummyPreviewMesh() {
+  const preview = createDummyVisualRoot()
+  preview.userData.physics = null
+
+  preview.traverse((child) => {
+    if (!child?.isMesh) return
+    child.castShadow = false
+    child.receiveShadow = false
+  })
+
+  return preview
 }

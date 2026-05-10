@@ -1,4 +1,5 @@
 import { IT_STYLE } from '../main.js';
+import { getGraphicsQualityProfile } from '../core/graphicsQuality.js';
 import { settingsManager } from '../core/SettingsManager.js';
 
 const SETTINGS_SCREEN_STYLE_ID = 'settings-screen-style';
@@ -18,9 +19,15 @@ function ensureSettingsScreenStyles() {
                 padding: clamp(14px, 3vw, 32px);
                 box-sizing: border-box;
                 z-index: 20005;
+                pointer-events: auto;
+            }
+            .settings-screen-overlay--menu {
+                background: #000;
+                backdrop-filter: none;
+            }
+            .settings-screen-overlay--gameplay {
                 background: rgba(0, 0, 0, 0.46);
                 backdrop-filter: blur(10px);
-                pointer-events: auto;
             }
             .settings-screen-box {
                 width: min(92vw, 560px);
@@ -315,6 +322,7 @@ export function createSettingsScreen(onBack, isGameplayMode = false) {
     const container = document.createElement('div');
     container.id = 'settingsScreen';
     container.className = 'settings-screen-overlay';
+    container.classList.add(isGameplayMode ? 'settings-screen-overlay--gameplay' : 'settings-screen-overlay--menu');
 
     const settingsBox = document.createElement('div');
     settingsBox.className = 'settings-screen-box';
@@ -430,7 +438,7 @@ export function createSettingsScreen(onBack, isGameplayMode = false) {
 
         select.onchange = (e) => {
             settingsManager.set(key, e.target.value);
-            if (key === 'quality' && isGameplayMode) showPopup('Please restart to fully apply graphics changes');
+            if (key === 'quality' && isGameplayMode) showPopup('Some scene quality changes apply fully after reloading the scene');
         };
 
         wrap.appendChild(labelEl);
@@ -454,9 +462,9 @@ export function createSettingsScreen(onBack, isGameplayMode = false) {
     // 2. GRAPHICS
     contentArea.appendChild(createHeader('GRAPHICS'));
     contentArea.appendChild(createSelect('Quality', 'quality', [
-        { label: 'High', value: 'high' },
+        { label: getGraphicsQualityProfile('low').label, value: 'low' },
         { label: 'Medium', value: 'medium' },
-        { label: 'Low', value: 'low' }
+        { label: getGraphicsQualityProfile('high').label, value: 'high' }
     ]));
     contentArea.appendChild(createCheckbox('Shadows', 'shadows'));
     contentArea.appendChild(createSlider('Brightness', 'brightness', 0.2, 2.0, 0.1));

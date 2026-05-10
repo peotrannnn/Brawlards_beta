@@ -27,7 +27,6 @@ import { COLLISION_GROUPS, COLLISION_MASKS } from '../physics/physicsHelper.js'
 import { createSweatEffect } from '../effects/particles/particle8.js'
 import { applySection2UnderwaterFog } from '../assets/scenes/sections/section1_2.js'
 import { ScreenMat } from '../utils/ScreenMat.js'
-import { createLoadingOverlay } from '../utils/loadingOverlay.js'
 import { playSound3 } from '../sounds/sound3.js'
 import { setSound6FlickerState, stopSound6Flicker } from '../sounds/sound6.js'
 import { resetSoundFilter1, updateSoundFilter1 } from '../sounds/soundfilter1.js'
@@ -36,6 +35,7 @@ import { getBabyOilAsset } from '../assets/items/babyOil.js'
 import { getSilverCoinAsset } from '../assets/items/silverCoin.js'
 import { getDummyAsset } from '../assets/objects/Dummy.js'
 import { getGuideAsset } from '../assets/objects/Guide.js'
+import { getObjectPool } from '../utils/spawner.js'
 import { withShadow } from '../effects/shadows/shadowConfig.js'
 import { getPlayerAsset } from '../assets/objects/Player.js'
 import {
@@ -339,6 +339,8 @@ export class Scene1Manager {
     this.section2PipeBall8DestroyedCount = 0
     this.section2PipeRewardSpawned = false
     this.section2PipeRewardEntry = null
+    this.section2PipeRewardPrewarmed = false
+    this.section2PipeRewardRenderWarmed = false
     this.section2RunStartZ = -84
     this.section2WaterRiseProgress = 0
     this.section2UnderwaterBlend = 0
@@ -898,17 +900,6 @@ export class Scene1Manager {
 
   _showSectionReadyOverlay(title, sectionId) {
     this._closeSectionWarmOverlay()
-
-    this.sectionWarmOverlay = createLoadingOverlay(title)
-    this.sectionWarmOverlay.update(1, sectionId)
-
-    this.sectionWarmOverlayTimer = setTimeout(() => {
-      if (this.sectionWarmOverlay) {
-        this.sectionWarmOverlay.close()
-        this.sectionWarmOverlay = null
-      }
-      this.sectionWarmOverlayTimer = null
-    }, 420)
   }
 
   _startNextSectionWarmup() {
@@ -1013,7 +1004,7 @@ export class Scene1Manager {
     const total = Math.max(1, meshes.length)
     let index = 0
     const warmStartTime = performance.now()
-    const shouldShowOverlay = () => !job.silent && !job.blocking
+    const shouldShowOverlay = () => false
     const getFrameBudgetMs = () => {
       if (job.blocking) return SECTION_WARMUP_CONFIG.blockingFrameBudgetMs
       return shouldShowOverlay()
@@ -1138,6 +1129,9 @@ export class Scene1Manager {
 
         const previousVisible = group.visible
         group.visible = true
+        const detachSection2RewardWarmMesh = job.sectionId === 'section2'
+          ? this._attachSection2PipeRewardWarmMesh(group)
+          : null
 
         try {
           // Ensure all mesh materials are defined and valid before compiling
@@ -1155,6 +1149,7 @@ export class Scene1Manager {
         } catch (err) {
           console.error('[Scene1Manager] Error during compileAsync:', err);
         } finally {
+          detachSection2RewardWarmMesh?.()
           const activeSection = this.activeSectionId || 'section1'
           const shouldRemainVisible =
             job.sectionId === 'section1' ||
@@ -1203,6 +1198,8 @@ export class Scene1Manager {
     if (!this.screenMat) {
       this.screenMat = new ScreenMat(document.body)
     }
+
+    this._primeSection2PipeRewardPool()
 
     // Warm heavy streamed sections in background while player is in section1.
     this._enqueueSectionWarmup('section2', { title: 'Preparing Section 2', silent: true })
@@ -3748,7 +3745,11 @@ export class Scene1Manager {
   _spawnPenaltyDude() {
     if (!this.spawner || !this.world || !this.mainScene) return
     this.penaltyDudeSpawnPending = true
-    this._enqueueSectionWarmup('section2', { title: 'Loading Section 2', showReadyOverlay: true })
+    this._enqueueSectionWarmup('section2', {
+      title: 'Preparing Section 2',
+      silent: true,
+      priority: 'high'
+    })
 
     const spawnWithAsset = (asset) => {
       if (!asset || !asset.physics) {
@@ -5429,15 +5430,14 @@ export class Scene1Manager {
     this.section2PipeBall8DestroyedCount += removedCount
   }
 
-  _spawnSection2PipeReward(pipeGroup) {
-    if (!pipeGroup || this.section2PipeRewardSpawned || !this.spawner || !this.mainScene || !this.world || !this.syncList) return
-
+  _createSection2PipeRewardPrefab() {
     const lightStickOffAsset = getLightStickOffAsset()
-    if (!lightStickOffAsset?.physics) return
+    if (!lightStickOffAsset?.physics) return null
 
-    const rewardPrefab = {
+    return {
       name: lightStickOffAsset.name,
       type: 'dynamic',
+      spawnCategory: 'item',
       createMesh: () => {
         const mesh = lightStickOffAsset.factory()
         mesh.userData.shadowConfig = { size: 0.6, opacity: 0.7, fadeRate: 0.8 }
@@ -5461,22 +5461,110 @@ export class Scene1Manager {
         return body
       }
     }
+  }
+
+  _primeSection2PipeRewardPool() {
+    if (this.section2PipeRewardPrewarmed || !this.physicsMaterials) return
+
+    const rewardPrefab = this._createSection2PipeRewardPrefab()
+    if (!rewardPrefab) return
+
+    const rewardPool = getObjectPool(rewardPrefab.name)
+    if (rewardPool.length > 0) {
+      this.section2PipeRewardPrewarmed = true
+      return
+    }
+
+    const mesh = rewardPrefab.createMesh()
+    const body = rewardPrefab.createBody(this.physicsMaterials)
+    if (body) {
+      body.name = rewardPrefab.name || mesh.name
+      body.userData = body.userData || {}
+      body.userData.spawnCategory = 'item'
+      body.userData.floorGuardLastSafePosition = null
+      delete body.userData.floorGuardLastGroundY
+      body.userData.floorGuardArmed = false
+    }
+
+    mesh.userData = mesh.userData || {}
+    mesh.userData.spawnCategory = 'item'
+    mesh.visible = false
+
+    rewardPool.push({
+      mesh,
+      body,
+      type: rewardPrefab.type,
+      name: rewardPrefab.name,
+      spawnCategory: 'item',
+      _pooled: true
+    })
+
+    this.section2PipeRewardPrewarmed = true
+  }
+
+  _attachSection2PipeRewardWarmMesh(targetGroup) {
+    if (this.section2PipeRewardRenderWarmed || !targetGroup) return null
+
+    const rewardPool = getObjectPool('Light Stick Off')
+    const pooledEntry = rewardPool.find((entry) => entry?._pooled && entry.mesh && !entry.mesh.parent)
+    const rewardMesh = pooledEntry?.mesh || null
+    if (!rewardMesh) return null
+
+    const previousParent = rewardMesh.parent
+    const previousVisible = rewardMesh.visible
+    const previousFrustumCulled = rewardMesh.frustumCulled
+    const previousPosition = rewardMesh.position.clone()
+    const previousQuaternion = rewardMesh.quaternion.clone()
+    const previousScale = rewardMesh.scale.clone()
+
+    rewardMesh.visible = true
+    rewardMesh.frustumCulled = false
+    rewardMesh.position.set(0, 0.35, 0)
+    rewardMesh.quaternion.identity()
+    rewardMesh.scale.set(1, 1, 1)
+    targetGroup.add(rewardMesh)
+    rewardMesh.updateMatrixWorld(true)
+
+    return () => {
+      if (rewardMesh.parent === targetGroup) {
+        targetGroup.remove(rewardMesh)
+      }
+
+      if (previousParent) {
+        previousParent.add(rewardMesh)
+      }
+
+      rewardMesh.visible = previousVisible
+      rewardMesh.frustumCulled = previousFrustumCulled
+      rewardMesh.position.copy(previousPosition)
+      rewardMesh.quaternion.copy(previousQuaternion)
+      rewardMesh.scale.copy(previousScale)
+      rewardMesh.updateMatrixWorld(true)
+      this.section2PipeRewardRenderWarmed = true
+    }
+  }
+
+  _spawnSection2PipeReward(pipeGroup) {
+    if (!pipeGroup || this.section2PipeRewardSpawned || !this.spawner || !this.mainScene || !this.world || !this.syncList) return
+
+    const rewardPrefab = this._createSection2PipeRewardPrefab()
+    if (!rewardPrefab) return
 
     const spawnPos = pipeGroup.position.clone()
     spawnPos.x += 1.2
     spawnPos.y += 0.4
 
-    this.spawner({
+    const rewardEntry = this.spawner({
       scene: this.mainScene,
       prefab: rewardPrefab,
       position: spawnPos,
       world: this.world,
       physicsMaterials: this.physicsMaterials,
       syncList: this.syncList,
-      particleManager: this.particleManager
+      particleManager: null
     })
 
-    this.section2PipeRewardEntry = [...this.syncList].reverse().find(entry => entry?.name === 'Light Stick Off') || null
+    this.section2PipeRewardEntry = rewardEntry || null
     this.section2PipeRewardSpawned = true
   }
 
@@ -7219,6 +7307,8 @@ export class Scene1Manager {
     this.section2PipeBall8DestroyedCount = 0
     this.section2PipeRewardSpawned = false
     this.section2PipeRewardEntry = null
+    this.section2PipeRewardPrewarmed = false
+    this.section2PipeRewardRenderWarmed = false
     for (const [entry] of this.section3PedestalBallEntries) {
       this._despawnEntry(entry)
     }

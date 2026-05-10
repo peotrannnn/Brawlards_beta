@@ -100,7 +100,6 @@ export function preloadCoreAssets(onProgress) {
 
   const manifest = getPreloadManifest()
   const criticalAssets = manifest.filter(asset => asset.type !== 'audio')
-  const optionalAssets = manifest.filter(asset => asset.type === 'audio')
 
   const totalCritical = criticalAssets.length || 1
   let completedCritical = 0
@@ -133,9 +132,6 @@ export function preloadCoreAssets(onProgress) {
     )
 
     report('core ready')
-
-    // Audio warmup is optional and deferred so gameplay can start sooner.
-    startOptionalWarmup(optionalAssets)
 
     return undefined
   })().catch((error) => {

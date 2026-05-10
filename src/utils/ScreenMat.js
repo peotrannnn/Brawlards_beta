@@ -1,4 +1,8 @@
+import * as THREE from 'three'
+import { createDummyPreviewMesh } from '../assets/objects/Dummy.js'
+
 const SCREEN_MAT_STYLE_ID = 'scene1-screenmat-style'
+const SCREEN_MAT_LOADING_PREVIEW_SIZE = 132
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value))
@@ -11,6 +15,33 @@ function lerp(start, end, alpha) {
 function smoothstep(edge0, edge1, value) {
   const t = clamp((value - edge0) / Math.max(1e-5, edge1 - edge0), 0, 1)
   return t * t * (3 - (2 * t))
+}
+
+function fitPerspectiveCameraToObject(camera, object, { padding = 1.22, verticalOffsetFactor = 0.04 } = {}) {
+  if (!camera || !object) return
+
+  object.updateMatrixWorld(true)
+  const bounds = new THREE.Box3().setFromObject(object)
+  if (bounds.isEmpty()) return
+
+  const size = bounds.getSize(new THREE.Vector3())
+  const center = bounds.getCenter(new THREE.Vector3())
+  const verticalFov = THREE.MathUtils.degToRad(camera.fov)
+  const horizontalFov = 2 * Math.atan(Math.tan(verticalFov * 0.5) * camera.aspect)
+  const fitHeightDistance = size.y / (2 * Math.tan(verticalFov * 0.5))
+  const fitWidthDistance = size.x / (2 * Math.tan(horizontalFov * 0.5))
+  const fitDepthDistance = size.z * 0.7
+  const distance = Math.max(fitHeightDistance, fitWidthDistance, fitDepthDistance, 1.4) * padding
+
+  camera.position.set(
+    center.x,
+    center.y + (size.y * verticalOffsetFactor),
+    center.z + distance
+  )
+  camera.near = Math.max(0.01, distance / 100)
+  camera.far = Math.max(20, distance * 8)
+  camera.lookAt(center.x, center.y, center.z)
+  camera.updateProjectionMatrix()
 }
 
 function ensureStyles() {
@@ -26,6 +57,57 @@ function ensureStyles() {
       position: fixed;
       inset: 0;
       pointer-events: none;
+    }
+
+    .screen-mat-loading-stage {
+      position: absolute;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+    }
+
+    .screen-mat-loading-shell {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      transform: translateY(-2px);
+    }
+
+    .screen-mat-loading-preview-shell {
+      width: 132px;
+      height: 132px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transform: translateZ(0);
+      transform-origin: center center;
+      will-change: transform;
+      animation:
+        screen-mat-loading-preview-spin 2.6s linear infinite,
+        screen-mat-loading-preview-float 1.8s ease-in-out infinite alternate;
+    }
+
+    .screen-mat-loading-preview {
+      width: 132px;
+      height: 132px;
+      display: block;
+      filter: drop-shadow(0 0 14px rgba(0, 0, 0, 0.08));
+    }
+
+    .screen-mat-loading-label {
+      color: #000000;
+      font-family: monospace;
+      font-size: 12px;
+      font-weight: bold;
+      line-height: 1;
+      white-space: nowrap;
+      text-transform: none;
+      text-align: center;
+      margin-top: 0;
     }
 
     .screen-mat-blood-layer {
@@ -159,7 +241,7 @@ function ensureStyles() {
     }
 
     .white-flash-layer {
-      z-index: 2000;
+      z-index: 20000;
       background: white;
       opacity: 0;
     }
@@ -218,6 +300,26 @@ function ensureStyles() {
         transform: translate(calc(var(--dvx) * -0.55), calc(var(--dvy) * -0.5));
       }
     }
+
+    @keyframes screen-mat-loading-preview-spin {
+      from {
+        transform: translateZ(0) rotate(0deg);
+      }
+
+      to {
+        transform: translateZ(0) rotate(360deg);
+      }
+    }
+
+    @keyframes screen-mat-loading-preview-float {
+      from {
+        translate: 0 2px;
+      }
+
+      to {
+        translate: 0 -4px;
+      }
+    }
   `
 
   document.head.appendChild(style)
@@ -233,6 +335,13 @@ export class ScreenMat {
     this.guyGhostLayer = null
     this.guyNoiseLayer = null
     this.bloodLayer = null
+    this.loadingStage = null
+    this.loadingLabel = null
+    this.loadingPreviewRenderer = null
+    this.loadingPreviewScene = null
+    this.loadingPreviewCamera = null
+    this.loadingPreviewDummyWrapper = null
+    this.loadingPreviewDummy = null
 
     this.stunRemainingMs = 0
     this.stunTotalDurationMs = 0
@@ -275,12 +384,137 @@ export class ScreenMat {
 
       this.whiteFlashLayer = document.createElement('div')
       this.whiteFlashLayer.className = 'white-flash-layer'
+      this._initializeLoadingIndicator()
 
       this.container.appendChild(this.bloodLayer)
       this.container.appendChild(this.guyLayer)
       this.container.appendChild(this.overlay)
       this.container.appendChild(this.whiteFlashLayer)
     }
+  }
+
+  _initializeLoadingIndicator() {
+    if (!this.whiteFlashLayer || typeof document === 'undefined') return
+
+    const stage = document.createElement('div')
+    stage.className = 'screen-mat-loading-stage'
+
+    const shell = document.createElement('div')
+    shell.className = 'screen-mat-loading-shell'
+
+    const previewShell = document.createElement('div')
+    previewShell.className = 'screen-mat-loading-preview-shell'
+
+    const label = document.createElement('div')
+    label.className = 'screen-mat-loading-label'
+    label.textContent = 'loading'
+
+    stage.appendChild(shell)
+    shell.appendChild(previewShell)
+    shell.appendChild(label)
+    this.whiteFlashLayer.appendChild(stage)
+
+    this.loadingStage = stage
+    this.loadingLabel = label
+
+    try {
+      const previewRenderer = new THREE.WebGLRenderer({
+        alpha: true,
+        antialias: true,
+        powerPreference: 'low-power'
+      })
+      previewRenderer.setClearColor(0xffffff, 0)
+      previewRenderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.25))
+      previewRenderer.setSize(SCREEN_MAT_LOADING_PREVIEW_SIZE, SCREEN_MAT_LOADING_PREVIEW_SIZE, false)
+      previewRenderer.domElement.className = 'screen-mat-loading-preview'
+
+      const previewScene = new THREE.Scene()
+      const previewCamera = new THREE.PerspectiveCamera(28, 1, 0.1, 20)
+
+      const ambientLight = new THREE.AmbientLight(0xffffff, 1.5)
+      const keyLight = new THREE.DirectionalLight(0xffffff, 1.8)
+      keyLight.position.set(2.4, 3.1, 3.8)
+      const rimLight = new THREE.DirectionalLight(0xffffff, 0.85)
+      rimLight.position.set(-2.8, 1.6, -2.2)
+
+      const dummyWrapper = new THREE.Group()
+      dummyWrapper.position.y = 0.08
+      dummyWrapper.rotation.x = 0
+      dummyWrapper.rotation.y = 0
+
+      const dummy = createDummyPreviewMesh()
+      dummy.scale.setScalar(1.08)
+      dummy.position.y = -0.58
+      dummyWrapper.add(dummy)
+
+      previewScene.add(ambientLight)
+      previewScene.add(keyLight)
+      previewScene.add(rimLight)
+      previewScene.add(dummyWrapper)
+      fitPerspectiveCameraToObject(previewCamera, dummyWrapper)
+
+      previewShell.appendChild(previewRenderer.domElement)
+
+      this.loadingPreviewRenderer = previewRenderer
+      this.loadingPreviewScene = previewScene
+      this.loadingPreviewCamera = previewCamera
+      this.loadingPreviewDummyWrapper = dummyWrapper
+      this.loadingPreviewDummy = dummy
+
+      previewRenderer.render(previewScene, previewCamera)
+    } catch {
+      this.loadingPreviewRenderer = null
+      this.loadingPreviewScene = null
+      this.loadingPreviewCamera = null
+      this.loadingPreviewDummyWrapper = null
+      this.loadingPreviewDummy = null
+    }
+  }
+
+  _setLoadingIndicatorVisible(visible) {
+    if (!this.loadingStage) return
+    this.loadingStage.style.display = visible ? 'flex' : 'none'
+    this.loadingStage.style.opacity = visible ? '1' : '0'
+  }
+
+  _disposeLoadingIndicator() {
+    if (this.loadingPreviewDummy) {
+      this.loadingPreviewDummy.traverse((child) => {
+        if (child?.geometry?.dispose) {
+          child.geometry.dispose()
+        }
+
+        const material = child?.material
+        if (!material) return
+
+        const materials = Array.isArray(material) ? material : [material]
+        materials.forEach((entry) => {
+          if (!entry) return
+          if (entry.map?.dispose) entry.map.dispose()
+          if (entry.emissiveMap?.dispose) entry.emissiveMap.dispose()
+          if (entry.dispose) entry.dispose()
+        })
+      })
+    }
+
+    if (this.loadingPreviewRenderer) {
+      this.loadingPreviewRenderer.dispose()
+      if (typeof this.loadingPreviewRenderer.forceContextLoss === 'function') {
+        this.loadingPreviewRenderer.forceContextLoss()
+      }
+    }
+
+    if (this.loadingStage && this.loadingStage.parentElement) {
+      this.loadingStage.parentElement.removeChild(this.loadingStage)
+    }
+
+    this.loadingStage = null
+    this.loadingLabel = null
+    this.loadingPreviewRenderer = null
+    this.loadingPreviewScene = null
+    this.loadingPreviewCamera = null
+    this.loadingPreviewDummyWrapper = null
+    this.loadingPreviewDummy = null
   }
 
   _setPerformanceMode(lowCost) {
@@ -490,6 +724,7 @@ export class ScreenMat {
 
     this._resetStun()
     this._setWhiteLayerOpacity(0)
+    this._setLoadingIndicatorVisible(false)
     if (this.whiteFlashLayer) {
       this.whiteFlashLayer.style.background = '#ffffff'
     }
@@ -550,6 +785,9 @@ export class ScreenMat {
     }
 
     this._setWhiteLayerOpacity(Math.max(flashOpacity, loadingOpacity))
+
+    const loadingIndicatorVisible = loadingOpacity > 0.001
+    this._setLoadingIndicatorVisible(loadingIndicatorVisible)
 
     const guyRiseAlpha = 1 - Math.exp(-Math.max(0, deltaSeconds) * 8.5)
     const guyFallAlpha = 1 - Math.exp(-Math.max(0, deltaSeconds) * 4.2)
@@ -617,6 +855,8 @@ export class ScreenMat {
   }
 
   dispose() {
+    this._disposeLoadingIndicator()
+
     if (this.bloodLayer && this.bloodLayer.parentElement) {
       this.bloodLayer.parentElement.removeChild(this.bloodLayer)
     }

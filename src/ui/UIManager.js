@@ -21,6 +21,7 @@ const UI_CONFIG = {
   CROSSHAIR_TEXT: '+',
   CROSSHAIR_Z_INDEX: '9999',
   CHARGE_INDICATOR_COLOR: '#00ff00',
+  CENTER_ACTION_HINT_BLOCKED_COLOR: '#ff4d4d',
   POWER_BAR_Z_INDEX: '9999',
   CHARGE_LINE_Z_INDEX: '9998',
   HP_BAR_Z_INDEX: '9999',
@@ -37,10 +38,12 @@ export class UIManager {
     this.camera = null
     this.screenMatProvider = null
     this.playerPositionProvider = null
+    this._centerActionHintTimeout = null
     this._lastHpValue = null
     this._lastDamageSoundTime = -Infinity
     this.elements = {
       crosshair: null,
+      centerActionHint: null,
       powerBarContainer: null,
       powerBarPath: null,
       chargeIndicator: null,
@@ -109,6 +112,23 @@ export class UIManager {
     crosshair.innerText = UI_CONFIG.CROSSHAIR_TEXT
     document.body.appendChild(crosshair)
     this.elements.crosshair = crosshair
+
+    const centerActionHint = document.createElement('div')
+    centerActionHint.style.position = 'fixed'
+    centerActionHint.style.top = '50%'
+    centerActionHint.style.left = '50%'
+    centerActionHint.style.transform = 'translate(15px, -50%)'
+    centerActionHint.style.color = UI_CONFIG.CHARGE_INDICATOR_COLOR
+    centerActionHint.style.fontSize = '12px'
+    centerActionHint.style.fontFamily = 'monospace'
+    centerActionHint.style.fontWeight = 'bold'
+    centerActionHint.style.whiteSpace = 'nowrap'
+    centerActionHint.style.pointerEvents = 'none'
+    centerActionHint.style.display = 'none'
+    centerActionHint.style.zIndex = UI_CONFIG.POWER_BAR_Z_INDEX
+    centerActionHint.style.textShadow = 'none'
+    document.body.appendChild(centerActionHint)
+    this.elements.centerActionHint = centerActionHint
 
     // ========================================
     // POWER BAR (charging circle)
@@ -269,6 +289,41 @@ export class UIManager {
     this.elements.chargeIndicator.style.display = 'block'
   }
 
+  showCenterActionHint(text, durationMs = 850) {
+    const hint = this.elements.centerActionHint
+    if (!hint) return
+
+    if (this._centerActionHintTimeout) {
+      window.clearTimeout(this._centerActionHintTimeout)
+      this._centerActionHintTimeout = null
+    }
+
+    const normalizedText = typeof text === 'string' ? text.trim().toLowerCase() : ''
+    hint.style.color = normalizedText.startsWith('space blocked')
+      ? UI_CONFIG.CENTER_ACTION_HINT_BLOCKED_COLOR
+      : UI_CONFIG.CHARGE_INDICATOR_COLOR
+    hint.textContent = normalizedText.startsWith('space blocked')
+      ? 'Space blocked!'
+      : text
+    hint.style.display = 'block'
+
+    this._centerActionHintTimeout = window.setTimeout(() => {
+      hint.style.display = 'none'
+      this._centerActionHintTimeout = null
+    }, durationMs)
+  }
+
+  hideCenterActionHint() {
+    if (this._centerActionHintTimeout) {
+      window.clearTimeout(this._centerActionHintTimeout)
+      this._centerActionHintTimeout = null
+    }
+
+    if (this.elements.centerActionHint) {
+      this.elements.centerActionHint.style.display = 'none'
+    }
+  }
+
   /**
    * Update power bar (charging circle)
    */
@@ -345,6 +400,7 @@ export class UIManager {
    */
   reset() {
     this.showCrosshair(false)
+    this.hideCenterActionHint()
     this.updateChargeIndicator(false)
     this.updatePowerBar(false)
     this.updateChargeLine(false)
@@ -356,6 +412,7 @@ export class UIManager {
    */
   hidePlayerUI() {
     this.elements.crosshair.style.display = 'none'
+    this.hideCenterActionHint()
     this.elements.powerBarContainer.style.display = 'none'
     this.elements.chargeIndicator.style.display = 'none'
     this.elements.chargeLine.style.display = 'none'
@@ -501,6 +558,7 @@ export class UIManager {
    * Cleanup - remove all elements from DOM
    */
   dispose() {
+    this.hideCenterActionHint()
     Object.values(this.elements).forEach(element => {
       if (element && element.parentElement) {
         element.parentElement.removeChild(element)

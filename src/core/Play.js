@@ -750,21 +750,23 @@ export function startPlay(renderer, onBack) {
     isStartingGame = true
 
     try {
-      await runWithLoadingOverlay(
-        (updateProgress) => preloadCoreAssets(updateProgress),
-        { title: 'Loading Start Game' }
-      )
+      gameplayCleanup = await runWithLoadingOverlay(
+        async (updateProgress) => {
+          await preloadCoreAssets(updateProgress)
 
-      cleanup()
-      gameplayCleanup = startSimulationTest(renderer, () => {
-        // ✨ IMPORTANT: Call cleanup from SimulationTest first, then return to main menu
-        if (gameplayCleanup) {
-          gameplayCleanup()
-        }
-        onBack()
-      }, true, sceneIndex, {
-        playerCustomization
-      })
+          cleanup()
+          return startSimulationTest(renderer, () => {
+            // ✨ IMPORTANT: Call cleanup from SimulationTest first, then return to main menu
+            if (gameplayCleanup) {
+              gameplayCleanup()
+            }
+            onBack()
+          }, true, sceneIndex, {
+            playerCustomization
+          })
+        },
+        { title: 'Loading Start Game', minimumVisibleMs: 260 }
+      )
     } catch (error) {
       console.error('Failed to preload gameplay assets:', error)
     } finally {

@@ -15,7 +15,8 @@ import { createVeinEffect } from "../effects/particles/particle14.js"
 import { createUnderwaterBubbleTrailEffect } from "../effects/particles/particle15.js"
 import { createItemArrowEffect } from "../effects/particles/particle16.js"
 
-const MAX_TRANSIENT_EFFECTS = 260
+const DEFAULT_MAX_TRANSIENT_EFFECTS = 260
+const DEFAULT_TRANSIENT_SPAWN_CHANCE = 1
 
 export class ParticleManager {
   constructor(scene) {
@@ -24,10 +25,43 @@ export class ParticleManager {
     this.veinEffects = new Map()
     this.itemArrowEffects = new Map()
     this.groundObjects = [] // Để raycast cho các hiệu ứng như vũng nước
+    this.maxTransientEffects = DEFAULT_MAX_TRANSIENT_EFFECTS
+    this.transientSpawnChance = DEFAULT_TRANSIENT_SPAWN_CHANCE
+    this.allowVeinEffects = true
+    this.allowItemArrowEffects = true
+  }
+
+  applyQualityProfile(profile = {}) {
+    this.maxTransientEffects = Math.max(0, Math.floor(profile.maxTransientEffects ?? DEFAULT_MAX_TRANSIENT_EFFECTS))
+    this.transientSpawnChance = Math.max(0, Math.min(1, profile.transientSpawnChance ?? DEFAULT_TRANSIENT_SPAWN_CHANCE))
+    this.allowVeinEffects = profile.allowVeinEffects !== false
+    this.allowItemArrowEffects = profile.allowItemArrowEffects !== false
+
+    if (this.effects.length > this.maxTransientEffects) {
+      const overflowCount = this.effects.length - this.maxTransientEffects
+      const overflowEffects = this.effects.splice(0, overflowCount)
+      overflowEffects.forEach(effect => {
+        if (typeof effect.dispose === 'function') {
+          effect.dispose()
+        }
+      })
+    }
+
+    if (!this.allowVeinEffects) {
+      this.clearAllVeins()
+    }
+
+    if (!this.allowItemArrowEffects) {
+      this.clearAllItemArrows()
+    }
   }
 
   spawn(type, position, options = {}) {
-    if (this.effects.length >= MAX_TRANSIENT_EFFECTS) {
+    if (this.effects.length >= this.maxTransientEffects) {
+      return null
+    }
+
+    if (this.transientSpawnChance <= 0 || Math.random() > this.transientSpawnChance) {
       return null
     }
 
@@ -117,6 +151,14 @@ export class ParticleManager {
     if (!owner) return
 
     const existing = this.veinEffects.get(owner)
+    if (!this.allowVeinEffects) {
+      if (existing) {
+        existing.dispose()
+        this.veinEffects.delete(owner)
+      }
+      return
+    }
+
     if (!active) {
       if (existing) {
         existing.dispose()
@@ -148,6 +190,14 @@ export class ParticleManager {
     if (!owner) return
 
     const existing = this.itemArrowEffects.get(owner)
+    if (!this.allowItemArrowEffects) {
+      if (existing) {
+        existing.dispose()
+        this.itemArrowEffects.delete(owner)
+      }
+      return
+    }
+
     if (!active) {
       if (existing) {
         existing.dispose()

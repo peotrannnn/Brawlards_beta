@@ -7,6 +7,7 @@ import { preloadCoreAssets } from "./assets/preloadAssets.js"
 import { createSection1 } from "./assets/scenes/sections/section1_1.js"
 import { runWithLoadingOverlay } from "./utils/loadingOverlay.js"
 import { settingsManager } from "./core/SettingsManager.js"
+import { getGraphicsQualityProfile } from "./core/graphicsQuality.js"
 import { createSettingsScreen } from "./ui/SettingsMenuScreen.js"
 import { initFPSCounter } from "./ui/FPSCounter.js"
 import { initUISoundEffects } from "./ui/uiSoundEffects.js"
@@ -110,11 +111,33 @@ renderer.shadowMap.type = THREE.PCFShadowMap // Use PCFShadowMap to avoid deprec
 
 let rendererMenuBlurPx = 0
 let rendererShadowOverride = null
+let rendererClearColor = 0x000000
+let rendererClearAlpha = 1
 
-function syncRendererPresentation() {
-  renderer.shadowMap.enabled = rendererShadowOverride ?? settingsManager.get('shadows')
+function setRendererClearColor(color, alpha = 1) {
+  rendererClearColor = color
+  rendererClearAlpha = alpha
+  renderer.setClearColor(color, alpha)
+}
 
-  const filterParts = [`brightness(${settingsManager.get('brightness')})`]
+function clearRendererFrame() {
+  renderer.setClearColor(rendererClearColor, rendererClearAlpha)
+  renderer.clear()
+}
+
+function applyRendererQualityPreset(settings = settingsManager.getAll()) {
+  const qualityProfile = getGraphicsQualityProfile(settings?.quality)
+  const baseRatio = window.devicePixelRatio || 1
+  const cappedBaseRatio = Math.min(baseRatio, qualityProfile.maxDevicePixelRatio)
+  renderer.setPixelRatio(cappedBaseRatio * qualityProfile.menuPixelRatioScale)
+}
+
+function syncRendererPresentation(settings = settingsManager.getAll()) {
+  const qualityProfile = getGraphicsQualityProfile(settings?.quality)
+  const allowShadows = Boolean(settings?.shadows) && qualityProfile.allowShadows
+  renderer.shadowMap.enabled = rendererShadowOverride ?? allowShadows
+
+  const filterParts = [`brightness(${settings?.brightness ?? settingsManager.get('brightness')})`]
   if (rendererMenuBlurPx > 0) {
     filterParts.push(`blur(${rendererMenuBlurPx}px)`)
   }
@@ -123,17 +146,15 @@ function syncRendererPresentation() {
 }
 
 // Apply initial settings
-const initialQuality = settingsManager.get('quality')
-const baseRatio = window.devicePixelRatio || 1
-renderer.setPixelRatio(initialQuality === 'high' ? baseRatio : initialQuality === 'medium' ? baseRatio * 0.5 : baseRatio * 0.25)
-syncRendererPresentation()
+const initialSettings = settingsManager.getAll()
+applyRendererQualityPreset(initialSettings)
+syncRendererPresentation(initialSettings)
 
 // Listen to settings changes
 settingsManager.onChange((settings) => {
-  const baseRatio = window.devicePixelRatio || 1
-  const pR = settings.quality === 'high' ? baseRatio : settings.quality === 'medium' ? baseRatio * 0.5 : baseRatio * 0.25
-  renderer.setPixelRatio(pR)
-  syncRendererPresentation()
+  applyRendererQualityPreset(settings)
+  syncRendererPresentation(settings)
+  clearRendererFrame()
   // We can't easily force all materials to update shadow maps without traversing the scene,
   // but it will apply on the next play or scene load.
 })
@@ -303,18 +324,22 @@ function startHomePageBackgroundScene() {
   const menuScene = new THREE.Scene()
   const section1Root = new THREE.Group()
   const menuCamera = new THREE.PerspectiveCamera(54, window.innerWidth / window.innerHeight, 0.1, 220)
-  const orbitTarget = new THREE.Vector3(0, 3.3, 0)
+  const qualityProfile = getGraphicsQualityProfile(settingsManager.get('quality'))
+  const allowMenuShadows = Boolean(settingsManager.get('shadows')) && qualityProfile.allowShadows
+  const menuFrameIntervalMs = Math.max(0, qualityProfile.menuFrameIntervalMs || 0)
+  const orbitTarget = new THREE.Vector3(0, 4.1, 0)
   const orbitPosition = new THREE.Vector3()
   const lookTarget = new THREE.Vector3()
   const orbitOffset = new THREE.Vector3(0, 0, 0)
   let animationId = 0
   let disposed = false
   let lightingController = null
+  let lastMenuRenderNow = -Infinity
 
-  rendererShadowOverride = true
-  rendererMenuBlurPx = 2.6
+  rendererShadowOverride = allowMenuShadows
+  rendererMenuBlurPx = qualityProfile.menuBlurPx ?? 2.6
   syncRendererPresentation()
-  renderer.setClearColor(0x090c11, 1)
+  setRendererClearColor(0x090c11, 1)
 
   createSection1(section1Root, {
     fog: {
@@ -323,8 +348,8 @@ function startHomePageBackgroundScene() {
       far: 145,
     },
     shadows: {
-      enabled: true,
-      mapSize: 512,
+      enabled: allowMenuShadows,
+      mapSize: Math.min(qualityProfile.shadowMapSize, 1024),
       cameraSize: 18,
     },
     ambientLight: {
@@ -355,19 +380,24 @@ function startHomePageBackgroundScene() {
 
     animationId = window.requestAnimationFrame(animateMenuBackground)
 
+     if (menuFrameIntervalMs > 0 && now - lastMenuRenderNow < menuFrameIntervalMs) {
+      return
+    }
+    lastMenuRenderNow = now
+
     const orbitAngle = now * 0.00022
     const radiusX = 18.2 + Math.sin(now * 0.00027) * 0.6
     const radiusZ = 13.4 + Math.cos(now * 0.00021) * 0.45
 
     orbitOffset.set(
       Math.cos(orbitAngle) * radiusX,
-      2.25 + Math.sin(now * 0.00034) * 0.18,
+      3.8 + Math.sin(now * 0.00034) * 0.22,
       Math.sin(orbitAngle) * radiusZ
     )
     orbitPosition.copy(orbitTarget).add(orbitOffset)
     lookTarget.set(
       orbitTarget.x + Math.cos(now * 0.00012) * 1.4,
-      orbitTarget.y - 0.28 + Math.sin(now * 0.00028) * 0.12,
+      orbitTarget.y + 0.06 + Math.sin(now * 0.00028) * 0.14,
       orbitTarget.z + Math.sin(now * 0.00016) * 1.05
     )
 
@@ -417,8 +447,8 @@ async function bootIntoHomePage() {
     rendererMenuBlurPx = 0
     rendererShadowOverride = null
     syncRendererPresentation()
-    renderer.setClearColor(0x000000, 1)
-    renderer.clear()
+    setRendererClearColor(0x000000, 1)
+    clearRendererFrame()
 
     bootLoadingScreen.update(0, 'Preparing Section 1')
     await preloadCoreAssets((progress, label) => bootLoadingScreen.update(progress, label))
@@ -439,7 +469,7 @@ async function bootIntoHomePage() {
 function showHomePage(options = {}) {
   const { fadeIn = false } = options
   clearEntireUI();
-  void musicPlayer.requestLobby({ immediate: true })
+  void musicPlayer.requestLobby({ immediate: false, delayMs: 12_000 })
 
 
   currentHomePageCleanup = startHomePageBackgroundScene()
@@ -653,52 +683,86 @@ async function navigateToSimulation() {
 
   try {
     void musicPlayer.requestSilence({ fadeOutSec: 1.1 })
-    await runWithLoadingOverlay(
-      (updateProgress) => preloadCoreAssets(updateProgress),
-      { title: 'Loading Simulation' }
+    currentCleanup = await runWithLoadingOverlay(
+      async (updateProgress) => {
+        await preloadCoreAssets(updateProgress)
+        return startSimulationTest(renderer, () => {
+          showHomePage()
+        }, false)
+      },
+      { title: 'Loading Simulation', minimumVisibleMs: 260 }
     )
-
-    currentCleanup = startSimulationTest(renderer, () => {
-      showHomePage()
-    }, false)
   } catch (error) {
     console.error('Failed to preload simulation assets:', error)
     showHomePage()
   }
 }
 
-function navigateToPlay() {
-  clearEntireUI()
-  currentCleanup = startPlay(renderer, () => {
-    showHomePage()
+function waitForNavigationLoadingFrame() {
+  return new Promise((resolve) => {
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(resolve)
+    })
   })
 }
 
-function navigateToSettings() {
+async function navigateToPlay() {
   clearEntireUI()
 
-  const cleanupSettings = createSettingsScreen(() => {
-    if (currentCleanup === cleanupSettings) {
-      currentCleanup = null
-    }
+  try {
+    currentCleanup = await runWithLoadingOverlay(
+      async () => {
+        await waitForNavigationLoadingFrame()
+        return startPlay(renderer, () => {
+          showHomePage()
+        })
+      },
+      { title: 'Loading Play', minimumVisibleMs: 260 }
+    )
+  } catch (error) {
+    console.error('Failed to open play screen:', error)
     showHomePage()
-  })
-  currentCleanup = cleanupSettings
+  }
+}
+
+async function navigateToSettings() {
+  clearEntireUI()
+
+  try {
+    currentCleanup = await runWithLoadingOverlay(
+      async () => {
+        await waitForNavigationLoadingFrame()
+        let cleanupSettings = null
+        cleanupSettings = createSettingsScreen(() => {
+          if (currentCleanup === cleanupSettings) {
+            currentCleanup = null
+          }
+          showHomePage()
+        })
+        return cleanupSettings
+      },
+      { title: 'Loading Settings', minimumVisibleMs: 220 }
+    )
+  } catch (error) {
+    console.error('Failed to open settings screen:', error)
+    showHomePage()
+  }
 }
 
 async function navigateToInspector() {
   clearEntireUI()
 
   try {
-    await runWithLoadingOverlay(
-      (updateProgress) => preloadCoreAssets(updateProgress),
-      { title: 'Loading Inspector' }
+    currentCleanup = await runWithLoadingOverlay(
+      async (updateProgress) => {
+        await preloadCoreAssets(updateProgress)
+        return createInspector(renderer, () => {
+          clearEntireUI();
+          showHomePage();
+        })
+      },
+      { title: 'Loading Inspector', minimumVisibleMs: 260 }
     )
-
-    currentCleanup = createInspector(renderer, () => {
-      clearEntireUI(); // cleanup inspector UI and logic
-      showHomePage();
-    })
   } catch (error) {
     console.error('Failed to preload inspector assets:', error)
     showHomePage()
@@ -714,8 +778,8 @@ function clearEntireUI() {
   }
 
   cleanupHomePageState()
-  renderer.setClearColor(0x000000, 1)
-  renderer.clear()
+  setRendererClearColor(0x000000, 1)
+  clearRendererFrame()
 
   const menuOverlay = document.getElementById("mainMenuOverlay")
   if (menuOverlay) menuOverlay.remove()

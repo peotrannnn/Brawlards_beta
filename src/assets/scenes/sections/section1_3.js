@@ -2,6 +2,8 @@ import * as THREE from 'three'
 import { createEyeSun } from '../../objects/eye.js'
 import { getFunHouseAsset, getHouseAsset } from '../../objects/House.js'
 import { createTreeBillboard, updateBillboards, setTreeOpacity } from '../../objects/TreeBillboard.js'
+import { getGraphicsQualityProfile } from '../../../core/graphicsQuality.js'
+import { settingsManager } from '../../../core/SettingsManager.js'
 
 // ======================================================
 // SECTION 3 MASTER CONFIG - Dễ dàng chỉnh tất cả các tham số
@@ -97,6 +99,21 @@ const SECTION3_GRASS_LOW_QUALITY_OVERRIDES = {
   bladeHeightMax: 0.4
 }
 
+const SECTION3_GRASS_MEDIUM_QUALITY_OVERRIDES = {
+  patchCount: 1200,
+  textureSize: 640,
+  bladeTextureSize: 64,
+  bladesPerPatchMin: 40,
+  bladesPerPatchMax: 82,
+  lodNearDistance: 6.5,
+  lodCullDistance: 16,
+  lodRefreshInterval: 0.24,
+  lodRefreshMoveDistance: 0.9,
+  nearScaleFactor: 0.28,
+  minScaleFactor: 0.04,
+  bladeHeightMax: 0.44
+}
+
 // House placement
 const SECTION3_HOUSE_SETTINGS = {
   count: 60,
@@ -110,6 +127,10 @@ const SECTION3_HOUSE_SETTINGS = {
 }
 
 const SECTION3_HOUSE_LOW_QUALITY_OVERRIDES = {
+  count: 60
+}
+
+const SECTION3_HOUSE_MEDIUM_QUALITY_OVERRIDES = {
   count: 60
 }
 
@@ -131,6 +152,12 @@ const SECTION3_TREE_LOW_QUALITY_OVERRIDES = {
   maxAttempts: 14000
 }
 
+const SECTION3_TREE_MEDIUM_QUALITY_OVERRIDES = {
+  count: 300,
+  minSpacing: 5.35,
+  maxAttempts: 17000
+}
+
 const SECTION3_TREE_LOD_SETTINGS = {
   cullDistance: 200,
   refreshInterval: 0.2,
@@ -143,6 +170,13 @@ const SECTION3_TREE_LOD_LOW_QUALITY_OVERRIDES = {
   refreshInterval: 0.3,
   refreshMoveDistance: 2.2,
   cellSize: 28
+}
+
+const SECTION3_TREE_LOD_MEDIUM_QUALITY_OVERRIDES = {
+  cullDistance: 200,
+  refreshInterval: 0.24,
+  refreshMoveDistance: 1.9,
+  cellSize: 26
 }
 
 const cachedSection3GrassNoiseTextures = new Map()
@@ -193,13 +227,8 @@ function createSection3PedestalStoneTexture() {
   return texture
 }
 
-function isSection3HighQualityMode() {
-  if (typeof window === 'undefined') return true
-
-  const dpr = window.devicePixelRatio || 1
-  const pixelLoad = window.innerWidth * window.innerHeight * dpr
-  // Fullscreen/high-DPI screens should switch Section 3 to low-cost profile.
-  return pixelLoad <= 2800000
+function getSection3QualityTier() {
+  return getGraphicsQualityProfile(settingsManager.get('quality')).section3Tier || 'high'
 }
 
 function section3Fract(v) {
@@ -1112,19 +1141,29 @@ export function createSection3(rootGroup) {
   const SECTION3_OVERHEAD_LIGHT_ANGLE = cfg.overheadLightAngle
   const SECTION3_OVERHEAD_LIGHT_PENUMBRA = cfg.overheadLightPenumbra
 
-  const useHighQuality = isSection3HighQualityMode()
+  const qualityTier = getSection3QualityTier()
+  const useHighQuality = qualityTier === 'high'
+  const useMediumQuality = qualityTier === 'medium'
   const grassSettings = useHighQuality
     ? SECTION3_GRASS_SETTINGS
-    : { ...SECTION3_GRASS_SETTINGS, ...SECTION3_GRASS_LOW_QUALITY_OVERRIDES }
+    : useMediumQuality
+      ? { ...SECTION3_GRASS_SETTINGS, ...SECTION3_GRASS_MEDIUM_QUALITY_OVERRIDES }
+      : { ...SECTION3_GRASS_SETTINGS, ...SECTION3_GRASS_LOW_QUALITY_OVERRIDES }
   const houseSettings = useHighQuality
     ? SECTION3_HOUSE_SETTINGS
-    : { ...SECTION3_HOUSE_SETTINGS, ...SECTION3_HOUSE_LOW_QUALITY_OVERRIDES }
+    : useMediumQuality
+      ? { ...SECTION3_HOUSE_SETTINGS, ...SECTION3_HOUSE_MEDIUM_QUALITY_OVERRIDES }
+      : { ...SECTION3_HOUSE_SETTINGS, ...SECTION3_HOUSE_LOW_QUALITY_OVERRIDES }
   const treeSettings = useHighQuality
     ? SECTION3_TREE_SETTINGS
-    : { ...SECTION3_TREE_SETTINGS, ...SECTION3_TREE_LOW_QUALITY_OVERRIDES }
+    : useMediumQuality
+      ? { ...SECTION3_TREE_SETTINGS, ...SECTION3_TREE_MEDIUM_QUALITY_OVERRIDES }
+      : { ...SECTION3_TREE_SETTINGS, ...SECTION3_TREE_LOW_QUALITY_OVERRIDES }
   const treeLodSettings = useHighQuality
     ? SECTION3_TREE_LOD_SETTINGS
-    : { ...SECTION3_TREE_LOD_SETTINGS, ...SECTION3_TREE_LOD_LOW_QUALITY_OVERRIDES }
+    : useMediumQuality
+      ? { ...SECTION3_TREE_LOD_SETTINGS, ...SECTION3_TREE_LOD_MEDIUM_QUALITY_OVERRIDES }
+      : { ...SECTION3_TREE_LOD_SETTINGS, ...SECTION3_TREE_LOD_LOW_QUALITY_OVERRIDES }
 
   const houseAsset = getHouseAsset()
   const funHouseAsset = getFunHouseAsset()

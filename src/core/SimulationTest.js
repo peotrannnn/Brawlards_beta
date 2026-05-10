@@ -54,6 +54,7 @@ import { primeSound6Audio } from "../sounds/sound6.js"
 import { primeSound7Audio } from "../sounds/sound7.js"
 import { primeSound8Audio } from "../sounds/sound8.js"
 import { primeSound9Audio } from "../sounds/sound9.js"
+import { getGraphicsQualityProfile } from "./graphicsQuality.js"
 import { settingsManager } from "./SettingsManager.js"
 
 // ==================== CONFIGURATION ====================
@@ -93,26 +94,51 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
   if (!gameplayMode) {
     void musicPlayer.requestSilence({ fadeOutSec: 1.1 })
   }
+  let basePixelRatio = Math.min(window.devicePixelRatio || 1, RENDER_PERF_CONFIG.maxDevicePixelRatio)
   // ==================== CONTROL GUIDE UI ====================
   const controlGuideUI = new ControlGuideUI()
   let controlGuideState = { phase: 0 }
 
   // Synchronize with global settings
   const syncWithSettings = (settings) => {
+    const qualityProfile = getGraphicsQualityProfile(settings.quality || 'high')
+    const allowShadows = Boolean(settings.shadows) && qualityProfile.allowShadows
+
     // 1. Shadows
-    renderer.shadowMap.enabled = settings.shadows
+    renderer.shadowMap.enabled = allowShadows
     if (lightController && typeof lightController.toggleShadows === 'function') {
-      lightController.toggleShadows(settings.shadows)
+      lightController.toggleShadows(allowShadows)
+    }
+    if (lightController && typeof lightController.updateShadowSettings === 'function') {
+      lightController.updateShadowSettings({ mapSize: qualityProfile.shadowMapSize })
+    }
+    if (fakeShadowManager && typeof fakeShadowManager.setEnabled === 'function') {
+      fakeShadowManager.setEnabled(qualityProfile.allowFakeShadows !== false)
+      if (qualityProfile.allowFakeShadows !== false) {
+        syncList.forEach(entry => {
+          if (entry?.type === 'dynamic' && entry.mesh && entry.mesh.userData?.shadowConfig) {
+            fakeShadowManager.addShadow(entry.mesh, entry.mesh.userData.shadowConfig)
+          }
+        })
+      }
+    }
+    if (particleManager && typeof particleManager.applyQualityProfile === 'function') {
+      particleManager.applyQualityProfile(qualityProfile)
     }
 
-    // 2. Resolution / Quality
-    const quality = settings.quality || 'high'
-    const targetMaxScale = quality === 'high' ? 1.0 : quality === 'medium' ? 0.5 : 0.25
-    RENDER_PERF_CONFIG.maxScale = targetMaxScale
+    // 2. Resolution / Quality presets
+    RENDER_PERF_CONFIG.maxDevicePixelRatio = qualityProfile.maxDevicePixelRatio
+    RENDER_PERF_CONFIG.minScale = qualityProfile.gameplayMinScale
+    RENDER_PERF_CONFIG.maxScale = qualityProfile.gameplayMaxScale
+    RENDER_PERF_CONFIG.startupScale = qualityProfile.gameplayStartupScale
+    RENDER_PERF_CONFIG.startupMaxScale = qualityProfile.gameplayStartupMaxScale
+    basePixelRatio = Math.min(window.devicePixelRatio || 1, RENDER_PERF_CONFIG.maxDevicePixelRatio)
 
-    // Force immediate update if current scale is too high for new setting
-    if (typeof renderScale !== 'undefined' && renderScale > targetMaxScale) {
-      renderScale = targetMaxScale
+    if (typeof renderScale !== 'undefined') {
+      const clampedCurrentScale = Math.max(RENDER_PERF_CONFIG.minScale, Math.min(RENDER_PERF_CONFIG.maxScale, renderScale))
+      renderScale = qualityProfile.gameplayMaxScale < clampedCurrentScale
+        ? qualityProfile.gameplayMaxScale
+        : Math.max(clampedCurrentScale, qualityProfile.gameplayStartupScale)
       if (typeof applyRenderResolution === 'function') applyRenderResolution(true)
     }
   }
@@ -629,7 +655,6 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
   }
 
   // ==================== RENDER SETUP ====================
-  const basePixelRatio = Math.min(window.devicePixelRatio || 1, RENDER_PERF_CONFIG.maxDevicePixelRatio)
   let renderScale = Math.max(RENDER_PERF_CONFIG.minScale, Math.min(RENDER_PERF_CONFIG.maxScale, RENDER_PERF_CONFIG.startupScale))
   let currentPixelRatio = basePixelRatio
   let fpsAccumSec = 0, fpsFrameCount = 0, perfAdjustCooldownSec = 0, startupPerfTimer = 0
@@ -701,18 +726,12 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
     };
   }
 
+  const initialGraphicsQuality = getGraphicsQualityProfile(settingsManager.get('quality'))
   let lightController = setupSceneLighting(scene, renderer, {
-    fogType: 'none', fogColor: 0x111111, shadows: settingsManager.get('shadows'), shadowMapSize: 2048, shadowBias: -0.0001,
+    fogType: 'none', fogColor: 0x111111, shadows: settingsManager.get('shadows') && initialGraphicsQuality.allowShadows, shadowMapSize: initialGraphicsQuality.shadowMapSize, shadowBias: -0.0001,
     directionalLight: { color: 0xfff5d1, intensity: 2.5, position: [15, 25, 15], castShadow: true },
     pointLights: [], spotLights: [], helpers: false,
   })
-
-
-  // Initial sync
-  syncWithSettings(settingsManager.getAll())
-
-  // Listen for changes
-  settingsManager.onChange(syncWithSettings)
 
   const sceneBodies = []
   let currentSceneGroup = null
@@ -724,10 +743,19 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
   })
   const destroySystem = new DestroySystem({ syncList, world, scene, listenerPositionProvider: () => camera.position })
   const particleManager = new ParticleManager(scene)
+  particleManager.applyQualityProfile(getGraphicsQualityProfile(settingsManager.get('quality')))
   destroySystem.setParticleManager(particleManager)
+  playerMovement.setUIManager(uiManager)
   playerMovement.setSyncListAndDestroySystem(syncList, destroySystem)
   playerMovement.setParticleManager(particleManager)
   const physicsEventManager = new PhysicsEventManager({ particleManager, syncList, listenerPositionProvider: () => camera.position })
+
+  // Initial sync
+  syncWithSettings(settingsManager.getAll())
+
+  // Listen for changes
+  settingsManager.onChange(syncWithSettings)
+
   let possessed = null
   uiManager.setScreenMatProvider(() => (
     currentSceneManager && typeof currentSceneManager._ensureScreenMat === 'function'
@@ -1964,9 +1992,11 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
       }
       if (pair.body && !pair.body.userData) pair.body.userData = {}
       if (pair.body && !pair.body.userData.physicsEventRegistered) {
+        const isPlayer = pair.name === 'Player'
         const isDynamicCharacter = ['Guy', 'Dude', 'Guide', 'Dummy', 'Compune'].includes(pair.name)
         const isBall = !!(pair.name && pair.name.includes('Ball'))
         const shouldRegisterPhysicsEvents = pair.type === 'dynamic'
+          && !isPlayer
           && !pair.body.userData?.isCueBody
           && !pair.body.userData?.isForceBody
         if (shouldRegisterPhysicsEvents) {

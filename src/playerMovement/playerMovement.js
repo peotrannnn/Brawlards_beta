@@ -4,6 +4,7 @@ import { COLLISION_GROUPS, COLLISION_MASKS, detectCueTouchingBalls, OBJECT_MASSE
 import { CollisionManager } from "../utils/collisionManager.js"
 import { createImpactRingEffect } from "../effects/particles/particle7.js"
 import { playSound1, primeSound1Audio } from "../sounds/sound1.js"
+import { computeSound4EquivalentFallHeight, playSound4 } from "../sounds/sound4.js"
 import { playSound5, primeSound5Audio } from "../sounds/sound5.js"
 import { playSound7 } from "../sounds/sound7.js"
 import { playSound8 } from "../sounds/sound8.js"
@@ -44,10 +45,10 @@ const PLAYER_CONFIG = {
     stackGap: 0.0,
     stackBaseGap: 0.0,
     stackHeadInset: 0.04,
-    dropForwardOffset: 0.85,
-    dropUpwardOffset: 0.45,
-    dropImpulse: 0.17,
-    dropUpwardImpulse: 0.055,
+    dropForwardOffset: 0.52,
+    dropUpwardOffset: 0.34,
+    dropImpulse: 0.09,
+    dropUpwardImpulse: 0.03,
     dropStabilizeMs: 260,
     dropStabilizeAngularDamping: 0.92,
     dropMaxAngularSpeed: 2.1,
@@ -64,6 +65,7 @@ const PLAYER_CONFIG = {
     movementTingMinSpeed: 0.35,
     movementTingMaxInterval: 0.17,
     movementTingMinInterval: 0.085,
+    dropBlockedHintMs: 900,
     keys: {
         forward: "KeyW",
         backward: "KeyS", left: "KeyA", right: "KeyD",
@@ -84,6 +86,7 @@ export class PlayerMovementController {
         this.destroySystem = destroySystem
         this.cameraController = cameraController
         this.particleManager = null  // Will be set later
+        this.uiManager = null
 
         this.keys = {
             w: false, a: false, s: false, d: false
@@ -126,6 +129,8 @@ export class PlayerMovementController {
         this._movementSoundAccumulator = 0
         this._movementSurfaceAudioType = "default-ground"
         this._movementSurfaceAudioCache = new WeakMap()
+        this._wasGroundedLastFrame = false
+        this._airborneMaxDownwardSpeed = 0
 
         this._tmpCollectTriggerCenter = new THREE.Vector3()
         this._tmpCollectItemPos = new THREE.Vector3()
@@ -174,6 +179,10 @@ export class PlayerMovementController {
      */
     setParticleManager(particleManager) {
         this.particleManager = particleManager;
+    }
+
+    setUIManager(uiManager) {
+        this.uiManager = uiManager || null
     }
 
     _setupEventListeners() {
@@ -639,6 +648,45 @@ export class PlayerMovementController {
         })
     }
 
+    _updateLandingThudSound(body, mesh, cameraController) {
+        if (!body || !mesh || mesh.name !== "Player") {
+            this._wasGroundedLastFrame = false
+            this._airborneMaxDownwardSpeed = 0
+            return
+        }
+
+        const isGrounded = this.canJump === true
+        const downwardSpeed = Math.max(0, -(body.velocity?.y || 0))
+
+        if (!isGrounded) {
+            this._airborneMaxDownwardSpeed = Math.max(this._airborneMaxDownwardSpeed, downwardSpeed)
+        } else if (!this._wasGroundedLastFrame) {
+            const fallHeight = computeSound4EquivalentFallHeight(this._airborneMaxDownwardSpeed)
+            if (fallHeight >= 0.55) {
+                const sourcePosition = this._tmpMovementSoundSource.set(body.position.x, body.position.y, body.position.z)
+                const listenerBase = cameraController?.camera?.position || this.camera?.position
+                const listenerPosition = listenerBase
+                    ? this._tmpMovementSoundListener.copy(listenerBase)
+                    : null
+
+                playSound4({
+                    fallHeight,
+                    targetMass: body.mass || 1,
+                    sourcePosition,
+                    listenerPosition,
+                })
+            }
+
+            this._airborneMaxDownwardSpeed = 0
+        }
+
+        if (isGrounded && this._wasGroundedLastFrame) {
+            this._airborneMaxDownwardSpeed = 0
+        }
+
+        this._wasGroundedLastFrame = isGrounded
+    }
+
     _getPlayerInteractionSoundPositions(mesh) {
         const sourcePosition = this.currentBody
             ? this._tmpInteractionSoundSource.set(this.currentBody.position.x, this.currentBody.position.y, this.currentBody.position.z)
@@ -1063,15 +1111,69 @@ export class PlayerMovementController {
         }
     }
 
+    _getDropReleaseDirection() {
+        const direction = new THREE.Vector3()
+
+        if (this.cameraController && typeof this.cameraController.getControlWorldDirection === 'function') {
+            this.cameraController.getControlWorldDirection(direction)
+        } else if (this.camera && typeof this.camera.getWorldDirection === 'function') {
+            this.camera.getWorldDirection(direction)
+        }
+
+        direction.y = 0
+        if (direction.lengthSq() < 1e-5) {
+            direction.set(Math.sin(this.bodyYaw), 0, Math.cos(this.bodyYaw))
+        }
+
+        return direction.normalize()
+    }
+
+    _isDropShapeBlocked(candidatePos, probeRadius, bodyPosition, bodyQuaternion, shape, shapeOffset, shapeOrientation) {
+        if (!shape) return false
+
+        const padding = probeRadius + PLAYER_CONFIG.dropProbePadding
+        const worldShapePosition = new THREE.Vector3(shapeOffset.x, shapeOffset.y, shapeOffset.z)
+            .applyQuaternion(bodyQuaternion)
+            .add(bodyPosition)
+        const worldShapeQuaternion = new THREE.Quaternion(
+            bodyQuaternion.x,
+            bodyQuaternion.y,
+            bodyQuaternion.z,
+            bodyQuaternion.w
+        ).multiply(new THREE.Quaternion(
+            shapeOrientation.x,
+            shapeOrientation.y,
+            shapeOrientation.z,
+            shapeOrientation.w
+        ))
+
+        if (shape instanceof CANNON.Sphere) {
+            const radius = (shape.radius || 0) + padding
+            return candidatePos.distanceToSquared(worldShapePosition) <= radius * radius
+        }
+
+        const localPoint = candidatePos.clone().sub(worldShapePosition).applyQuaternion(worldShapeQuaternion.clone().invert())
+
+        if (shape instanceof CANNON.Box) {
+            const he = shape.halfExtents
+            return (
+                Math.abs(localPoint.x) <= Math.abs(he.x) + padding &&
+                Math.abs(localPoint.y) <= Math.abs(he.y) + padding &&
+                Math.abs(localPoint.z) <= Math.abs(he.z) + padding
+            )
+        }
+
+        if (shape instanceof CANNON.Cylinder) {
+            const radius = Math.max(shape.radiusTop || 0, shape.radiusBottom || 0) + padding
+            const halfHeight = (shape.height || shape.length || 0) * 0.5 + padding
+            return ((localPoint.x * localPoint.x) + (localPoint.z * localPoint.z)) <= radius * radius && Math.abs(localPoint.y) <= halfHeight
+        }
+
+        return false
+    }
+
     _isDropCandidateBlocked(candidatePos, probeRadius, droppedEntry, playerMesh) {
         if (!Array.isArray(this.syncList)) return false
-
-        const tmpPoint = new THREE.Vector3()
-        const tmpQuat = new THREE.Quaternion()
-        const diff = new THREE.Vector3()
-        const right = new THREE.Vector3()
-        const up = new THREE.Vector3()
-        const forward = new THREE.Vector3()
 
         for (const entry of this.syncList) {
             if (!entry?.body) continue
@@ -1081,53 +1183,21 @@ export class PlayerMovementController {
             if (entry.mesh?.userData?.isTriggerBox) continue
             if (this._isEntryCarried(entry)) continue
 
-            const shape = entry.body.shapes?.[0]
-            if (!shape) continue
+            const bodyPosition = new THREE.Vector3(entry.body.position.x, entry.body.position.y, entry.body.position.z)
+            const bodyQuaternion = new THREE.Quaternion(
+                entry.body.quaternion.x,
+                entry.body.quaternion.y,
+                entry.body.quaternion.z,
+                entry.body.quaternion.w
+            )
+            const shapes = entry.body.shapes || []
 
-            if (shape instanceof CANNON.Sphere) {
-                const center = new THREE.Vector3(entry.body.position.x, entry.body.position.y, entry.body.position.z)
-                const radius = (shape.radius || 0) + probeRadius + PLAYER_CONFIG.dropProbePadding
-                if (candidatePos.distanceToSquared(center) <= radius * radius) {
-                    return true
-                }
-                continue
-            }
+            for (let index = 0; index < shapes.length; index += 1) {
+                const shape = shapes[index]
+                const shapeOffset = entry.body.shapeOffsets?.[index] || new CANNON.Vec3(0, 0, 0)
+                const shapeOrientation = entry.body.shapeOrientations?.[index] || new CANNON.Quaternion(0, 0, 0, 1)
 
-            if (entry.mesh) {
-                entry.mesh.getWorldPosition(tmpPoint)
-                entry.mesh.getWorldQuaternion(tmpQuat)
-            } else {
-                tmpPoint.set(entry.body.position.x, entry.body.position.y, entry.body.position.z)
-                tmpQuat.set(entry.body.quaternion.x, entry.body.quaternion.y, entry.body.quaternion.z, entry.body.quaternion.w)
-            }
-
-            up.set(0, 1, 0).applyQuaternion(tmpQuat).normalize()
-            forward.set(0, 0, 1).applyQuaternion(tmpQuat).normalize()
-            right.set(1, 0, 0).applyQuaternion(tmpQuat).normalize()
-            diff.copy(candidatePos).sub(tmpPoint)
-
-            if (shape instanceof CANNON.Box) {
-                const he = shape.halfExtents
-                const localX = diff.dot(right)
-                const localY = diff.dot(up)
-                const localZ = diff.dot(forward)
-                if (
-                    Math.abs(localX) <= Math.abs(he.x) + probeRadius + PLAYER_CONFIG.dropProbePadding &&
-                    Math.abs(localY) <= Math.abs(he.y) + probeRadius + PLAYER_CONFIG.dropProbePadding &&
-                    Math.abs(localZ) <= Math.abs(he.z) + probeRadius + PLAYER_CONFIG.dropProbePadding
-                ) {
-                    return true
-                }
-                continue
-            }
-
-            if (shape instanceof CANNON.Cylinder) {
-                const radius = Math.max(shape.radiusTop || 0, shape.radiusBottom || 0) + probeRadius + PLAYER_CONFIG.dropProbePadding
-                const halfHeight = (shape.height || shape.length || 0) * 0.5 + probeRadius + PLAYER_CONFIG.dropProbePadding
-                const localY = diff.dot(up)
-                const localX = diff.dot(right)
-                const localZ = diff.dot(forward)
-                if ((localX * localX + localZ * localZ) <= radius * radius && Math.abs(localY) <= halfHeight) {
+                if (this._isDropShapeBlocked(candidatePos, probeRadius, bodyPosition, bodyQuaternion, shape, shapeOffset, shapeOrientation)) {
                     return true
                 }
             }
@@ -1145,13 +1215,15 @@ export class PlayerMovementController {
         const lift = PLAYER_CONFIG.dropRetryHeightStep
         const candidateOffsets = [
             { forward: PLAYER_CONFIG.dropForwardOffset, right: 0, up: 0 },
-            { forward: PLAYER_CONFIG.dropForwardOffset + step * 0.35, right: 0, up: lift },
-            { forward: step * 0.4, right: step, up: 0 },
-            { forward: step * 0.4, right: -step, up: 0 },
-            { forward: 0, right: step * 1.2, up: lift * 0.5 },
-            { forward: 0, right: -step * 1.2, up: lift * 0.5 },
-            { forward: -step * 0.45, right: 0, up: lift },
-            { forward: 0, right: 0, up: lift * 1.8 }
+            { forward: PLAYER_CONFIG.dropForwardOffset * 0.92, right: step * 0.55, up: 0 },
+            { forward: PLAYER_CONFIG.dropForwardOffset * 0.92, right: -step * 0.55, up: 0 },
+            { forward: PLAYER_CONFIG.dropForwardOffset + step * 0.2, right: 0, up: lift * 0.5 },
+            { forward: step * 0.22, right: step, up: 0 },
+            { forward: step * 0.22, right: -step, up: 0 },
+            { forward: 0, right: step * 1.05, up: lift * 0.4 },
+            { forward: 0, right: -step * 1.05, up: lift * 0.4 },
+            { forward: -step * 0.25, right: 0, up: lift * 0.85 },
+            { forward: 0, right: 0, up: lift * 1.6 }
         ]
 
         for (const offset of candidateOffsets) {
@@ -1166,7 +1238,7 @@ export class PlayerMovementController {
             }
         }
 
-        return new THREE.Vector3(mesh.position.x, baseY + lift * 2.1, mesh.position.z)
+        return null
     }
 
     _setMeshCarriedFlag(itemMesh, isCarried, itemBody = null) {
@@ -1494,9 +1566,18 @@ export class PlayerMovementController {
     _dropCarriedItem(mesh, withImpulse = true, withCooldown = false) {
         if (!mesh || this.carriedItems.length === 0) return false
 
-        const carried = this.carriedItems.shift()
+        const carried = this.carriedItems[0]
         const body = carried?.entry?.body
         if (!body) return false
+
+        const forward = this._getDropReleaseDirection()
+        const dropPos = this._findSafeDropPosition(mesh, carried, forward)
+        if (!dropPos) {
+            this.uiManager?.showCenterActionHint?.('Space blocked', PLAYER_CONFIG.dropBlockedHintMs)
+            return false
+        }
+
+        this.carriedItems.shift()
 
         body.userData = body.userData || {}
         body.userData.isCollectedItem = false
@@ -1516,9 +1597,6 @@ export class PlayerMovementController {
         if (withCooldown) {
             body.userData.dropCooldownUntil = Date.now() + 2000
         }
-
-        const forward = new THREE.Vector3(Math.sin(this.bodyYaw), 0, Math.cos(this.bodyYaw)).normalize()
-        const dropPos = this._findSafeDropPosition(mesh, carried, forward)
 
         body.position.set(dropPos.x, dropPos.y, dropPos.z)
         body.quaternion.set(
@@ -1811,6 +1889,7 @@ export class PlayerMovementController {
         }
 
         this._checkGrounded(body);
+        this._updateLandingThudSound(body, mesh, cameraController)
         this._handleMovement(body);
         this._handleJump(body);
         this._updateMovementTingSound(body, mesh, cameraController, frameDelta)

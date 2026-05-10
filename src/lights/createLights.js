@@ -303,6 +303,7 @@ export class FakeShadowManager {
     this.scene = scene
     this.shadows = new Map() // Maps target object UUID to shadow data
     this.shadowTexture = this._createShadowTexture()
+    this.enabled = true
     
     this.raycaster = new THREE.Raycaster()
     this.downVector = new THREE.Vector3(0, -1, 0)
@@ -341,6 +342,16 @@ export class FakeShadowManager {
     this.groundObjects = objects
   }
 
+  setEnabled(enabled = true) {
+    const nextEnabled = Boolean(enabled)
+    if (this.enabled === nextEnabled) return
+    this.enabled = nextEnabled
+
+    if (!this.enabled) {
+      this.clearAll()
+    }
+  }
+
   /**
    * Thêm fake shadow cho một object
    * @param {THREE.Object3D} targetObject Object cần tạo shadow
@@ -350,7 +361,7 @@ export class FakeShadowManager {
    * @param {number} options.fadeRate Tốc độ mờ theo độ cao (mặc định: 0.8)
    */
   addShadow(targetObject, options = {}) {
-    if (!targetObject || this.shadows.has(targetObject.uuid)) {
+    if (!this.enabled || !targetObject || this.shadows.has(targetObject.uuid)) {
       return
     }
 
@@ -409,7 +420,7 @@ export class FakeShadowManager {
    * Gọi hàm này trong animation loop
    */
   update() {
-    if (this.shadows.size === 0) return
+    if (!this.enabled || this.shadows.size === 0) return
 
     this.shadows.forEach(shadowData => {
       const { target, shadow, baseOpacity, fadeRate } = shadowData
