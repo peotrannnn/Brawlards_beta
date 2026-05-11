@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { createDummyPreviewMesh } from '../assets/objects/Dummy.js'
+import { UI_THEME } from '../ui/uiTheme.js'
 
 const LOADING_OVERLAY_STYLE_ID = 'global-loading-overlay-style'
 const LOADING_OVERLAY_PREVIEW_SIZE = 132
@@ -29,7 +30,7 @@ function ensureLoadingOverlayStyles() {
       display: flex;
       align-items: center;
       justify-content: center;
-      background: #000;
+      background: ${UI_THEME.loadingOverlay.background};
       opacity: 1;
       pointer-events: auto;
       transition: opacity 0.22s ease;
@@ -62,11 +63,11 @@ function ensureLoadingOverlayStyles() {
       width: 132px;
       height: 132px;
       display: block;
-      filter: drop-shadow(0 0 18px rgba(255, 255, 255, 0.1));
+      filter: ${UI_THEME.loadingOverlay.previewDropShadow};
     }
 
     .global-loading-overlay__label {
-      color: #ffffff;
+      color: ${UI_THEME.loadingOverlay.labelColor};
       font-family: monospace;
       font-size: 12px;
       font-weight: bold;

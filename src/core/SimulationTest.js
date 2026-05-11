@@ -24,8 +24,10 @@ import { UIManager } from "../ui/UIManager.js"
 import { ControlGuideUI } from "../ui/ControlGuideUI.js"
 import { SCENE1_CONTROL_GUIDES } from "../assets/scenes/scene1Dialogs.js"
 import { GameOverScreen } from "../ui/GameOverScreen.js"
+import { DeathWisdomOverlay } from "../ui/DeathWisdomOverlay.js"
 import { PauseMenuScreen } from "../ui/PauseMenuScreen.js"
 import { createSettingsScreen } from "../ui/SettingsMenuScreen.js"
+import { UI_THEME } from "../ui/uiTheme.js"
 import { PlayerMovementController } from "../playerMovement/playerMovement.js"
 import { CharacterController } from "../playerMovement/characterController.js"
 import { GuyAI } from "../AI/guyBot.js"
@@ -39,7 +41,7 @@ import { SIMULATOR_COMPUNES } from "../assets/scenes/simulatorDialogs.js"
 import { setupContactMaterials, COLLISION_GROUPS, COLLISION_MASKS } from "../physics/physicsHelper.js"
 import { setupSceneLighting, FakeShadowManager } from "../lights/createLights.js"
 import { CollisionManager } from "../utils/collisionManager.js"
-import { spawnObject as spawnerSpawn, spawnRandom as spawnerSpawnRandom, randomPositionAboveTable } from "../utils/spawner.js"
+import { spawnObject as spawnerSpawn, spawnRandom as spawnerSpawnRandom, randomPositionAboveTable, clearAllObjectPools } from "../utils/spawner.js"
 import { PhysicsEventManager } from "../utils/physicsEventManager.js"
 import { DestroySystem } from "../utils/destroy.js"
 import { ParticleManager } from "../utils/particleManager.js"
@@ -54,6 +56,9 @@ import { primeSound6Audio } from "../sounds/sound6.js"
 import { primeSound7Audio } from "../sounds/sound7.js"
 import { primeSound8Audio } from "../sounds/sound8.js"
 import { primeSound9Audio } from "../sounds/sound9.js"
+import { primeSound12Audio } from "../sounds/sound12.js"
+import { primeSound13Audio } from "../sounds/sound13.js"
+import { primeSound14Audio } from "../sounds/sound14.js"
 import { getGraphicsQualityProfile } from "./graphicsQuality.js"
 import { settingsManager } from "./SettingsManager.js"
 
@@ -86,6 +91,8 @@ const RENDER_PERF_CONFIG = {
   startupScale: 0.8,
   startupMaxScale: 1.0
 }
+
+const DEATH_WISDOM_DIALOG_DELAY_MS = 5000
 
 // ==================== MAIN EXPORT ====================
 export function startSimulationTest(renderer, onBack, gameplayMode = false, sceneIndex = 0, options = {}) {
@@ -256,15 +263,15 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
       right: 20px;
       min-width: 220px;
       max-width: 520px;
-      background: #002d1a;
-      border: 2px solid #00CC77;
+      background: ${UI_THEME.controlGuide.background};
+      border: 2px solid ${UI_THEME.controlGuide.border};
       border-radius: 0;
-      color: #00FFAA;
+      color: ${UI_THEME.controlGuide.text};
       font-size: 9.5px;
       font-family: 'Roboto Mono', 'Consolas', 'Monaco', 'Courier New', monospace;
       font-weight: 300;
       z-index: 10001;
-      box-shadow: 0 0 20px rgba(0, 204, 119, 0.6), inset 0 0 10px rgba(0, 204, 119, 0.3);
+      box-shadow: ${UI_THEME.controlGuide.shadow};
       pointer-events: none;
       user-select: none;
       text-align: left;
@@ -295,9 +302,9 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
       bottom: 20px;
       right: 20px;
       z-index: 10000;
-      background: #8b0000;
-      color: #fff;
-      border: 2px solid #5a0000;
+      background: ${UI_THEME.dangerButton.background};
+      color: ${UI_THEME.dangerButton.text};
+      border: 2px solid ${UI_THEME.dangerButton.border};
       border-radius: 0;
       padding: 8px 16px;
       font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
@@ -306,15 +313,15 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
       letter-spacing: 1px;
       text-transform: uppercase;
       cursor: pointer;
-      box-shadow: 0 0 12px rgba(255, 0, 0, 0.4), inset 0 0 6px rgba(255, 0, 0, 0.2);
+      box-shadow: ${UI_THEME.dangerButton.shadow};
       transition: all 0.3s ease;
     `
     backButton.onmouseover = () => {
-      backButton.style.boxShadow = `0 0 20px rgba(255, 0, 0, 0.6), inset 0 0 10px rgba(255, 0, 0, 0.3)`
+      backButton.style.boxShadow = UI_THEME.dangerButton.hoverShadow
       backButton.style.transform = 'scale(1.05)'
     }
     backButton.onmouseout = () => {
-      backButton.style.boxShadow = `0 0 12px rgba(255, 0, 0, 0.4), inset 0 0 6px rgba(255, 0, 0, 0.2)`
+      backButton.style.boxShadow = UI_THEME.dangerButton.shadow
       backButton.style.transform = 'scale(1)'
     }
     backButton.onclick = () => {
@@ -446,11 +453,26 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
 
       if (gameplayMode) {
         gameOverScreen = new GameOverScreen(asset.name, 0, onBack, cameraController)
-        currentSceneManager.setGameOverCallback((reason, completionTime) => {
+        currentSceneManager.setGameOverCallback(async (reason, completionTime, detail) => {
+          isDeathFlowPending = true
           isResumeRequested = false
           if (pauseMenuScreen && pauseMenuScreen.isVisible) {
             pauseMenuScreen.hide()
           }
+          const clickOverlay = document.getElementById('simClickResumeOverlay')
+          if (clickOverlay) clickOverlay.style.display = 'none'
+          compuneAIControllers.forEach(compuneAI => {
+            if (compuneAI?.closeDialog) compuneAI.closeDialog()
+          })
+          if (cameraController?.disableControl) {
+            cameraController.disableControl()
+          }
+          if (reason !== 'elevator') {
+            void musicPlayer.requestSilence({ fadeOutSec: 0.2 })
+          }
+          const resolvedDetail = detail || (reason === 'elevator' ? 'elevator_clean' : 'default')
+          await new Promise(resolve => window.setTimeout(resolve, DEATH_WISDOM_DIALOG_DELAY_MS))
+          await ensureDeathWisdomOverlay().present({ endingDetail: resolvedDetail })
           const sceneName = reason === 'elevator' ? `${asset.name} - COMPLETED` : `${asset.name} - FAILED`
           gameOverScreen.sceneName = sceneName
           gameOverScreen.completionTime = completionTime
@@ -741,6 +763,7 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
   const objects = createAllGameObjects(renderer, {
     playerCustomization: options.playerCustomization
   })
+  const guyCloneAsset = objects.find(obj => obj.name === 'Guy') || null
   const destroySystem = new DestroySystem({ syncList, world, scene, listenerPositionProvider: () => camera.position })
   const particleManager = new ParticleManager(scene)
   particleManager.applyQualityProfile(getGraphicsQualityProfile(settingsManager.get('quality')))
@@ -864,6 +887,120 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
     userData.floorGuardLastSafePosition.copy(body.position)
   }
 
+  function spawnDeathCloneFromAsset(asset, cloneName, position, rotationQuaternion = null, cloneTags = {}) {
+    if (!position || !asset?.createMesh || !asset?.createBody) return null
+
+    const normalizedCloneTags = {
+      ...cloneTags,
+      isDeathClone: true,
+    }
+
+    const prefab = {
+      name: cloneName,
+      type: 'static',
+      allowMultipleInstances: true,
+      createMesh: () => {
+        const mesh = asset.createMesh()
+        mesh.name = cloneName
+        mesh.userData = mesh.userData || {}
+        if (typeof mesh.userData.removeCue === 'function') {
+          mesh.userData.removeCue()
+        }
+        Object.assign(mesh.userData, normalizedCloneTags)
+        return mesh
+      },
+      createBody: (materials) => {
+        const body = asset.createBody(materials)
+        if (!body) return body
+
+        body.name = cloneName
+        body.type = CANNON.Body.STATIC
+        body.mass = 0
+        body.updateMassProperties()
+        body.velocity.set(0, 0, 0)
+        body.angularVelocity.set(0, 0, 0)
+        body.userData = body.userData || {}
+        Object.assign(body.userData, normalizedCloneTags)
+        return body
+      }
+    }
+
+    const cloneEntry = spawnerSpawn({
+      scene,
+      prefab,
+      position: position.clone(),
+      world,
+      physicsMaterials,
+      syncList,
+      particleManager: null,
+      fakeShadowManager,
+      listenerPosition: camera.position
+    })
+
+    if (!cloneEntry) return null
+
+    cloneEntry.userData = cloneEntry.userData || {}
+    Object.assign(cloneEntry.userData, normalizedCloneTags)
+    if (cloneEntry.mesh?.userData && typeof cloneEntry.mesh.userData.removeCue === 'function') {
+      cloneEntry.mesh.userData.removeCue()
+    }
+    if (rotationQuaternion && cloneEntry.mesh) {
+      cloneEntry.mesh.quaternion.copy(rotationQuaternion)
+      cloneEntry.mesh.updateMatrixWorld(true)
+    }
+    if (rotationQuaternion && cloneEntry.body) {
+      cloneEntry.body.quaternion.copy(rotationQuaternion)
+      cloneEntry.body.previousQuaternion?.copy(cloneEntry.body.quaternion)
+      cloneEntry.body.interpolatedQuaternion?.copy(cloneEntry.body.quaternion)
+      cloneEntry.body.aabbNeedsUpdate = true
+    }
+    if (cloneEntry.mesh?.userData) {
+      Object.assign(cloneEntry.mesh.userData, normalizedCloneTags)
+    }
+    if (cloneEntry.body?.userData) {
+      Object.assign(cloneEntry.body.userData, normalizedCloneTags)
+    }
+
+    return cloneEntry
+  }
+
+  function spawnGuyDeathClone(position, rotationQuaternion = null) {
+    return spawnDeathCloneFromAsset(guyCloneAsset, 'Guy Clone', position, rotationQuaternion, {
+      isGuyClone: true,
+    })
+  }
+
+  function spawnInvisibleDeathCameraAnchor(position, rotationQuaternion = null) {
+    if (!position) return null
+
+    const anchorMesh = new THREE.Object3D()
+    anchorMesh.name = 'Death Camera Anchor'
+    anchorMesh.visible = false
+    anchorMesh.userData = {
+      isDeathClone: true,
+      isInvisibleDeathClone: true,
+    }
+    anchorMesh.position.copy(position)
+    if (rotationQuaternion) {
+      anchorMesh.quaternion.copy(rotationQuaternion)
+    }
+    anchorMesh.updateMatrixWorld(true)
+    scene.add(anchorMesh)
+
+    const anchorEntry = {
+      mesh: anchorMesh,
+      body: null,
+      type: 'static',
+      name: 'Death Camera Anchor',
+      userData: {
+        isDeathClone: true,
+        isInvisibleDeathClone: true,
+      }
+    }
+    syncList.push(anchorEntry)
+    return anchorEntry
+  }
+
   // ==================== DESTROY HANDLER ====================
   destroySystem.setOnDestroy(entry => {
     if (entry?.name === 'Player' && typeof playerMovement.clearImpactEffects === 'function') {
@@ -871,18 +1008,46 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
     }
     if (entry === possessed) {
       if (possessed.name === 'Player') {
+        const wasKilledByGuy = !!entry?.body?.userData?.killedByGuy
+        const deathCause = entry?.body?.userData?.deathCause || null
+        const pendingDestroyGameOverReason = gameplayMode && currentSceneManager
+          ? (currentSceneManager.pendingPlayerDestroyGameOverReason || null)
+          : null
+        const shouldSpawnDeathCameraTarget = pendingDestroyGameOverReason !== 'elevator'
+        const deathClonePosition = entry?.mesh?.position?.clone?.() || null
+        const deathCloneRotation = entry?.mesh?.quaternion?.clone?.() || null
+        if (entry?.body?.userData) {
+          delete entry.body.userData.deathCause
+          delete entry.body.userData.killedByGuy
+        }
         playerMovement.dropAllCarriedItems(false)
         playerMovement.removeCueBody()
         if (possessed.mesh && possessed.mesh.userData.removeCue) {
           possessed.mesh.userData.removeCue()
         }
         playerMovement.cueActive = false
+        let deathCloneEntry = null
+        playerMovement.disableInput()
+        if (shouldSpawnDeathCameraTarget && deathClonePosition) {
+          deathCloneEntry = wasKilledByGuy
+            ? (spawnGuyDeathClone(deathClonePosition, deathCloneRotation) || spawnInvisibleDeathCameraAnchor(deathClonePosition, deathCloneRotation))
+            : spawnInvisibleDeathCameraAnchor(deathClonePosition, deathCloneRotation)
+        }
+        if (deathCloneEntry?.mesh) {
+          possessed = deathCloneEntry
+          cameraController.focus(deathCloneEntry.mesh)
+        } else {
+          possessed = null
+          cameraController.clearFocus()
+        }
         if (gameplayMode && currentSceneManager) {
+          currentSceneManager.gameOverDetail = deathCause || currentSceneManager.gameOverDetail || 'default'
           currentSceneManager.onPlayerDestroyed()
         }
+      } else {
+        possessed = null
+        cameraController.clearFocus()
       }
-      possessed = null
-      cameraController.clearFocus()
     }
     if (entry && entry.mesh) {
       fakeShadowManager.removeShadow(entry.mesh)
@@ -931,11 +1096,25 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
   // ==================== PAUSE & GAME OVER ====================
   let animationId
   let gameOverScreen = null
+  let deathWisdomOverlay = null
   let pauseMenuScreen = null
+  let isDeathFlowPending = false
   let isResumeRequested = false
   let resumeAttemptToken = 0
 
+  function ensureDeathWisdomOverlay() {
+    if (!deathWisdomOverlay) {
+      deathWisdomOverlay = new DeathWisdomOverlay()
+    }
+    return deathWisdomOverlay
+  }
+
   function isGameOverUIVisible() { return !!(gameOverScreen && gameOverScreen.isVisible) }
+  function isDeathWisdomVisible() { return !!(deathWisdomOverlay && deathWisdomOverlay.isVisible) }
+  function isDeathFlowActive() { return isDeathFlowPending || isDeathWisdomVisible() || isGameOverUIVisible() }
+  function isTeleportTransitionActive() {
+    return !!(currentSceneManager && typeof currentSceneManager.isTeleportTransitionActive === 'function' && currentSceneManager.isTeleportTransitionActive())
+  }
   function isPauseMenuVisible() { return !!(pauseMenuScreen && pauseMenuScreen.isVisible) }
   function isSettingsVisible() { return !!document.getElementById('settingsScreen') }
   function isGameplayModalVisible() { return isPauseMenuVisible() || isSettingsVisible() }
@@ -954,6 +1133,8 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
   }
 
   function enterPauseMenu() {
+    if (isDeathFlowActive()) return
+    if (isTeleportTransitionActive()) return
     isResumeRequested = false
     stopPlayerMovementForPause()
     if (pauseMenuScreen && !pauseMenuScreen.isVisible) {
@@ -1020,35 +1201,35 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
   clickResumeOverlay.id = 'simClickResumeOverlay'
   clickResumeOverlay.style.cssText = `
     position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
-    background: rgba(0, 0, 0, 0.5); backdrop-filter: blur(2px);
+    background: ${UI_THEME.simulation.clickResumeOverlay}; backdrop-filter: blur(2px);
     display: none; justify-content: center; align-items: center;
     z-index: 20000; pointer-events: auto; cursor: pointer;
   `
   const popupContent = document.createElement('div');
   popupContent.style.cssText = `
-    background: #0a1a3d;
-    border: 2px solid #0066FF;
+    background: ${UI_THEME.simulation.clickResumeBoxBackground};
+    border: 2px solid ${UI_THEME.simulation.clickResumeBoxBorder};
     padding: 16px 32px;
-    color: #00FF00;
+    color: ${UI_THEME.simulation.clickResumeBoxText};
     font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
     font-size: 18px;
     font-weight: bold;
     text-transform: uppercase;
-    box-shadow: 0 0 20px rgba(0, 102, 255, 0.6);
+    box-shadow: ${UI_THEME.simulation.clickResumeBoxShadow};
     text-align: center;
     animation: pulseResume 2s infinite ease-in-out;
     letter-spacing: 2px;
   `;
-  popupContent.innerHTML = '> CLICK TO RESUME <';
+  popupContent.textContent = 'CLICK TO RESUME';
 
   if (!document.getElementById('pulse-resume-style')) {
     const style = document.createElement('style');
     style.id = 'pulse-resume-style';
     style.innerHTML = `
       @keyframes pulseResume {
-        0% { transform: scale(1); box-shadow: 0 0 20px rgba(0, 102, 255, 0.5); }
-        50% { transform: scale(1.02); box-shadow: 0 0 40px rgba(0, 102, 255, 0.8); }
-        100% { transform: scale(1); box-shadow: 0 0 20px rgba(0, 102, 255, 0.5); }
+        0% { transform: scale(1); box-shadow: 0 0 20px ${UI_THEME.simulation.clickResumePulseMin}; }
+        50% { transform: scale(1.02); box-shadow: 0 0 40px ${UI_THEME.simulation.clickResumePulseMax}; }
+        100% { transform: scale(1); box-shadow: 0 0 20px ${UI_THEME.simulation.clickResumePulseMin}; }
       }
     `;
     document.head.appendChild(style);
@@ -1068,26 +1249,26 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
     helpWindow.id = 'simHelpWindow'
     helpWindow.style.cssText = `
       position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
-      background: rgba(10, 26, 61, 0.85); display: flex; flex-direction: column;
+      background: ${UI_THEME.simulation.helpOverlayBackground}; display: flex; flex-direction: column;
       justify-content: center; align-items: center; z-index: 20001;
       opacity: 1; transition: opacity 0.25s; font-family: monospace;
       pointer-events: auto;
     `
     const helpBox = document.createElement('div')
     helpBox.style.cssText = `
-      background: #0a1a3d; border: 2px solid #0066FF; width: min(420px, 96vw);
+      background: ${UI_THEME.simulation.helpBoxBackground}; border: 2px solid ${UI_THEME.simulation.helpBoxBorder}; width: min(420px, 96vw);
       overflow: hidden;
     `
     const helpTitleBar = document.createElement('div')
     helpTitleBar.style.cssText = `
-      background: #0066FF; color: #000; padding: 6px 12px; font-weight: bold;
-      border-bottom: 2px solid #004399; font-size: 11px; letter-spacing: 1px;
+      background: ${UI_THEME.simulation.helpTitleBackground}; color: ${UI_THEME.simulation.helpTitleText}; padding: 6px 12px; font-weight: bold;
+      border-bottom: 2px solid ${UI_THEME.simulation.helpTitleBorder}; font-size: 11px; letter-spacing: 1px;
       text-transform: uppercase;
     `
     helpTitleBar.textContent = '> SPECTATOR_HELP.exe'
     const helpContent = document.createElement('div')
     helpContent.style.cssText = `
-      padding: 24px 22px; text-align: left; color: #fff; font-size: 13px;
+      padding: 24px 22px; text-align: left; color: ${UI_THEME.simulation.helpContentText}; font-size: 13px;
       line-height: 1.7; user-select: text;
     `
     helpContent.innerHTML = `
@@ -1109,7 +1290,7 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
     helpHint.innerHTML = '<b>H</b>'
     helpHint.style.cssText = `
       position: fixed; bottom: 20px; left: 20px; z-index: 20002;
-      background: #0066FF; color: #111; border: 2px solid #004399;
+      background: ${UI_THEME.simulation.helpHintBackground}; color: ${UI_THEME.simulation.helpHintText}; border: 2px solid ${UI_THEME.simulation.helpHintBorder};
       padding: 8px 16px; font-family: monospace; font-weight: bold;
       font-size: 13px; opacity: 0; pointer-events: none;
     `
@@ -1121,7 +1302,7 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
     spawnHint.innerHTML = '<b>G</b>'
     spawnHint.style.cssText = `
       position: fixed; top: 20px; left: 20px; z-index: 20002;
-      background: #00CC77; color: #111; border: 2px solid #008855;
+      background: ${UI_THEME.simulation.spawnHintBackground}; color: ${UI_THEME.simulation.spawnHintText}; border: 2px solid ${UI_THEME.simulation.spawnHintBorder};
       padding: 8px 16px; font-family: monospace; font-weight: bold;
       font-size: 13px; opacity: 1; pointer-events: auto;
     `
@@ -1132,19 +1313,19 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
     spawnWindow.id = 'simSpawnWindow'
     spawnWindow.style.cssText = `
       position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
-      background: rgba(10, 26, 61, 0.85); display: flex; justify-content: center;
+      background: ${UI_THEME.simulation.helpOverlayBackground}; display: flex; justify-content: center;
       align-items: center; z-index: 20003; opacity: 0; pointer-events: none;
       transition: opacity 0.22s; font-family: monospace;
     `
     const spawnBox = document.createElement('div')
     spawnBox.style.cssText = `
-      background: #0a1a3d; border: 2px solid #00CC77; width: min(340px, 92vw);
+      background: ${UI_THEME.simulation.spawnBoxBackground}; border: 2px solid ${UI_THEME.simulation.spawnBoxBorder}; width: min(340px, 92vw);
       max-height: 420px; overflow: hidden; display: flex; flex-direction: column;
     `
     const spawnTitleBar = document.createElement('div')
     spawnTitleBar.style.cssText = `
-      background: #00CC77; color: #000; padding: 6px 12px; font-weight: bold;
-      border-bottom: 2px solid #008855; font-size: 11px; letter-spacing: 1px;
+      background: ${UI_THEME.simulation.spawnTitleBackground}; color: ${UI_THEME.simulation.spawnTitleText}; padding: 6px 12px; font-weight: bold;
+      border-bottom: 2px solid ${UI_THEME.simulation.spawnTitleBorder}; font-size: 11px; letter-spacing: 1px;
       text-transform: uppercase;
     `
     spawnTitleBar.textContent = '> SPAWN_OBJECTS.exe'
@@ -1173,16 +1354,16 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
         item.textContent = asset.name || `Object ${idx}`
         item.style.cssText = `
           padding: 10px 18px;
-          background: ${idx === spawnMenuIndex ? '#00CC77' : 'transparent'};
-          color: ${idx === spawnMenuIndex ? '#111' : '#fff'};
+          background: ${idx === spawnMenuIndex ? UI_THEME.simulation.spawnSelectedBackground : UI_THEME.common.transparent};
+          color: ${idx === spawnMenuIndex ? UI_THEME.simulation.spawnSelectedText : UI_THEME.simulation.spawnItemText};
           cursor: pointer; font-weight: ${idx === spawnMenuIndex ? 'bold' : 'normal'};
-          border-bottom: 1px solid #333a; user-select: none; font-size: 15px;
+          border-bottom: 1px solid ${UI_THEME.simulation.spawnItemBorder}; user-select: none; font-size: 15px;
         `
         item.onmouseenter = () => {
           spawnMenuIndex = idx
           Array.from(spawnListArea.children).forEach((el, i) => {
-            el.style.background = i === spawnMenuIndex ? '#00CC77' : 'transparent'
-            el.style.color = i === spawnMenuIndex ? '#111' : '#fff'
+            el.style.background = i === spawnMenuIndex ? UI_THEME.simulation.spawnSelectedBackground : UI_THEME.common.transparent
+            el.style.color = i === spawnMenuIndex ? UI_THEME.simulation.spawnSelectedText : UI_THEME.simulation.spawnItemText
             el.style.fontWeight = i === spawnMenuIndex ? 'bold' : 'normal'
           })
         }
@@ -1368,11 +1549,15 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
     primeSound7Audio()
     primeSound8Audio()
     primeSound9Audio()
+    primeSound12Audio()
+    primeSound13Audio()
+    primeSound14Audio()
 
     if (gameplayMode) {
       if (e.code === "Escape") {
         e.preventDefault()
-        if (isGameOverUIVisible()) return
+        if (isDeathFlowActive()) return
+        if (isTeleportTransitionActive()) return
         if (isSettingsVisible()) return
         if (isPauseMenuVisible()) {
           lockCameraFromPauseResume(true) // fromEscape = true
@@ -1430,6 +1615,16 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
       return
     }
     if (gameplayMode && !locked) {
+      if (isDeathFlowActive()) {
+        isResumeRequested = false
+        return
+      }
+      if (isTeleportTransitionActive()) {
+        isResumeRequested = false
+        const overlay = document.getElementById('simClickResumeOverlay');
+        if (overlay) overlay.style.display = 'none';
+        return
+      }
       if (isResumeRequested) {
         stopPlayerMovementForPause()
         return
@@ -1448,7 +1643,7 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
   document.addEventListener("pointerlockchange", onPointerLockChange)
 
   document.addEventListener("pointerlockerror", () => {
-    if (gameplayMode && !isGameplayModalVisible() && !isGameOverUIVisible()) {
+    if (gameplayMode && !isDeathFlowActive() && !isTeleportTransitionActive() && !isGameplayModalVisible()) {
       const overlay = document.getElementById('simClickResumeOverlay');
       if (overlay) overlay.style.display = 'flex';
     }
@@ -1461,7 +1656,7 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
   function onClick(event) {
     if (gameplayMode) {
       // If we are not locked, and no menus are visible, click to lock pointer
-      if (document.pointerLockElement !== renderer.domElement && !isGameplayModalVisible() && !isGameOverUIVisible()) {
+      if (document.pointerLockElement !== renderer.domElement && !isGameplayModalVisible() && !isDeathFlowActive() && !isTeleportTransitionActive()) {
         lockCameraFromPauseResume(false)
       }
       return
@@ -1747,7 +1942,7 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
     }
 
     if (gameOverScreen && gameplayMode) gameOverScreen.update(delta)
-    if (gameplayMode && currentSceneManager && currentSceneManager.gameOver) {
+    if (gameplayMode && isGameOverUIVisible()) {
       cleanupPlayerChargeUI()
       renderer.render(scene, cameraController.camera)
       return
@@ -1759,7 +1954,7 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
     }
     if (!hasPlayerCameraAttachment()) cleanupPlayerChargeUI()
 
-    if (possessed) {
+    if (possessed && possessed.name === 'Player' && possessed.body && possessed.mesh) {
       playerMovement.update(possessed.body, possessed.mesh, cameraController)
 
       // --- HP Regen Logic ---
@@ -1915,7 +2110,11 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
           entry.body.userData.compuneAI = compuneAI
         }
         compuneAIControllers.set(entry, compuneAI)
-        compuneAI.update(delta, syncList)
+        if (gameplayMode && (isDeathFlowActive() || (currentSceneManager && currentSceneManager.gameOver))) {
+          if (typeof compuneAI.closeDialog === 'function') compuneAI.closeDialog()
+        } else {
+          compuneAI.update(delta, syncList)
+        }
       }
     })
 
@@ -1956,7 +2155,7 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
         entry.body.userData.bowlingAI = bowlingAI
       }
       const bowlingAI = bowlingAIControllers.get(entry)
-      const result = bowlingAI.update(delta, syncList, entry)
+      const result = bowlingAI.update(delta, syncList, entry, cameraController)
       if (typeof particleManager.setVeinState === 'function') {
         const isAngry = typeof bowlingAI.getAngryState === 'function' ? bowlingAI.getAngryState() : false
         particleManager.setVeinState(entry.mesh, isAngry, { offsetY: 0.95 })
@@ -2060,6 +2259,7 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
     if (spawnHint && spawnHint.parentNode) spawnHint.parentNode.removeChild(spawnHint)
     const clickOverlay = document.getElementById('simClickResumeOverlay')
     if (clickOverlay && clickOverlay.parentNode) clickOverlay.parentNode.removeChild(clickOverlay)
+    isDeathFlowPending = false
     if (cameraController.dispose) cameraController.dispose()
     compuneAIControllers.forEach(compuneAI => compuneAI.cleanup())
     compuneAIControllers.clear()
@@ -2071,6 +2271,7 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
       delete window.uiManager
     }
     if (uiManager) uiManager.dispose()
+    if (deathWisdomOverlay) { deathWisdomOverlay.destroy(); deathWisdomOverlay = null }
     if (pauseMenuScreen) { pauseMenuScreen.destroy(); pauseMenuScreen = null }
     fakeShadowManager.clearAll()
     if (particleManager && typeof particleManager.clearTransientEffects === 'function') particleManager.clearTransientEffects()
@@ -2085,6 +2286,7 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
         scene.remove(pair.mesh)
       }
     })
+    clearAllObjectPools()
     scene.clear()
   }
   return cleanupFn

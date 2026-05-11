@@ -1,5 +1,6 @@
 import { playSound10, primeSound10Audio } from '../sounds/sound10.js'
 import { playSound11, primeSound11Audio } from '../sounds/sound11.js'
+import { playSound15, primeSound15Audio } from '../sounds/sound15.js'
 
 const UI_SOUND_STATE = {
   initialized: false,
@@ -44,6 +45,10 @@ function findUiSoundTarget(target) {
 }
 
 function handlePointerOver(event) {
+  if (UI_SOUND_STATE.hoveredControl && !isVisibleControl(UI_SOUND_STATE.hoveredControl)) {
+    UI_SOUND_STATE.hoveredControl = null
+  }
+
   const target = findUiSoundTarget(event.target)
   if (!target || target === UI_SOUND_STATE.hoveredControl) return
 
@@ -70,12 +75,50 @@ function handleClick(event) {
   playSound11()
 }
 
+export function playTypingSound(character = '') {
+  if (typeof character === 'string' && character.trim().length === 0) return
+
+  let emphasis = 1
+  if (/[.!?]/.test(character)) {
+    emphasis = 1.14
+  } else if (/[,:;]/.test(character)) {
+    emphasis = 1.06
+  }
+
+  playSound15({ emphasis })
+}
+
+export function clearUiHoverSound(control = null) {
+  if (!(control instanceof HTMLElement)) {
+    UI_SOUND_STATE.hoveredControl = null
+    return
+  }
+
+  if (UI_SOUND_STATE.hoveredControl === control) {
+    UI_SOUND_STATE.hoveredControl = null
+  }
+}
+
+export function syncUiHoverSound(control) {
+  if (!UI_SOUND_STATE.initialized || !(control instanceof HTMLElement) || !isVisibleControl(control)) return
+
+  if (UI_SOUND_STATE.hoveredControl && !isVisibleControl(UI_SOUND_STATE.hoveredControl)) {
+    UI_SOUND_STATE.hoveredControl = null
+  }
+
+  if (!control.matches(':hover') || UI_SOUND_STATE.hoveredControl === control) return
+
+  UI_SOUND_STATE.hoveredControl = control
+  playSound10()
+}
+
 export function initUISoundEffects() {
   if (UI_SOUND_STATE.initialized || typeof document === 'undefined') return
 
   UI_SOUND_STATE.initialized = true
   primeSound10Audio()
   primeSound11Audio()
+  primeSound15Audio()
 
   document.addEventListener('pointerover', handlePointerOver, true)
   document.addEventListener('pointerout', handlePointerOut, true)

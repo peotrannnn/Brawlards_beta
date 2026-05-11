@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { playSound9 } from '../sounds/sound9.js'
+import { UI_THEME } from './uiTheme.js'
 
 /**
  * UIManager - Manages all UI elements
@@ -15,20 +16,22 @@ import { playSound9 } from '../sounds/sound9.js'
  */
 
 const UI_CONFIG = {
-  CROSSHAIR_COLOR: 'white',
+  CROSSHAIR_COLOR: UI_THEME.hud.crosshairColor,
   CROSSHAIR_SIZE: '20px',
   CROSSHAIR_FONT: 'monospace',
   CROSSHAIR_TEXT: '+',
+  CROSSHAIR_SHADOW: UI_THEME.hud.crosshairShadow,
   CROSSHAIR_Z_INDEX: '9999',
-  CHARGE_INDICATOR_COLOR: '#00ff00',
-  CENTER_ACTION_HINT_BLOCKED_COLOR: '#ff4d4d',
+  CHARGE_INDICATOR_COLOR: UI_THEME.hud.chargeIndicatorColor,
+  CENTER_ACTION_HINT_BLOCKED_COLOR: UI_THEME.hud.blockedHintColor,
   POWER_BAR_Z_INDEX: '9999',
   CHARGE_LINE_Z_INDEX: '9998',
   HP_BAR_Z_INDEX: '9999',
   HP_BAR_WIDTH: 100,
   HP_BAR_HEIGHT: 1,
-  HP_BAR_BG: '#333333',
-  HP_BAR_BORDER: '1px solid #000000',
+  HP_BAR_BG: UI_THEME.hud.hpBarBackground,
+  HP_BAR_BORDER: `1px solid ${UI_THEME.hud.hpBarBorderColor}`,
+  HP_FILL_DEFAULT: UI_THEME.hud.hpFillDefault,
   HP_TRANSITION_DURATION: '0.2s', // Thời gian chuyển màu
   DAMAGE_SOUND_COOLDOWN_MS: 360,
 }
@@ -108,7 +111,7 @@ export class UIManager {
     crosshair.style.pointerEvents = 'none'
     crosshair.style.display = 'none'
     crosshair.style.zIndex = UI_CONFIG.CROSSHAIR_Z_INDEX
-    crosshair.style.textShadow = '1px 1px 2px black'
+    crosshair.style.textShadow = UI_CONFIG.CROSSHAIR_SHADOW
     crosshair.innerText = UI_CONFIG.CROSSHAIR_TEXT
     document.body.appendChild(crosshair)
     this.elements.crosshair = crosshair
@@ -151,7 +154,7 @@ export class UIManager {
     const powerBarPath = document.createElementNS(svgNS, 'path')
     powerBarPath.setAttribute('d', 'M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831')
     powerBarPath.setAttribute('fill', 'none')
-    powerBarPath.setAttribute('stroke', '#00ff00')
+    powerBarPath.setAttribute('stroke', UI_CONFIG.CHARGE_INDICATOR_COLOR)
     powerBarPath.setAttribute('stroke-width', '2')
     powerBarPath.setAttribute('stroke-dasharray', '100, 100')
     powerBarPath.style.strokeLinecap = 'round'
@@ -177,7 +180,7 @@ export class UIManager {
     spectatorUI.style.zIndex = '9999'
     spectatorUI.style.textAlign = 'center'
     spectatorUI.style.whiteSpace = 'nowrap'
-    spectatorUI.style.textShadow = '1px 1px 2px black'
+    spectatorUI.style.textShadow = UI_CONFIG.CROSSHAIR_SHADOW
     spectatorUI.innerHTML = 'C to enter cam'
     document.body.appendChild(spectatorUI)
     this.elements.spectatorUI = spectatorUI
@@ -245,7 +248,7 @@ export class UIManager {
     const hpFill = document.createElement('div')
     hpFill.style.height = '100%'
     hpFill.style.width = '100%'
-    hpFill.style.backgroundColor = '#66bb6a'
+    hpFill.style.backgroundColor = UI_CONFIG.HP_FILL_DEFAULT
     hpFill.style.transition = `width ${UI_CONFIG.HP_TRANSITION_DURATION} ease-out, background-color ${UI_CONFIG.HP_TRANSITION_DURATION} ease-out`
 
     hpBar.appendChild(hpFill)
@@ -337,25 +340,7 @@ export class UIManager {
     const percentage = t * 100
     this.elements.powerBarPath.style.strokeDasharray = `${percentage}, 100`
 
-    let r, g, b
-    if (t < 0.33) {
-      const localT = t / 0.33
-      r = Math.floor(255 * localT)
-      g = 255
-      b = 0
-    } else if (t < 0.66) {
-      const localT = (t - 0.33) / 0.33
-      r = 255
-      g = Math.floor(255 * (1 - localT))
-      b = 0
-    } else {
-      const localT = (t - 0.66) / 0.34
-      r = Math.floor(255 - (75 * localT))
-      g = 0
-      b = Math.floor(255 * localT)
-    }
-
-    this.elements.powerBarPath.setAttribute('stroke', `rgb(${r},${g},${b})`)
+    this.elements.powerBarPath.setAttribute('stroke', this._getGradientColor(t, UI_THEME.hud.powerBarStops))
     this.elements.powerBarContainer.style.display = 'block'
   }
 
@@ -451,6 +436,32 @@ export class UIManager {
     return `rgb(${r}, ${g}, ${b})`
   }
 
+  _getGradientColor(percentage, stops) {
+    if (!Array.isArray(stops) || stops.length === 0) return UI_CONFIG.CHARGE_INDICATOR_COLOR
+
+    if (percentage <= 0) {
+      return `rgb(${stops[0].r}, ${stops[0].g}, ${stops[0].b})`
+    }
+
+    if (percentage >= 1) {
+      const lastStop = stops[stops.length - 1]
+      return `rgb(${lastStop.r}, ${lastStop.g}, ${lastStop.b})`
+    }
+
+    for (let i = 0; i < stops.length - 1; i++) {
+      if (percentage <= stops[i + 1].pos) {
+        const color1 = stops[i]
+        const color2 = stops[i + 1]
+        const range = color2.pos - color1.pos
+        const t = (percentage - color1.pos) / range
+        return this._interpolateColor(t, color1, color2)
+      }
+    }
+
+    const lastStop = stops[stops.length - 1]
+    return `rgb(${lastStop.r}, ${lastStop.g}, ${lastStop.b})`
+  }
+
   /**
    * Get color based on health percentage with smooth gradient
    * Chuyển màu từ XANH DƯƠNG -> VÀNG -> ĐỎ
@@ -458,36 +469,7 @@ export class UIManager {
    * @returns {string} RGB color string
    */
   _getHealthColor(percentage) {
-    const colors = [
-    { pos: 0.0, r: 239, g: 83,  b: 80  }, // Đỏ mềm (không gắt)
-    { pos: 0.5, r: 255, g: 202, b: 40  }, // Vàng ấm
-    { pos: 1.0, r: 102, g: 187, b: 106 }  // Xanh lá dịu
-  ]
-    
-    if (percentage <= 0) {
-      return `rgb(${colors[0].r}, ${colors[0].g}, ${colors[0].b})`
-    }
-    
-    if (percentage >= 1) {
-      return `rgb(${colors[colors.length - 1].r}, ${colors[colors.length - 1].g}, ${colors[colors.length - 1].b})`
-    }
-    
-    // Tìm hai màu để nội suy
-    for (let i = 0; i < colors.length - 1; i++) {
-      if (percentage <= colors[i + 1].pos) {
-        const color1 = colors[i]
-        const color2 = colors[i + 1]
-        
-        // Tính toán hệ số nội suy giữa hai điểm màu
-        const range = color2.pos - color1.pos
-        const t = (percentage - color1.pos) / range
-        
-        return this._interpolateColor(t, color1, color2)
-      }
-    }
-    
-    // Fallback
-    return `rgb(${colors[colors.length - 1].r}, ${colors[colors.length - 1].g}, ${colors[colors.length - 1].b})`
+    return this._getGradientColor(percentage, UI_THEME.hud.healthStops)
   }
 
   /**

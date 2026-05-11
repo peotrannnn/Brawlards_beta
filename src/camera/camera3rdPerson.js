@@ -685,7 +685,7 @@ export class ThirdPersonCameraController {
         }
       }
 
-      this.targetObject.getWorldPosition(this.targetPosition)
+      this._resolveFollowTargetPosition(this.targetObject, this.targetPosition)
       
       const offset = this._tmpOffset.set(0, 0, this.cameraForwardSign)
       offset.applyQuaternion(this.rotation)
@@ -739,6 +739,26 @@ export class ThirdPersonCameraController {
     }
   }
 
+  _resolveFollowTargetPosition(object, target = new THREE.Vector3()) {
+    if (!object) return target.set(0, 0, 0)
+
+    if (this.isPlayerTarget) {
+      const cuePivot = this.cachedCuePivot
+      if (cuePivot?.parent) {
+        cuePivot.getWorldPosition(target)
+        target.y += CAMERA_CONFIG.CAMERA_HEIGHT_OFFSET
+        return target
+      }
+    }
+
+    object.getWorldPosition(target)
+    if (object.userData?.isGuyClone || object.userData?.isDeathClone) {
+      target.y += CAMERA_CONFIG.CAMERA_HEIGHT_OFFSET
+    }
+
+    return target
+  }
+
   focus(object) {
     if (this.targetObject && this.targetObject !== object) {
       this._removeDithering()
@@ -764,18 +784,7 @@ export class ThirdPersonCameraController {
     this.isPlayerTarget = !!this.cachedCuePivot
 
     const targetWorldPos = new THREE.Vector3()
-    
-    if (this.isPlayerTarget) {
-      const cuePivot = this.cachedCuePivot
-      if (cuePivot) {
-        cuePivot.getWorldPosition(targetWorldPos)
-        targetWorldPos.y += CAMERA_CONFIG.CAMERA_HEIGHT_OFFSET
-      } else {
-        object.getWorldPosition(targetWorldPos)
-      }
-    } else {
-      object.getWorldPosition(targetWorldPos)
-    }
+    this._resolveFollowTargetPosition(object, targetWorldPos)
     
     const offset = new THREE.Vector3().subVectors(this.camera.position, targetWorldPos)
     const dist = offset.length()

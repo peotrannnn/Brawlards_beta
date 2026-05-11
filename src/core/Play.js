@@ -1,11 +1,11 @@
 import * as THREE from "three"
 import { sceneAssets } from "../assets/sceneAssets.js"
 import { startSimulationTest } from "./SimulationTest.js"
-import { IT_STYLE } from "../main.js"
 import { preloadCoreAssets } from "../assets/preloadAssets.js"
 import { runWithLoadingOverlay } from "../utils/loadingOverlay.js"
 import { DEFAULT_PLAYER_CUSTOMIZATION, PLAYER_EAR_TYPES, normalizePlayerCustomization } from "../utils/playerCustomization.js"
 import { getPlayerAsset } from "../assets/objects/Player.js"
+import { IT_STYLE, UI_THEME } from "../ui/uiTheme.js"
 
 const PLAYER_CUSTOMIZATION_STORAGE_KEY = "brawlards.playerCustomization"
 const PLAY_CUSTOMIZATION_STYLE_ID = "play-customization-style"
@@ -16,11 +16,119 @@ function ensurePlayCustomizationStyles() {
   const style = document.createElement("style")
   style.id = PLAY_CUSTOMIZATION_STYLE_ID
   style.textContent = `
-    .play-customization-panel {
-      --play-customization-preview-size: 212px;
-      width: min(92vw, 280px);
+    .play-selection-window {
+      display: flex;
+      flex-direction: column;
+      width: fit-content;
       max-width: 92vw;
-      margin-top: 12px;
+      max-height: min(88vh, 760px);
+      background: ${IT_STYLE.colors.darkBg};
+      border: 2px solid ${IT_STYLE.colors.borderBlue};
+      box-shadow: ${UI_THEME.terminal.panelShadow};
+      overflow: hidden;
+      text-align: left;
+    }
+    .play-selection-titlebar {
+      position: relative;
+      display: flex;
+      align-items: stretch;
+      background: ${IT_STYLE.colors.accentBlue};
+      border-bottom: 2px solid ${IT_STYLE.colors.borderBlue};
+      min-height: ${UI_THEME.windowChrome.titleBarHeight};
+    }
+    .play-selection-title {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: ${UI_THEME.windowChrome.titleBarHeight};
+      color: ${UI_THEME.common.white};
+      padding: 0 ${UI_THEME.windowChrome.titleRightPadding} 0 ${UI_THEME.windowChrome.titleLeftPadding};
+      font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+      font-weight: bold;
+      font-size: ${UI_THEME.windowChrome.titleFontSize};
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      text-align: center;
+      text-shadow: ${UI_THEME.terminal.textShadow};
+    }
+    .play-selection-close {
+      position: absolute;
+      top: 0;
+      right: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: ${UI_THEME.windowChrome.closeWidth};
+      min-width: ${UI_THEME.windowChrome.closeWidth};
+      height: 100%;
+      border: none;
+      border-left: 2px solid ${UI_THEME.windowChrome.closeBorder};
+      background: ${UI_THEME.windowChrome.closeBackground};
+      color: ${UI_THEME.windowChrome.closeText};
+      font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+      font-size: ${UI_THEME.windowChrome.closeFontSize};
+      font-weight: bold;
+      line-height: 1;
+      cursor: pointer;
+      text-shadow: ${UI_THEME.terminal.textShadow};
+      box-shadow: ${UI_THEME.windowChrome.closeShadow};
+      transition: box-shadow 0.2s ease, filter 0.2s ease;
+    }
+    .play-selection-close:hover {
+      background: ${UI_THEME.windowChrome.closeBackground};
+      color: ${UI_THEME.windowChrome.closeText};
+      box-shadow: ${UI_THEME.windowChrome.closeHoverShadow};
+      filter: brightness(${UI_THEME.windowChrome.closeHoverBrightness});
+    }
+    .play-selection-close:focus-visible {
+      outline: 2px solid ${IT_STYLE.colors.borderBlue};
+      outline-offset: -2px;
+    }
+    .play-selection-content {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      padding: 12px;
+      align-items: stretch;
+      max-height: calc(min(88vh, 760px) - ${UI_THEME.windowChrome.titleBarHeight});
+      min-height: 0;
+      overflow-y: auto;
+      overflow-x: hidden;
+      scrollbar-width: thin;
+      scrollbar-color: ${UI_THEME.scrollbar.firefoxThumb} ${UI_THEME.scrollbar.firefoxTrack};
+    }
+    .play-selection-content::-webkit-scrollbar {
+      width: ${UI_THEME.scrollbar.width};
+    }
+    .play-selection-content::-webkit-scrollbar-track {
+      background: ${UI_THEME.scrollbar.trackPattern}, ${UI_THEME.scrollbar.trackBackground};
+      border-left: 1px solid ${UI_THEME.scrollbar.trackBorder};
+      box-shadow: ${UI_THEME.scrollbar.trackInset};
+    }
+    .play-selection-content::-webkit-scrollbar-thumb {
+      background: ${UI_THEME.scrollbar.thumbPattern}, ${UI_THEME.scrollbar.thumbBackground};
+      border: 1px solid ${UI_THEME.scrollbar.thumbBorder};
+      box-shadow: ${UI_THEME.scrollbar.thumbShadow};
+      min-height: 34px;
+    }
+    .play-selection-content::-webkit-scrollbar-thumb:hover {
+      background: ${UI_THEME.scrollbar.thumbPattern}, ${UI_THEME.scrollbar.thumbHoverBackground};
+      box-shadow: ${UI_THEME.scrollbar.thumbHoverShadow};
+    }
+    .play-scene-group {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      width: 100%;
+      text-align: center;
+    }
+    .play-customization-panel {
+      --play-customization-preview-size: min(180px, 24vh);
+      width: min(92vw, 248px);
+      max-width: 92vw;
+      max-height: 100%;
+      min-height: 0;
+      margin-top: 0;
       display: flex;
       flex-direction: column;
       align-items: stretch;
@@ -29,13 +137,14 @@ function ensurePlayCustomizationStyles() {
       transition: width 0.24s ease;
     }
     .play-customization-panel--expanded {
-      width: min(92vw, 470px);
+      width: min(92vw, 408px);
     }
     .play-customization-window {
       width: 100%;
+      max-height: 100%;
       background: ${IT_STYLE.colors.darkBg};
-      border: 2px solid ${IT_STYLE.colors.accentBlue};
-      box-shadow: 0 2px 16px #0008;
+      border: 2px solid ${IT_STYLE.colors.borderBlue};
+      box-shadow: ${UI_THEME.play.panelShadow};
       overflow: hidden;
       display: flex;
       flex-direction: column;
@@ -62,24 +171,36 @@ function ensurePlayCustomizationStyles() {
       transition: background-color 0.2s ease, color 0.2s ease, padding-left 0.2s ease, box-shadow 0.2s ease;
     }
     .play-customization-menu-button:hover {
-      background: rgba(0, 102, 255, 0.2);
-      color: #fff;
+      background: ${IT_STYLE.colors.accentGlowSoft};
+      color: ${UI_THEME.common.white};
       padding-left: 28px;
     }
     .play-customization-menu-button--active {
       background: ${IT_STYLE.colors.accentBlue};
-      color: #000;
+      color: ${UI_THEME.common.white};
       font-weight: bold;
       padding-left: 28px;
-      box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.3);
+      box-shadow: ${UI_THEME.terminal.selectedInsetShadow};
     }
-    .play-customization-menu-button--last {
+    .play-customization-menu-button--play {
       border-bottom: none;
+      background: linear-gradient(180deg, ${IT_STYLE.colors.accentBlue}, ${IT_STYLE.colors.borderBlue});
+      color: ${UI_THEME.common.white};
+      font-weight: bold;
+      text-align: left;
+      box-shadow: inset 0 0 12px ${IT_STYLE.colors.accentGlowSoft};
+    }
+    .play-customization-menu-button--play:hover {
+      background: linear-gradient(180deg, ${IT_STYLE.colors.borderBlue}, ${IT_STYLE.colors.accentBlue});
+      color: ${UI_THEME.common.white};
+      padding-left: 28px;
+      filter: brightness(1.05);
     }
     .play-customization-body {
       display: flex;
       flex-direction: column;
       gap: 10px;
+      min-height: 0;
       padding: 12px;
       border-top: 1px solid ${IT_STYLE.colors.borderBlue};
     }
@@ -92,35 +213,37 @@ function ensurePlayCustomizationStyles() {
       padding: 9px 14px;
       border: 2px solid ${IT_STYLE.colors.borderBlue};
       background: linear-gradient(180deg, ${IT_STYLE.colors.accentBlue}, ${IT_STYLE.colors.borderBlue});
-      color: #000;
+      color: ${UI_THEME.common.white};
       font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
       font-weight: bold;
       font-size: 11px;
       letter-spacing: 1px;
       text-transform: uppercase;
       cursor: pointer;
-      box-shadow: 0 0 15px rgba(0, 102, 255, 0.42), inset 0 0 8px rgba(0, 255, 0, 0.16);
+      text-shadow: ${UI_THEME.terminal.textShadow};
+      box-shadow: 0 0 15px ${IT_STYLE.colors.accentGlow}, inset 0 0 8px ${IT_STYLE.colors.accentGlowSoft};
       transition: transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease;
     }
     .play-customization-button:hover {
       transform: translateY(-1px);
-      box-shadow: 0 0 22px rgba(0, 102, 255, 0.58), inset 0 0 12px rgba(0, 255, 0, 0.24);
+      box-shadow: 0 0 22px ${IT_STYLE.colors.accentGlowStrong}, inset 0 0 12px ${IT_STYLE.colors.accentGlowSoft};
       filter: brightness(1.04);
     }
     .play-customization-button--reset {
-      background: linear-gradient(180deg, #c09012, #8b650a);
-      border-color: #6c4f08;
-      color: #111;
-      box-shadow: 0 0 18px rgba(192, 144, 18, 0.3), inset 0 0 10px rgba(255, 239, 184, 0.12);
+      background: ${UI_THEME.settings.resetGradient};
+      border-color: ${UI_THEME.settings.resetBorder};
+      color: ${UI_THEME.settings.resetText};
+      box-shadow: ${UI_THEME.settings.resetShadow};
     }
     .play-customization-button--reset:hover {
-      box-shadow: 0 0 24px rgba(192, 144, 18, 0.42), inset 0 0 12px rgba(255, 239, 184, 0.18);
+      box-shadow: ${UI_THEME.settings.resetHoverShadow};
     }
     .play-customization-content {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) var(--play-customization-preview-size);
+      grid-template-columns: minmax(0, 1fr) minmax(148px, var(--play-customization-preview-size));
       gap: 10px;
       align-items: stretch;
+      min-height: 0;
     }
     .play-customization-column {
       display: flex;
@@ -132,11 +255,27 @@ function ensurePlayCustomizationStyles() {
       height: var(--play-customization-preview-size);
       max-height: var(--play-customization-preview-size);
       overflow-y: auto;
-      scrollbar-width: none;
+      scrollbar-width: thin;
+      scrollbar-color: ${UI_THEME.scrollbar.firefoxThumb} ${UI_THEME.scrollbar.firefoxTrack};
       padding-right: 2px;
     }
     .play-customization-controls-column::-webkit-scrollbar {
-      display: none;
+      width: ${UI_THEME.scrollbar.width};
+    }
+    .play-customization-controls-column::-webkit-scrollbar-track {
+      background: ${UI_THEME.scrollbar.trackPattern}, ${UI_THEME.scrollbar.trackBackground};
+      border-left: 1px solid ${UI_THEME.scrollbar.trackBorder};
+      box-shadow: ${UI_THEME.scrollbar.trackInset};
+    }
+    .play-customization-controls-column::-webkit-scrollbar-thumb {
+      background: ${UI_THEME.scrollbar.thumbPattern}, ${UI_THEME.scrollbar.thumbBackground};
+      border: 1px solid ${UI_THEME.scrollbar.thumbBorder};
+      box-shadow: ${UI_THEME.scrollbar.thumbShadow};
+      min-height: 34px;
+    }
+    .play-customization-controls-column::-webkit-scrollbar-thumb:hover {
+      background: ${UI_THEME.scrollbar.thumbPattern}, ${UI_THEME.scrollbar.thumbHoverBackground};
+      box-shadow: ${UI_THEME.scrollbar.thumbHoverShadow};
     }
     .play-customization-preview-column {
       align-items: center;
@@ -148,9 +287,9 @@ function ensurePlayCustomizationStyles() {
       aspect-ratio: 1;
       position: relative;
       margin: 0 auto;
-      background: radial-gradient(circle at 35% 25%, rgba(30, 75, 150, 0.32), rgba(8, 13, 22, 0.96) 70%);
-      border: 1px solid ${IT_STYLE.colors.accentBlue};
-      box-shadow: 0 0 16px rgba(0, 102, 255, 0.28), inset 0 0 12px rgba(0, 102, 255, 0.14);
+      background: ${UI_THEME.play.previewGradient};
+      border: 1px solid ${IT_STYLE.colors.borderBlue};
+      box-shadow: 0 0 16px ${IT_STYLE.colors.accentGlowSoft}, inset 0 0 12px ${UI_THEME.play.previewInsetGlow};
       overflow: hidden;
     }
     .play-customization-row {
@@ -159,9 +298,9 @@ function ensurePlayCustomizationStyles() {
       align-items: center;
       gap: 6px;
       padding: 8px 10px;
-      background: rgba(0, 15, 38, 0.55);
-      border: 1px solid rgba(0, 102, 255, 0.22);
-      box-shadow: inset 0 0 10px rgba(0, 102, 255, 0.08);
+      background: ${UI_THEME.play.rowBackground};
+      border: 1px solid ${UI_THEME.play.rowBorder};
+      box-shadow: inset 0 0 10px ${UI_THEME.play.rowInsetGlow};
     }
     .play-customization-row-label {
       color: ${IT_STYLE.colors.neonGreen};
@@ -182,13 +321,13 @@ function ensurePlayCustomizationStyles() {
       box-sizing: border-box;
       font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
       font-size: 11px;
-      border: 1px solid ${IT_STYLE.colors.accentBlue};
-      background: #090f18;
-      color: #eaf4ff;
+      border: 1px solid ${IT_STYLE.colors.borderBlue};
+      background: ${UI_THEME.play.inputBackground};
+      color: ${UI_THEME.play.inputText};
       padding: 6px 8px;
       min-height: 30px;
       max-width: 100%;
-      box-shadow: inset 0 0 8px rgba(0, 102, 255, 0.12);
+      box-shadow: inset 0 0 8px ${IT_STYLE.colors.accentGlowSoft};
     }
     .play-customization-color-input {
       width: 58px;
@@ -207,7 +346,7 @@ function ensurePlayCustomizationStyles() {
     }
     @media (max-width: 720px) {
       .play-customization-panel--expanded {
-        width: min(92vw, 400px);
+        width: min(92vw, 360px);
       }
       .play-customization-window {
         width: 100%;
@@ -221,6 +360,17 @@ function ensurePlayCustomizationStyles() {
       }
       .play-customization-preview-column {
         order: -1;
+      }
+    }
+    @media (max-height: 760px) {
+      .play-selection-window {
+        max-height: 92vh;
+      }
+      .play-selection-content {
+        max-height: calc(92vh - ${UI_THEME.windowChrome.titleBarHeight});
+      }
+      .play-customization-panel {
+        --play-customization-preview-size: min(164px, 22vh);
       }
     }
   `
@@ -250,12 +400,14 @@ function saveStoredPlayerCustomization(customization) {
   }
 }
 
-export function startPlay(renderer, onBack) {
+export function startPlay(renderer, onBack, options = {}) {
   document.body.style.margin = "0"
   document.body.style.overflow = "hidden"
   ensurePlayCustomizationStyles()
 
-  // Background overlay (black)
+  const { preserveMenuBackground = false, onStartGameplay = null } = options
+
+  // Background overlay
   const background = document.createElement("div")
   background.id = "playBackground"
   background.style.position = "fixed"
@@ -263,31 +415,16 @@ export function startPlay(renderer, onBack) {
   background.style.left = "0"
   background.style.width = "100%"
   background.style.height = "100%"
-  background.style.backgroundColor = "#111111"
+  background.style.background = preserveMenuBackground ? UI_THEME.menu.overlayGradient : UI_THEME.play.pageBackground
   background.style.zIndex = "99"
+  background.style.pointerEvents = "none"
   document.body.appendChild(background)
 
-  // Clear renderer scene (remove inspector meshes)
-  renderer.clear()
-  renderer.setClearColor(0x111111)
-  renderer.render(new THREE.Scene(), new THREE.Camera())
-
-  // Back button (bottom-right, IT style - dark red)
-  const backButton = document.createElement("button")
-  backButton.id = "playBackButton"
-  backButton.innerText = "Back to Menu"
-  IT_STYLE.applyToElement(backButton, 'backButton')
-  backButton.style.position = "fixed"
-  backButton.style.bottom = "20px"
-  backButton.style.right = "20px"
-  backButton.style.zIndex = "10000"
-
-  backButton.onclick = () => {
-    cleanup()
-    onBack()
+  if (!preserveMenuBackground) {
+    renderer.clear()
+    renderer.setClearColor(0x111111)
+    renderer.render(new THREE.Scene(), new THREE.Camera())
   }
-
-  document.body.appendChild(backButton)
 
   // Scene selection UI (center of screen, fixed position)
   const container = document.createElement("div")
@@ -300,12 +437,35 @@ export function startPlay(renderer, onBack) {
   container.style.zIndex = "1000"
   container.style.display = "flex"
   container.style.flexDirection = "column"
-  container.style.gap = "10px"
-  container.style.textAlign = "center"
+  container.style.alignItems = "center"
   document.body.appendChild(container)
 
+  const selectionWindow = document.createElement("div")
+  selectionWindow.className = "play-selection-window"
+  container.appendChild(selectionWindow)
+
+  const selectionTitleBar = document.createElement("div")
+  selectionTitleBar.className = "play-selection-titlebar"
+  selectionWindow.appendChild(selectionTitleBar)
+
+  const selectionTitle = document.createElement("div")
+  selectionTitle.className = "play-selection-title"
+  selectionTitle.textContent = "Play"
+  selectionTitleBar.appendChild(selectionTitle)
+
+  const closeButton = document.createElement("button")
+  closeButton.type = "button"
+  closeButton.className = "play-selection-close"
+  closeButton.textContent = "X"
+  closeButton.setAttribute("aria-label", "Close play menu")
+  selectionTitleBar.appendChild(closeButton)
+
+  const selectionContent = document.createElement("div")
+  selectionContent.className = "play-selection-content"
+  selectionWindow.appendChild(selectionContent)
+
   // Helper function for labels (IT box style)
-  function createLabel(text, fontSize = "14px", fontWeight = "normal", color = "#ccc", withFrame = true) {
+  function createLabel(text, fontSize = "14px", fontWeight = "normal", color = UI_THEME.play.labelDefault, withFrame = true) {
     const label = document.createElement("div")
     label.textContent = text
     label.style.padding = "10px"
@@ -315,23 +475,21 @@ export function startPlay(renderer, onBack) {
     label.style.color = color
     if (withFrame) {
       label.style.backgroundColor = IT_STYLE.colors.darkBg
-      label.style.border = `1px solid ${IT_STYLE.colors.accentBlue}`
+      label.style.border = `1px solid ${IT_STYLE.colors.borderBlue}`
       label.style.borderRadius = "0px"
-      label.style.boxShadow = `0 0 10px rgba(0, 102, 255, 0.4), inset 0 0 5px rgba(0, 102, 255, 0.2)`
+      label.style.boxShadow = UI_THEME.terminal.compactShadow
     }
     return label
   }
 
   // Scene group
   const sceneGroup = document.createElement("div")
-  sceneGroup.style.display = "flex"
-  sceneGroup.style.flexDirection = "column"
-  sceneGroup.style.gap = "4px"
-  container.appendChild(sceneGroup)
+  sceneGroup.className = "play-scene-group"
+  selectionContent.appendChild(sceneGroup)
 
   // Scene name (green) + description
-  const sceneName = createLabel(sceneAssets[0].name, "13px", "bold", "#0f0", false)
-  const sceneDesc = createLabel(sceneAssets[0].description || "", "12px", "normal", "#ccc", false)
+  const sceneName = createLabel(sceneAssets[0].name, "13px", "bold", UI_THEME.play.labelActive, false)
+  const sceneDesc = createLabel(sceneAssets[0].description || "", "12px", "normal", UI_THEME.play.labelDefault, false)
   let currentSceneIndex = 0
   let playerCustomization = loadStoredPlayerCustomization()
   let isCustomizationOpen = false
@@ -340,7 +498,7 @@ export function startPlay(renderer, onBack) {
 
   const customizationPanel = document.createElement("div")
   customizationPanel.className = "play-customization-panel"
-  sceneGroup.appendChild(customizationPanel)
+  selectionContent.appendChild(customizationPanel)
 
   const customizationWindow = document.createElement("div")
   customizationWindow.className = "play-customization-window"
@@ -355,15 +513,16 @@ export function startPlay(renderer, onBack) {
   customizationToggle.className = "play-customization-menu-button"
   customizationMenu.appendChild(customizationToggle)
 
-  const playGameBtn = document.createElement("button")
-  playGameBtn.innerText = "Start Game"
-  playGameBtn.className = "play-customization-menu-button play-customization-menu-button--last"
-  customizationMenu.appendChild(playGameBtn)
-
   const customizationBody = document.createElement("div")
   customizationBody.className = "play-customization-body"
   customizationBody.style.display = "none"
   customizationWindow.appendChild(customizationBody)
+
+  const playGameBtn = document.createElement("button")
+  playGameBtn.type = "button"
+  playGameBtn.innerText = "Start Game"
+  playGameBtn.className = "play-customization-menu-button play-customization-menu-button--play"
+  customizationWindow.appendChild(playGameBtn)
 
   const customizationContent = document.createElement("div")
   customizationContent.style.display = "grid"
@@ -726,6 +885,11 @@ export function startPlay(renderer, onBack) {
   syncCustomizationUI()
   syncCustomizationVisibility()
 
+  closeButton.onclick = () => {
+    cleanup()
+    onBack()
+  }
+
   playGameBtn.onclick = () => {
     startGameplay(currentSceneIndex)
   }
@@ -754,6 +918,9 @@ export function startPlay(renderer, onBack) {
         async (updateProgress) => {
           await preloadCoreAssets(updateProgress)
 
+          if (typeof onStartGameplay === "function") {
+            onStartGameplay()
+          }
           cleanup()
           return startSimulationTest(renderer, () => {
             // ✨ IMPORTANT: Call cleanup from SimulationTest first, then return to main menu
@@ -785,9 +952,6 @@ export function startPlay(renderer, onBack) {
 
     const bg = document.getElementById("playBackground")
     if (bg) bg.remove()
-
-    const btn = document.getElementById("playBackButton")
-    if (btn) btn.remove()
 
     const cont = document.getElementById("playContainer")
     if (cont) cont.remove()

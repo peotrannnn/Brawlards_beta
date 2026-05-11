@@ -1,3 +1,5 @@
+import { UI_THEME } from './uiTheme.js'
+
 export class GameOverScreen {
   constructor(sceneName, completionTime = 0, onReturn, cameraController) {
     this.sceneName = sceneName
@@ -25,42 +27,42 @@ export class GameOverScreen {
       left: 0;
       width: 100%;
       height: 100%;
-      background: rgba(10, 26, 61, 0.85);
+      background: ${UI_THEME.gameOver.overlayBackground};
       display: flex;
       flex-direction: column;
       justify-content: center;
       align-items: center;
       z-index: 2000;
       opacity: 0;
-      transition: opacity 0.6s ease-in-out;
+      transition: opacity 1s ease-in-out;
       font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
       pointer-events: none;
     `
 
     const menuBox = document.createElement('div')
-    menuBox.style.background = '#0a1a3d'
-    menuBox.style.border = '2px solid #0066FF'
+    menuBox.style.background = UI_THEME.terminal.darkBg
+    menuBox.style.border = `2px solid ${UI_THEME.terminal.borderBlue}`
     menuBox.style.borderRadius = '0'
-    menuBox.style.width = '480px'
+    menuBox.style.width = '432px'
     menuBox.style.maxWidth = '92vw'
-    menuBox.style.boxShadow = '0 2px 16px #0008'
+    menuBox.style.boxShadow = UI_THEME.terminal.panelShadow
     menuBox.style.overflow = 'hidden'
     menuBox.style.display = 'flex'
     menuBox.style.flexDirection = 'column'
     menuBox.style.alignItems = 'stretch'
 
     const titleBar = document.createElement('div')
-    titleBar.textContent = '> DREAM_RESULTS.exe'
-    titleBar.style.background = '#0066FF'
-    titleBar.style.color = '#000'
+    titleBar.textContent = 'DREAM RESULTS'
+    titleBar.style.background = UI_THEME.terminal.accentBlue
+    titleBar.style.color = UI_THEME.common.white
     titleBar.style.padding = '12px 20px'
     titleBar.style.fontWeight = 'bold'
-    titleBar.style.borderBottom = '2px solid #004399'
+    titleBar.style.borderBottom = `2px solid ${UI_THEME.terminal.borderBlue}`
     titleBar.style.fontSize = '14px'
     titleBar.style.letterSpacing = '1px'
-    titleBar.style.textTransform = 'uppercase'
     titleBar.style.fontFamily = "'Consolas', 'Monaco', 'Courier New', monospace"
     titleBar.style.textAlign = 'center'
+    titleBar.style.textShadow = UI_THEME.terminal.textShadow
 
     const contentArea = document.createElement('div')
     contentArea.style.padding = '24px 20px 20px 20px'
@@ -75,8 +77,8 @@ export class GameOverScreen {
     levelItem.style.fontSize = '11px'
     levelItem.style.fontFamily = "'Consolas', 'Monaco', 'Courier New', monospace"
     levelItem.style.fontWeight = 'normal'
-    levelItem.style.backgroundColor = 'transparent'
-    levelItem.style.color = '#888888'
+    levelItem.style.backgroundColor = UI_THEME.common.transparent
+    levelItem.style.color = UI_THEME.gameOver.levelMuted
     levelItem.style.letterSpacing = '0.5px'
     levelItem.style.whiteSpace = 'nowrap'
     levelItem.style.overflowX = 'auto'
@@ -88,7 +90,7 @@ export class GameOverScreen {
     this.statusElement.style.fontSize = '16px'
     this.statusElement.style.fontFamily = "'Consolas', 'Monaco', 'Courier New', monospace"
     this.statusElement.style.fontWeight = 'bold'
-    this.statusElement.style.backgroundColor = 'transparent'
+    this.statusElement.style.backgroundColor = UI_THEME.common.transparent
     this.statusElement.style.letterSpacing = '1px'
     this.statusElement.style.whiteSpace = 'nowrap'
     this.statusElement.style.lineHeight = '1.4'
@@ -99,8 +101,8 @@ export class GameOverScreen {
     this.timeElement.style.textAlign = 'center'
     this.timeElement.style.fontSize = '12px'
     this.timeElement.style.fontFamily = "'Consolas', 'Monaco', 'Courier New', monospace"
-    this.timeElement.style.backgroundColor = 'transparent'
-    this.timeElement.style.color = '#00FF00'
+    this.timeElement.style.backgroundColor = UI_THEME.common.transparent
+    this.timeElement.style.color = UI_THEME.gameOver.timeText
     this.timeElement.style.letterSpacing = '0.5px'
     this.timeElement.style.whiteSpace = 'nowrap'
     contentArea.appendChild(this.timeElement)
@@ -117,25 +119,25 @@ export class GameOverScreen {
     backItem.style.fontWeight = 'normal'
     backItem.style.cursor = 'pointer'
     backItem.style.userSelect = 'none'
-    backItem.style.borderTop = '1px solid #004399'
+    backItem.style.borderTop = `1px solid ${UI_THEME.terminal.borderBlue}`
     backItem.style.transition = 'all 0.2s ease'
-    backItem.style.backgroundColor = 'transparent'
-    backItem.style.color = '#ff4444'
+    backItem.style.backgroundColor = UI_THEME.common.transparent
+    backItem.style.color = UI_THEME.gameOver.backText
     backItem.style.letterSpacing = '0.5px'
     backItem.style.whiteSpace = 'nowrap'
     
     backItem.onmouseenter = () => {
-      backItem.style.backgroundColor = '#0066FF'
-      backItem.style.color = '#000'
+      backItem.style.backgroundColor = UI_THEME.terminal.accentBlue
+      backItem.style.color = UI_THEME.common.white
       backItem.style.fontWeight = 'bold'
       backItem.style.paddingLeft = '28px'
       backItem.style.paddingRight = '28px'
-      backItem.style.boxShadow = 'inset 0 0 10px rgba(0,0,0,0.3)'
+      backItem.style.boxShadow = UI_THEME.terminal.selectedInsetShadow
     }
     
     backItem.onmouseleave = () => {
-      backItem.style.backgroundColor = 'transparent'
-      backItem.style.color = '#ff4444'
+      backItem.style.backgroundColor = UI_THEME.common.transparent
+      backItem.style.color = UI_THEME.gameOver.backText
       backItem.style.fontWeight = 'normal'
       backItem.style.paddingLeft = '20px'
       backItem.style.paddingRight = '20px'
@@ -155,8 +157,8 @@ export class GameOverScreen {
     progressBar.style.cssText = `
       width: 100%;
       height: 6px;
-      background: #001a4d;
-      border-top: 1px solid #0066FF;
+      background: ${UI_THEME.gameOver.progressBackground};
+      border-top: 1px solid ${UI_THEME.terminal.borderBlue};
       position: relative;
       overflow: hidden;
     `
@@ -164,9 +166,9 @@ export class GameOverScreen {
     this.progressFill = document.createElement('div')
     this.progressFill.style.cssText = `
       height: 100%;
-      background: linear-gradient(90deg, #0066FF, #00FF00);
+      background: ${UI_THEME.gameOver.progressGradient};
       width: 100%;
-      box-shadow: 0 0 15px rgba(0, 255, 0, 0.8);
+      box-shadow: ${UI_THEME.gameOver.progressGlow};
       transition: width 0.1s linear;
     `
     progressBar.appendChild(this.progressFill)
@@ -187,13 +189,13 @@ export class GameOverScreen {
     if (this.statusElement) {
       if (this.reason === 'elevator') {
         this.statusElement.textContent = 'YOU ESCAPED THE SIMULATION, AS IT MAY SEEM.'
-        this.statusElement.style.color = '#00FF00'
+        this.statusElement.style.color = UI_THEME.gameOver.defaultStatusText
       } else if (this.reason === 'death') {
         this.statusElement.textContent = 'YOU GOT STUCK IN THE SIMULATION.'
-        this.statusElement.style.color = '#FF4444'
+        this.statusElement.style.color = UI_THEME.gameOver.deathStatusText
       } else {
         this.statusElement.textContent = 'BAD ENDING.'
-        this.statusElement.style.color = '#00FF00'
+        this.statusElement.style.color = UI_THEME.gameOver.defaultStatusText
       }
     }
     

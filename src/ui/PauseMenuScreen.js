@@ -1,3 +1,5 @@
+import { UI_THEME } from './uiTheme.js'
+
 export class PauseMenuScreen {
   constructor(onResume, onSettings, onBackToMenu) {
     this.onResume = onResume || (() => {})
@@ -11,6 +13,12 @@ export class PauseMenuScreen {
   }
 
   _init() {
+    const executeAction = (action) => {
+      if (typeof action !== 'function') return
+      this.hide()
+      action()
+    }
+
     this.container = document.createElement('div')
     this.container.id = 'pauseMenuScreen'
     this.container.style.cssText = `
@@ -19,7 +27,7 @@ export class PauseMenuScreen {
       left: 0;
       width: 100%;
       height: 100%;
-      background: rgba(0, 0, 0, 0.4);
+      background: ${UI_THEME.pauseMenu.overlayBackground};
       backdrop-filter: blur(8px);
       display: flex;
       flex-direction: column;
@@ -34,12 +42,12 @@ export class PauseMenuScreen {
 
     // Menu box - style giống menu chính
     const menuBox = document.createElement('div')
-    menuBox.style.background = '#0a1a3d'
-    menuBox.style.border = '2px solid #0066FF'
+    menuBox.style.background = UI_THEME.terminal.darkBg
+    menuBox.style.border = `2px solid ${UI_THEME.terminal.borderBlue}`
     menuBox.style.borderRadius = '0'
     menuBox.style.width = '280px'
     menuBox.style.maxWidth = '92vw'
-    menuBox.style.boxShadow = '0 2px 16px #0008'
+    menuBox.style.boxShadow = UI_THEME.terminal.panelShadow
     menuBox.style.overflow = 'hidden'
     menuBox.style.display = 'flex'
     menuBox.style.flexDirection = 'column'
@@ -47,30 +55,77 @@ export class PauseMenuScreen {
 
     // Title bar
     const titleBar = document.createElement('div')
-    titleBar.textContent = '> PAUSE_MENU.exe'
-    titleBar.style.background = '#0066FF'
-    titleBar.style.color = '#000'
-    titleBar.style.padding = '12px 20px'
-    titleBar.style.fontWeight = 'bold'
-    titleBar.style.borderBottom = '2px solid #004399'
-    titleBar.style.fontSize = '14px'
-    titleBar.style.letterSpacing = '1px'
-    titleBar.style.textTransform = 'uppercase'
-    titleBar.style.fontFamily = "'Consolas', 'Monaco', 'Courier New', monospace"
-    titleBar.style.textAlign = 'center'
+    titleBar.style.position = 'relative'
+    titleBar.style.display = 'flex'
+    titleBar.style.alignItems = 'stretch'
+    titleBar.style.background = UI_THEME.terminal.accentBlue
+    titleBar.style.minHeight = UI_THEME.windowChrome.titleBarHeight
+    titleBar.style.borderBottom = `2px solid ${UI_THEME.terminal.borderBlue}`
+
+    const titleLabel = document.createElement('div')
+    titleLabel.textContent = 'PAUSE'
+    titleLabel.style.display = 'flex'
+    titleLabel.style.alignItems = 'center'
+    titleLabel.style.justifyContent = 'center'
+    titleLabel.style.minHeight = UI_THEME.windowChrome.titleBarHeight
+    titleLabel.style.padding = `0 ${UI_THEME.windowChrome.titleRightPadding} 0 ${UI_THEME.windowChrome.titleLeftPadding}`
+    titleLabel.style.color = UI_THEME.common.white
+    titleLabel.style.fontWeight = 'bold'
+    titleLabel.style.fontSize = UI_THEME.windowChrome.titleFontSize
+    titleLabel.style.letterSpacing = '1px'
+    titleLabel.style.fontFamily = "'Consolas', 'Monaco', 'Courier New', monospace"
+    titleLabel.style.textAlign = 'center'
+    titleLabel.style.textShadow = UI_THEME.terminal.textShadow
+    titleBar.appendChild(titleLabel)
+
+    const closeButton = document.createElement('button')
+    closeButton.type = 'button'
+    closeButton.textContent = 'X'
+    closeButton.setAttribute('aria-label', 'Resume game')
+    closeButton.style.position = 'absolute'
+    closeButton.style.top = '0'
+    closeButton.style.right = '0'
+    closeButton.style.display = 'flex'
+    closeButton.style.alignItems = 'center'
+    closeButton.style.justifyContent = 'center'
+    closeButton.style.width = UI_THEME.windowChrome.closeWidth
+    closeButton.style.minWidth = UI_THEME.windowChrome.closeWidth
+    closeButton.style.height = '100%'
+    closeButton.style.border = 'none'
+    closeButton.style.borderLeft = `2px solid ${UI_THEME.windowChrome.closeBorder}`
+    closeButton.style.background = UI_THEME.windowChrome.closeBackground
+    closeButton.style.color = UI_THEME.windowChrome.closeText
+    closeButton.style.boxShadow = UI_THEME.windowChrome.closeShadow
+    closeButton.style.fontFamily = "'Consolas', 'Monaco', 'Courier New', monospace"
+    closeButton.style.fontSize = UI_THEME.windowChrome.closeFontSize
+    closeButton.style.fontWeight = 'bold'
+    closeButton.style.lineHeight = '1'
+    closeButton.style.cursor = 'pointer'
+    closeButton.style.textShadow = UI_THEME.terminal.textShadow
+    closeButton.style.transition = 'box-shadow 0.2s ease, filter 0.2s ease'
+    closeButton.onmouseover = () => {
+      closeButton.style.boxShadow = UI_THEME.windowChrome.closeHoverShadow
+      closeButton.style.filter = `brightness(${UI_THEME.windowChrome.closeHoverBrightness})`
+    }
+    closeButton.onmouseout = () => {
+      closeButton.style.boxShadow = UI_THEME.windowChrome.closeShadow
+      closeButton.style.filter = 'none'
+    }
+    closeButton.onclick = () => executeAction(this.onResume)
+    titleBar.appendChild(closeButton)
 
     // Menu list area
     const menuListArea = document.createElement('div')
     menuListArea.style.display = 'flex'
     menuListArea.style.flexDirection = 'column'
     menuListArea.style.gap = '0'
-    menuListArea.style.background = 'transparent'
+    menuListArea.style.background = UI_THEME.common.transparent
     menuListArea.style.padding = '0'
 
     const menuItems = [
-      { label: 'RESUME', action: () => this.onResume(), defaultColor: '#00FF00', selectedColor: '#000', selectedBg: '#0066FF' },
-      { label: 'SETTINGS', action: () => this.onSettings(), defaultColor: '#00FF00', selectedColor: '#000', selectedBg: '#0066FF' },
-      { label: 'BACK TO MENU', action: () => this.onBackToMenu(), defaultColor: '#ff4444', selectedColor: '#000', selectedBg: '#0066FF' },
+      { label: 'RESUME', action: () => this.onResume(), defaultColor: UI_THEME.pauseMenu.resumeText, selectedColor: UI_THEME.pauseMenu.selectedText, selectedBg: UI_THEME.pauseMenu.selectedBackground },
+      { label: 'SETTINGS', action: () => this.onSettings(), defaultColor: UI_THEME.common.textMuted, selectedColor: UI_THEME.pauseMenu.selectedText, selectedBg: UI_THEME.pauseMenu.selectedBackground },
+      { label: 'BACK TO MENU', action: () => this.onBackToMenu(), defaultColor: UI_THEME.pauseMenu.backText, selectedColor: UI_THEME.pauseMenu.selectedText, selectedBg: UI_THEME.pauseMenu.selectedBackground },
     ]
 
     let currentIndex = 0
@@ -86,9 +141,9 @@ export class PauseMenuScreen {
       element.style.fontWeight = 'normal'
       element.style.cursor = 'pointer'
       element.style.userSelect = 'none'
-      element.style.borderBottom = index < menuItems.length - 1 ? '1px solid #004399' : 'none'
+      element.style.borderBottom = index < menuItems.length - 1 ? `1px solid ${UI_THEME.terminal.borderBlue}` : 'none'
       element.style.transition = 'all 0.2s ease'
-      element.style.backgroundColor = 'transparent'
+      element.style.backgroundColor = UI_THEME.common.transparent
       element.style.color = item.defaultColor
       element.style.letterSpacing = '0.5px'
       
@@ -103,9 +158,7 @@ export class PauseMenuScreen {
         e.stopPropagation();
         if (!menuActive) return;
         if (typeof item.action === 'function') {
-          // Hide pause menu immediately before resume
-          this.hide();
-          item.action();
+          executeAction(item.action)
         }
       }
       
@@ -120,9 +173,9 @@ export class PauseMenuScreen {
           element.style.color = item.selectedColor
           element.style.fontWeight = 'bold'
           element.style.paddingLeft = '28px'
-          element.style.boxShadow = 'inset 0 0 10px rgba(0,0,0,0.3)'
+          element.style.boxShadow = UI_THEME.terminal.selectedInsetShadow
         } else {
-          element.style.backgroundColor = 'transparent'
+          element.style.backgroundColor = UI_THEME.common.transparent
           element.style.color = item.defaultColor
           element.style.fontWeight = 'normal'
           element.style.paddingLeft = '20px'
@@ -157,9 +210,7 @@ export class PauseMenuScreen {
         const selectedItem = menuItems[currentIndex];
         if (selectedItem && typeof selectedItem.action === 'function') {
           menuActive = false;
-          // Hide pause menu immediately before resume
-          this.hide();
-          selectedItem.action();
+          executeAction(selectedItem.action)
           setTimeout(() => { menuActive = true }, 100);
         }
       }

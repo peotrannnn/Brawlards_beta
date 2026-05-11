@@ -4,11 +4,29 @@ export const defaultSettings = {
     sfxVolume: 1.0,
     shadows: true,
     quality: 'high',
-    showFPS: false,
     invertY: false,
     mouseSensitivity: 1.0,
     brightness: 1.0,
 };
+
+function normalizeSettings(raw = {}) {
+    const source = raw && typeof raw === 'object' ? raw : {};
+    const safe = {
+        ...defaultSettings,
+        masterVolume: Number.isFinite(source.masterVolume) ? source.masterVolume : defaultSettings.masterVolume,
+        musicVolume: Number.isFinite(source.musicVolume) ? source.musicVolume : defaultSettings.musicVolume,
+        sfxVolume: Number.isFinite(source.sfxVolume) ? source.sfxVolume : defaultSettings.sfxVolume,
+        shadows: 'shadows' in source ? Boolean(source.shadows) : defaultSettings.shadows,
+        invertY: 'invertY' in source ? Boolean(source.invertY) : defaultSettings.invertY,
+        mouseSensitivity: Number.isFinite(source.mouseSensitivity) ? source.mouseSensitivity : defaultSettings.mouseSensitivity,
+        brightness: Number.isFinite(source.brightness) ? source.brightness : defaultSettings.brightness,
+        quality: typeof source.quality === 'string' ? source.quality : defaultSettings.quality,
+    };
+    const quality = typeof safe.quality === 'string' ? safe.quality.toLowerCase() : defaultSettings.quality;
+    safe.quality = ['low', 'medium', 'high'].includes(quality) ? quality : defaultSettings.quality;
+    safe.brightness = Number.isFinite(safe.brightness) ? Math.max(0.6, Math.min(1.4, safe.brightness)) : defaultSettings.brightness;
+    return safe;
+}
 
 class SettingsManager {
     constructor() {
@@ -22,7 +40,7 @@ class SettingsManager {
             const saved = localStorage.getItem('brawlards_settings');
             if (saved) {
                 const parsed = JSON.parse(saved);
-                this.settings = { ...defaultSettings, ...parsed };
+                this.settings = normalizeSettings(parsed);
             }
         } catch (e) {
             console.error('Failed to parse settings', e);
@@ -44,6 +62,7 @@ class SettingsManager {
 
     set(key, value) {
         this.settings[key] = value;
+        this.settings = normalizeSettings(this.settings);
         this.save();
     }
 

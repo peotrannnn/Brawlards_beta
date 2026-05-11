@@ -1,4 +1,4 @@
-import { IT_STYLE } from '../main.js';
+import { IT_STYLE, UI_THEME } from './uiTheme.js';
 import { getGraphicsQualityProfile } from '../core/graphicsQuality.js';
 import { settingsManager } from '../core/SettingsManager.js';
 
@@ -22,38 +22,82 @@ function ensureSettingsScreenStyles() {
                 pointer-events: auto;
             }
             .settings-screen-overlay--menu {
-                background: #000;
+                background: ${UI_THEME.menu.overlayGradient};
                 backdrop-filter: none;
             }
             .settings-screen-overlay--gameplay {
-                background: rgba(0, 0, 0, 0.46);
+                background: ${UI_THEME.settings.gameplayOverlay};
                 backdrop-filter: blur(10px);
             }
             .settings-screen-box {
-                width: min(92vw, 560px);
+                width: min(92vw, 416px);
                 max-height: min(86vh, 760px);
                 display: flex;
                 flex-direction: column;
                 gap: 0;
                 background: ${IT_STYLE.colors.darkBg};
-                border: 2px solid ${IT_STYLE.colors.accentBlue};
+                border: 2px solid ${IT_STYLE.colors.borderBlue};
                 color: ${IT_STYLE.colors.neonGreen};
                 font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
                 font-size: clamp(11px, 0.35vw + 9px, 13px);
                 line-height: 1.6;
-                box-shadow: 0 2px 16px #0008;
+                box-shadow: ${UI_THEME.settings.shellShadow};
                 overflow: hidden;
             }
-            .settings-screen-title {
+            .settings-screen-titlebar {
+                position: relative;
+                display: flex;
+                align-items: stretch;
                 background: ${IT_STYLE.colors.accentBlue};
-                color: #000;
-                padding: 12px 20px;
                 border-bottom: 2px solid ${IT_STYLE.colors.borderBlue};
+                min-height: ${UI_THEME.windowChrome.titleBarHeight};
+            }
+            .settings-screen-title {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                min-height: ${UI_THEME.windowChrome.titleBarHeight};
+                color: ${UI_THEME.common.white};
+                padding: 0 ${UI_THEME.windowChrome.titleRightPadding} 0 ${UI_THEME.windowChrome.titleLeftPadding};
                 font-weight: bold;
-                font-size: 14px;
+                font-size: ${UI_THEME.windowChrome.titleFontSize};
                 letter-spacing: 1px;
                 text-transform: uppercase;
                 text-align: center;
+                text-shadow: ${UI_THEME.terminal.textShadow};
+            }
+            .settings-screen-close {
+                position: absolute;
+                top: 0;
+                right: 0;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                width: ${UI_THEME.windowChrome.closeWidth};
+                min-width: ${UI_THEME.windowChrome.closeWidth};
+                height: 100%;
+                border: none;
+                border-left: 2px solid ${UI_THEME.windowChrome.closeBorder};
+                background: ${UI_THEME.windowChrome.closeBackground};
+                color: ${UI_THEME.windowChrome.closeText};
+                font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+                font-size: ${UI_THEME.windowChrome.closeFontSize};
+                font-weight: bold;
+                line-height: 1;
+                cursor: pointer;
+                text-shadow: ${UI_THEME.terminal.textShadow};
+                box-shadow: ${UI_THEME.windowChrome.closeShadow};
+                transition: box-shadow 0.2s ease, filter 0.2s ease;
+            }
+            .settings-screen-close:hover {
+                background: ${UI_THEME.windowChrome.closeBackground};
+                color: ${UI_THEME.windowChrome.closeText};
+                box-shadow: ${UI_THEME.windowChrome.closeHoverShadow};
+                filter: brightness(${UI_THEME.windowChrome.closeHoverBrightness});
+            }
+            .settings-screen-close:focus-visible {
+                outline: 2px solid ${IT_STYLE.colors.borderBlue};
+                outline-offset: -2px;
             }
             .settings-screen-content {
                 display: flex;
@@ -62,14 +106,30 @@ function ensureSettingsScreenStyles() {
                 max-height: min(64vh, 560px);
                 overflow-y: auto;
                 padding: 14px;
-                scrollbar-width: none;
+                scrollbar-width: thin;
+                scrollbar-color: ${UI_THEME.scrollbar.firefoxThumb} ${UI_THEME.scrollbar.firefoxTrack};
             }
             .settings-screen-content::-webkit-scrollbar {
-                display: none;
+                width: ${UI_THEME.scrollbar.width};
+            }
+            .settings-screen-content::-webkit-scrollbar-track {
+                background: ${UI_THEME.scrollbar.trackPattern}, ${UI_THEME.scrollbar.trackBackground};
+                border-left: 1px solid ${UI_THEME.scrollbar.trackBorder};
+                box-shadow: ${UI_THEME.scrollbar.trackInset};
+            }
+            .settings-screen-content::-webkit-scrollbar-thumb {
+                background: ${UI_THEME.scrollbar.thumbPattern}, ${UI_THEME.scrollbar.thumbBackground};
+                border: 1px solid ${UI_THEME.scrollbar.thumbBorder};
+                box-shadow: ${UI_THEME.scrollbar.thumbShadow};
+                min-height: 34px;
+            }
+            .settings-screen-content::-webkit-scrollbar-thumb:hover {
+                background: ${UI_THEME.scrollbar.thumbPattern}, ${UI_THEME.scrollbar.thumbHoverBackground};
+                box-shadow: ${UI_THEME.scrollbar.thumbHoverShadow};
             }
             .settings-section-header {
                 background: ${IT_STYLE.colors.accentBlue};
-                color: #000;
+                color: ${UI_THEME.common.white};
                 padding: 6px 12px;
                 font-weight: bold;
                 font-size: 11px;
@@ -78,15 +138,16 @@ function ensureSettingsScreenStyles() {
                 text-align: left;
                 border-bottom: 2px solid ${IT_STYLE.colors.borderBlue};
                 margin-top: 6px;
+                text-shadow: ${UI_THEME.terminal.textShadow};
             }
             .settings-control-card {
                 display: flex;
                 flex-direction: column;
                 gap: 10px;
                 padding: 10px 12px;
-                background: rgba(0, 15, 38, 0.5);
+                background: ${UI_THEME.settings.controlCardBackground};
                 border: 1px solid ${IT_STYLE.colors.borderBlue};
-                box-shadow: inset 0 0 8px rgba(0, 102, 255, 0.08);
+                box-shadow: inset 0 0 8px ${IT_STYLE.colors.accentGlowSoft};
                 min-width: 0;
             }
             .settings-control-card--inline {
@@ -94,6 +155,7 @@ function ensureSettingsScreenStyles() {
                 justify-content: space-between;
                 align-items: center;
                 gap: 16px;
+                flex-wrap: wrap;
             }
             .settings-control-row {
                 display: flex;
@@ -109,6 +171,7 @@ function ensureSettingsScreenStyles() {
                 text-transform: uppercase;
                 text-align: left;
                 flex: 1 1 auto;
+                overflow-wrap: anywhere;
                 min-width: 0;
             }
             .settings-value-badge {
@@ -118,12 +181,12 @@ function ensureSettingsScreenStyles() {
                 min-width: clamp(58px, 10vw, 76px);
                 padding: 4px 9px;
                 border: 1px solid ${IT_STYLE.colors.borderBlue};
-                background: rgba(0, 26, 77, 0.82);
-                color: #fff;
-                box-shadow: inset 0 0 8px rgba(0, 102, 255, 0.12);
+                background: ${UI_THEME.settings.valueBadgeBackground};
+                color: ${UI_THEME.common.white};
+                box-shadow: inset 0 0 8px ${IT_STYLE.colors.accentGlowSoft};
             }
             .settings-value-text {
-                color: #fff;
+                color: ${UI_THEME.common.white};
                 font-weight: bold;
                 text-align: right;
             }
@@ -134,14 +197,14 @@ function ensureSettingsScreenStyles() {
                 background: ${IT_STYLE.colors.darkAccent};
                 border-top: 1px solid ${IT_STYLE.colors.accentBlue};
                 overflow: hidden;
-                box-shadow: inset 0 0 12px rgba(0, 0, 0, 0.45);
+                box-shadow: ${UI_THEME.settings.sliderInsetShadow};
             }
             .settings-slider-fill {
                 position: absolute;
                 inset: 0 auto 0 0;
                 width: 0%;
-                background: linear-gradient(90deg, ${IT_STYLE.colors.accentBlue}, ${IT_STYLE.colors.neonGreen});
-                box-shadow: 0 0 15px rgba(0, 255, 0, 0.8);
+                background: linear-gradient(90deg, ${IT_STYLE.colors.accentBlue}, ${IT_STYLE.colors.borderBlue});
+                box-shadow: 0 0 15px ${IT_STYLE.colors.accentGlowStrong};
                 pointer-events: none;
             }
             .settings-slider-input {
@@ -168,9 +231,9 @@ function ensureSettingsScreenStyles() {
                 width: clamp(14px, 1.9vw, 16px);
                 height: clamp(14px, 1.9vw, 16px);
                 margin-top: 0;
-                border: 1px solid #0b1322;
-                background: #d7f6ff;
-                box-shadow: 0 0 0 2px rgba(0, 102, 255, 0.4), 0 0 10px rgba(0, 255, 0, 0.45);
+                border: 1px solid ${UI_THEME.settings.sliderThumbBorder};
+                background: ${UI_THEME.settings.sliderThumbBackground};
+                box-shadow: 0 0 0 2px ${IT_STYLE.colors.accentGlowSoft}, 0 0 10px ${IT_STYLE.colors.accentGlow};
             }
             .settings-slider-input::-moz-range-track {
                 height: clamp(12px, 1.7vw, 14px);
@@ -184,10 +247,10 @@ function ensureSettingsScreenStyles() {
             .settings-slider-input::-moz-range-thumb {
                 width: clamp(14px, 1.9vw, 16px);
                 height: clamp(14px, 1.9vw, 16px);
-                border: 1px solid #0b1322;
+                border: 1px solid ${UI_THEME.settings.sliderThumbBorder};
                 border-radius: 0;
-                background: #d7f6ff;
-                box-shadow: 0 0 0 2px rgba(0, 102, 255, 0.4), 0 0 10px rgba(0, 255, 0, 0.45);
+                background: ${UI_THEME.settings.sliderThumbBackground};
+                box-shadow: 0 0 0 2px ${IT_STYLE.colors.accentGlowSoft}, 0 0 10px ${IT_STYLE.colors.accentGlow};
             }
             .settings-checkbox-input {
                 width: clamp(17px, 2vw, 20px);
@@ -198,10 +261,10 @@ function ensureSettingsScreenStyles() {
             }
             .settings-select {
                 flex: 0 1 auto;
-                min-width: 132px;
+                min-width: 148px;
                 max-width: 100%;
                 background: ${IT_STYLE.colors.darkBg};
-                color: #fff;
+                color: ${UI_THEME.common.white};
                 border: 1px solid ${IT_STYLE.colors.borderBlue};
                 padding: 8px 10px;
                 font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
@@ -209,7 +272,7 @@ function ensureSettingsScreenStyles() {
                 letter-spacing: 0.05em;
                 cursor: pointer;
                 outline: none;
-                box-shadow: inset 0 0 8px rgba(0, 102, 255, 0.12);
+                box-shadow: ${UI_THEME.settings.selectInsetShadow};
             }
             .settings-action-group {
                 display: flex;
@@ -227,29 +290,30 @@ function ensureSettingsScreenStyles() {
                 padding: 9px 14px;
                 border: 2px solid ${IT_STYLE.colors.borderBlue};
                 background: linear-gradient(180deg, ${IT_STYLE.colors.accentBlue}, ${IT_STYLE.colors.borderBlue});
-                color: #000;
+                color: ${UI_THEME.common.white};
                 font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
                 font-weight: bold;
                 font-size: 11px;
                 letter-spacing: 1px;
                 text-transform: uppercase;
                 cursor: pointer;
-                box-shadow: 0 0 15px rgba(0, 102, 255, 0.42), inset 0 0 8px rgba(0, 255, 0, 0.16);
+                text-shadow: ${UI_THEME.terminal.textShadow};
+                box-shadow: 0 0 15px ${IT_STYLE.colors.accentGlow}, inset 0 0 8px ${IT_STYLE.colors.accentGlowSoft};
                 transition: transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease;
             }
             .settings-action-button:hover {
                 transform: translateY(-1px);
-                box-shadow: 0 0 22px rgba(0, 102, 255, 0.58), inset 0 0 12px rgba(0, 255, 0, 0.24);
+                box-shadow: 0 0 22px ${IT_STYLE.colors.accentGlowStrong}, inset 0 0 12px ${IT_STYLE.colors.accentGlowSoft};
                 filter: brightness(1.04);
             }
             .settings-action-button--reset {
-                background: linear-gradient(180deg, #c09012, #8b650a);
-                border-color: #6c4f08;
-                color: #111;
-                box-shadow: 0 0 18px rgba(192, 144, 18, 0.3), inset 0 0 10px rgba(255, 239, 184, 0.12);
+                background: ${UI_THEME.settings.resetGradient};
+                border-color: ${UI_THEME.settings.resetBorder};
+                color: ${UI_THEME.settings.resetText};
+                box-shadow: ${UI_THEME.settings.resetShadow};
             }
             .settings-action-button--reset:hover {
-                box-shadow: 0 0 24px rgba(192, 144, 18, 0.42), inset 0 0 12px rgba(255, 239, 184, 0.18);
+                box-shadow: ${UI_THEME.settings.resetHoverShadow};
             }
             .settings-notice-popup {
                 position: fixed;
@@ -258,12 +322,12 @@ function ensureSettingsScreenStyles() {
                 max-width: min(76vw, 420px);
                 padding: 0;
                 background: ${IT_STYLE.colors.darkBg};
-                border: 2px solid ${IT_STYLE.colors.accentBlue};
+                border: 2px solid ${IT_STYLE.colors.borderBlue};
                 color: ${IT_STYLE.colors.neonGreen};
                 font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
                 font-size: clamp(10px, 0.45vw + 8px, 12px);
                 line-height: 1.6;
-                box-shadow: 0 0 20px rgba(0, 102, 255, 0.6), inset 0 0 10px rgba(0, 102, 255, 0.3);
+                box-shadow: 0 0 20px ${IT_STYLE.colors.accentGlow}, inset 0 0 10px ${IT_STYLE.colors.accentGlowSoft};
                 overflow: hidden;
                 z-index: 30000;
                 pointer-events: none;
@@ -273,12 +337,13 @@ function ensureSettingsScreenStyles() {
                 content: '> SYSTEM NOTICE';
                 display: block;
                 background: ${IT_STYLE.colors.accentBlue};
-                color: #000;
+                color: ${UI_THEME.common.white};
                 padding: 6px 12px;
                 border-bottom: 2px solid ${IT_STYLE.colors.borderBlue};
                 font-weight: bold;
                 letter-spacing: 0.1em;
                 text-transform: uppercase;
+                text-shadow: ${UI_THEME.terminal.textShadow};
             }
             .settings-notice-popup__body {
                 padding: 12px;
@@ -293,7 +358,7 @@ function ensureSettingsScreenStyles() {
             }
             @media (max-width: 640px) {
                 .settings-screen-box {
-                    width: min(94vw, 560px);
+                    width: min(94vw, 416px);
                 }
                 .settings-screen-content {
                     max-height: min(60vh, 500px);
@@ -327,10 +392,22 @@ export function createSettingsScreen(onBack, isGameplayMode = false) {
     const settingsBox = document.createElement('div');
     settingsBox.className = 'settings-screen-box';
 
+    const titleBar = document.createElement('div');
+    titleBar.className = 'settings-screen-titlebar';
+
     const title = document.createElement('div');
-    title.textContent = '> SETTINGS.exe';
+    title.textContent = 'Settings';
     title.className = 'settings-screen-title';
-    settingsBox.appendChild(title);
+
+    const closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.textContent = 'X';
+    closeBtn.className = 'settings-screen-close';
+    closeBtn.setAttribute('aria-label', 'Close settings');
+
+    titleBar.appendChild(title);
+    titleBar.appendChild(closeBtn);
+    settingsBox.appendChild(titleBar);
 
     const contentArea = document.createElement('div');
     contentArea.className = 'settings-screen-content';
@@ -468,7 +545,6 @@ export function createSettingsScreen(onBack, isGameplayMode = false) {
     ]));
     contentArea.appendChild(createCheckbox('Shadows', 'shadows'));
     contentArea.appendChild(createSlider('Brightness', 'brightness', 0.2, 2.0, 0.1));
-    contentArea.appendChild(createCheckbox('Show FPS', 'showFPS'));
 
     // 3. CONTROLS
     contentArea.appendChild(createHeader('CONTROLS'));
@@ -504,11 +580,6 @@ export function createSettingsScreen(onBack, isGameplayMode = false) {
     };
     actionGroup.appendChild(resetBtn);
 
-    // Back button
-    const backBtn = document.createElement('button');
-    backBtn.textContent = 'BACK TO MENU';
-    backBtn.className = 'settings-action-button';
-
     const closeSettings = () => {
         window.removeEventListener('keydown', handleEsc);
         container.remove();
@@ -523,11 +594,10 @@ export function createSettingsScreen(onBack, isGameplayMode = false) {
     };
     window.addEventListener('keydown', handleEsc);
 
-    backBtn.onclick = () => {
+    closeBtn.onclick = () => {
         closeSettings();
     };
 
-    actionGroup.appendChild(backBtn);
     settingsBox.appendChild(actionGroup);
     container.appendChild(settingsBox);
     document.body.appendChild(container);

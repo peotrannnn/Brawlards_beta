@@ -19,55 +19,21 @@ import { getLightStickAsset } from "../assets/items/lightStick.js"
 import { getLightStickOffAsset } from "../assets/items/lightStickOff.js"
 import { getSilverCoinAsset } from "../assets/items/silverCoin.js"
 import { getM4A1Asset } from "../assets/items/M4A1.js"
-
-// ==================== CONFIGURATION ====================
-const IT_STYLE = {
-  colors: {
-    darkBg: '#0a1a3d',
-    accentBlue: '#0066FF',
-    neonGreen: '#00FF00',
-    darkAccent: '#001a4d',
-    borderBlue: '#004399'
-  }
-}
+import { UI_THEME } from "../ui/uiTheme.js"
 
 // ==================== MAIN EXPORT ====================
-export function createInspector(renderer, onBack) {
+export function createInspector(onBack) {
   document.body.style.margin = "0"
   document.body.style.overflow = "hidden"
 
-  // Back button
-  const backButton = document.createElement("button")
-  backButton.id = "inspectorBackButton"
-  backButton.innerText = "Back to Menu"
-  backButton.style.cssText = `
-    position: fixed; bottom: 20px; right: 20px; z-index: 10000;
-    background: #8b0000; color: #fff; border: 2px solid #5a0000;
-    border-radius: 0; padding: 8px 16px;
-    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-    font-weight: bold; font-size: 10px; letter-spacing: 1px;
-    text-transform: uppercase; cursor: pointer;
-    box-shadow: 0 0 12px rgba(255, 0, 0, 0.4), inset 0 0 6px rgba(255, 0, 0, 0.2);
-    transition: all 0.3s ease;
-  `
-  backButton.onmouseover = () => {
-    backButton.style.boxShadow = `0 0 20px rgba(255, 0, 0, 0.6), inset 0 0 10px rgba(255, 0, 0, 0.3)`
-    backButton.style.transform = 'scale(1.05)'
-  }
-  backButton.onmouseout = () => {
-    backButton.style.boxShadow = `0 0 12px rgba(255, 0, 0, 0.4), inset 0 0 6px rgba(255, 0, 0, 0.2)`
-    backButton.style.transform = 'scale(1)'
-  }
-  backButton.onclick = () => onBack()
-  document.body.appendChild(backButton)
+  const previewRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
+  previewRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5))
+  previewRenderer.shadowMap.enabled = true
+  previewRenderer.shadowMap.type = THREE.PCFShadowMap
 
   // Scene setup
   const scene = new THREE.Scene()
   scene.background = new THREE.Color(0x111111)
-  renderer.setSize(window.innerWidth, window.innerHeight)
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5))
-  renderer.shadowMap.enabled = true
-  renderer.shadowMap.type = THREE.PCFShadowMap
 
   // Camera
   const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 1000)
@@ -203,7 +169,7 @@ export function createInspector(renderer, onBack) {
   }
 
   // ==================== ASSETS ====================
-  const ballAssets = getBallAssets(renderer)
+  const ballAssets = getBallAssets(previewRenderer)
   const objectAssets = [
     getBilliardTableAsset(),
     getPlayerAsset(),
@@ -231,10 +197,43 @@ export function createInspector(renderer, onBack) {
   ]
 
   let currentObject = null
-  let currentLightingController = null
+
+  function styleCycleButton(button) {
+    button.style.cssText = `
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 0;
+      padding: 8px 12px;
+      border: 2px solid ${UI_THEME.terminal.borderBlue};
+      background: linear-gradient(180deg, ${UI_THEME.terminal.accentBlue}, ${UI_THEME.terminal.borderBlue});
+      color: ${UI_THEME.common.white};
+      font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+      font-weight: bold;
+      font-size: 11px;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      cursor: pointer;
+      text-shadow: ${UI_THEME.terminal.textShadow};
+      box-shadow: ${UI_THEME.terminal.buttonShadow};
+      transition: transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease;
+    `
+    button.onmouseover = () => {
+      button.style.transform = 'translateY(-1px)'
+      button.style.boxShadow = UI_THEME.terminal.buttonHoverShadow
+      button.style.filter = 'brightness(1.04)'
+    }
+    button.onmouseout = () => {
+      button.style.transform = 'translateY(0)'
+      button.style.boxShadow = UI_THEME.terminal.buttonShadow
+      button.style.filter = 'none'
+    }
+  }
 
   function spawnObjectAsset(asset) {
-    if (currentLightingController) currentLightingController = null
+    if (currentObject && typeof currentObject.userData?.cleanup === "function") {
+      currentObject.userData.cleanup()
+    }
     if (currentObject) scene.remove(currentObject)
     setupDefaultLighting()
     currentObject = asset.factory()
@@ -249,83 +248,282 @@ export function createInspector(renderer, onBack) {
   const container = document.createElement("div")
   container.classList.add("page-ui")
   container.style.cssText = `
-    position: absolute; bottom: 80px; left: 50%; transform: translateX(-50%);
-    z-index: 1000; display: flex; flex-direction: column; gap: 10px;
-    text-align: center;
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: clamp(14px, 3vw, 28px);
+    box-sizing: border-box;
+    background: ${UI_THEME.menu.overlayGradient};
   `
   document.body.appendChild(container)
 
-  const objectGroup = document.createElement("div")
-  objectGroup.style.cssText = `display: flex; flex-direction: column; gap: 4px;`
-  container.appendChild(objectGroup)
+  const inspectorWindow = document.createElement("div")
+  inspectorWindow.style.cssText = `
+    width: min(92vw, 620px);
+    max-width: 620px;
+    max-height: min(88vh, 760px);
+    background: ${UI_THEME.terminal.darkBg};
+    border: 2px solid ${UI_THEME.terminal.borderBlue};
+    box-shadow: ${UI_THEME.terminal.panelShadow};
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  `
+  container.appendChild(inspectorWindow)
 
-  const objectLabel = document.createElement("label")
-  objectLabel.textContent = "[OBJECT] ← → to cycle"
-  Object.assign(objectLabel.style, {
-    fontSize: "11px", color: "#888", fontWeight: "normal",
-    fontFamily: "monospace", letterSpacing: "0.5px"
-  })
-  objectGroup.appendChild(objectLabel)
+  const titleBar = document.createElement("div")
+  titleBar.style.cssText = `
+    position: relative;
+    display: flex;
+    align-items: stretch;
+    background: ${UI_THEME.terminal.accentBlue};
+    border-bottom: 2px solid ${UI_THEME.terminal.borderBlue};
+    min-height: ${UI_THEME.windowChrome.titleBarHeight};
+  `
+  inspectorWindow.appendChild(titleBar)
+
+  const title = document.createElement("div")
+  title.textContent = "Objects"
+  title.style.cssText = `
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: ${UI_THEME.windowChrome.titleBarHeight};
+    color: ${UI_THEME.common.white};
+    padding: 0 ${UI_THEME.windowChrome.titleRightPadding} 0 ${UI_THEME.windowChrome.titleLeftPadding};
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    font-weight: bold;
+    font-size: ${UI_THEME.windowChrome.titleFontSize};
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    text-align: center;
+    text-shadow: ${UI_THEME.terminal.textShadow};
+  `
+  titleBar.appendChild(title)
+
+  const closeButton = document.createElement("button")
+  closeButton.type = "button"
+  closeButton.textContent = "X"
+  closeButton.setAttribute("aria-label", "Close inspector")
+  closeButton.style.cssText = `
+    position: absolute;
+    top: 0;
+    right: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: ${UI_THEME.windowChrome.closeWidth};
+    min-width: ${UI_THEME.windowChrome.closeWidth};
+    height: 100%;
+    border: none;
+    border-left: 2px solid ${UI_THEME.windowChrome.closeBorder};
+    background: ${UI_THEME.windowChrome.closeBackground};
+    color: ${UI_THEME.windowChrome.closeText};
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    font-size: ${UI_THEME.windowChrome.closeFontSize};
+    font-weight: bold;
+    line-height: 1;
+    cursor: pointer;
+    text-shadow: ${UI_THEME.terminal.textShadow};
+    box-shadow: ${UI_THEME.windowChrome.closeShadow};
+    transition: box-shadow 0.2s ease, filter 0.2s ease;
+  `
+  closeButton.onmouseover = () => {
+    closeButton.style.background = UI_THEME.windowChrome.closeBackground
+    closeButton.style.color = UI_THEME.windowChrome.closeText
+    closeButton.style.boxShadow = UI_THEME.windowChrome.closeHoverShadow
+    closeButton.style.filter = `brightness(${UI_THEME.windowChrome.closeHoverBrightness})`
+  }
+  closeButton.onmouseout = () => {
+    closeButton.style.background = UI_THEME.windowChrome.closeBackground
+    closeButton.style.color = UI_THEME.windowChrome.closeText
+    closeButton.style.boxShadow = UI_THEME.windowChrome.closeShadow
+    closeButton.style.filter = 'none'
+  }
+  closeButton.onclick = () => onBack()
+  titleBar.appendChild(closeButton)
+
+  const windowBody = document.createElement("div")
+  windowBody.style.cssText = `
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 14px;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    scrollbar-width: none;
+  `
+  inspectorWindow.appendChild(windowBody)
+
+  const previewFrame = document.createElement("div")
+  previewFrame.style.cssText = `
+    position: relative;
+    width: 100%;
+    min-height: 140px;
+    height: min(42vh, 360px);
+    background: ${UI_THEME.play.previewGradient};
+    border: 1px solid ${UI_THEME.play.rowBorder};
+    box-shadow: inset 0 0 16px ${UI_THEME.play.previewInsetGlow};
+    overflow: hidden;
+    flex: 0 0 auto;
+  `
+  windowBody.appendChild(previewFrame)
+
+  const previewMount = document.createElement("div")
+  previewMount.style.cssText = `position: absolute; inset: 0; pointer-events: none;`
+  previewFrame.appendChild(previewMount)
+
+  previewRenderer.domElement.style.display = 'block'
+  previewRenderer.domElement.style.width = '100%'
+  previewRenderer.domElement.style.height = '100%'
+  previewMount.appendChild(previewRenderer.domElement)
+
+  const objectGroup = document.createElement("div")
+  objectGroup.style.cssText = `display: flex; flex-direction: column; gap: 10px; text-align: left; width: 100%;`
+  windowBody.appendChild(objectGroup)
+
+  const objectInfoCard = document.createElement("div")
+  objectInfoCard.style.cssText = `
+    width: 100%;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 10px 12px;
+    background: ${UI_THEME.play.rowBackground};
+    border: 1px solid ${UI_THEME.play.rowBorder};
+    box-shadow: inset 0 0 10px ${UI_THEME.play.rowInsetGlow};
+  `
+  objectGroup.appendChild(objectInfoCard)
 
   const objectName = document.createElement("div")
-  objectName.style.cssText = `padding: 6px 10px; font-size: 13px; font-weight: bold;
-    background: transparent; color: #0f0; border: none; font-family: monospace;`
-  objectGroup.appendChild(objectName)
+  objectName.style.cssText = `padding: 0; font-size: 13px; font-weight: bold;
+    background: transparent; color: ${UI_THEME.common.success}; border: none; box-shadow: none; font-family: monospace;`
+  objectInfoCard.appendChild(objectName)
 
   const objectDesc = document.createElement("div")
-  objectDesc.style.cssText = `padding: 6px 10px; font-size: 12px; font-weight: normal;
-    background: transparent; color: #ccc; border: none; font-family: monospace;`
-  objectGroup.appendChild(objectDesc)
+  objectDesc.style.cssText = `padding: 0; font-size: 12px; font-weight: normal;
+    background: transparent; color: ${UI_THEME.common.textSubtle}; border: none; box-shadow: none; font-family: monospace; line-height: 1.55; white-space: normal; overflow-wrap: anywhere;`
+  objectInfoCard.appendChild(objectDesc)
+
+  const cycleControls = document.createElement("div")
+  cycleControls.style.cssText = `
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    justify-content: center;
+    width: 100%;
+  `
+  objectGroup.appendChild(cycleControls)
+
+  const prevButton = document.createElement("button")
+  prevButton.type = "button"
+  prevButton.textContent = "<"
+  prevButton.setAttribute("aria-label", "Show previous object")
+  styleCycleButton(prevButton)
+  cycleControls.appendChild(prevButton)
+
+  const nextButton = document.createElement("button")
+  nextButton.type = "button"
+  nextButton.textContent = ">"
+  nextButton.setAttribute("aria-label", "Show next object")
+  styleCycleButton(nextButton)
+  cycleControls.appendChild(nextButton)
 
   let currentObjectIndex = 0
 
-  // Set initial UI values
-  const firstAsset = objectAssets[0]
-  objectName.textContent = firstAsset.name
-  objectDesc.textContent = firstAsset.description || ""
+  function syncInspectorLayout() {
+    const bodyStyles = window.getComputedStyle(windowBody)
+    const titleHeight = titleBar.getBoundingClientRect().height || parseFloat(UI_THEME.windowChrome.titleBarHeight) || 42
+    const paddingTop = parseFloat(bodyStyles.paddingTop) || 0
+    const paddingBottom = parseFloat(bodyStyles.paddingBottom) || 0
+    const paddingLeft = parseFloat(bodyStyles.paddingLeft) || 0
+    const paddingRight = parseFloat(bodyStyles.paddingRight) || 0
+    const gap = parseFloat(bodyStyles.rowGap || bodyStyles.gap) || 0
+    const viewportWidth = window.innerWidth
+    const viewportHeight = window.innerHeight
+    const maxWindowWidth = Math.max(280, Math.min(620, viewportWidth - 32))
+    const maxWindowHeight = Math.max(320, Math.min(760, viewportHeight - 32))
 
-  window.addEventListener("keydown", (event) => {
-    if (document.activeElement !== document.body) return
+    inspectorWindow.style.width = `${maxWindowWidth}px`
+    inspectorWindow.style.maxHeight = `${maxWindowHeight}px`
+
+    const objectGroupHeight = objectGroup.getBoundingClientRect().height || 0
+    const availableFrameWidth = Math.max(220, maxWindowWidth - paddingLeft - paddingRight - 4)
+    const availableFrameHeight = Math.max(140, maxWindowHeight - titleHeight - paddingTop - paddingBottom - objectGroupHeight - gap - 4)
+    const aspectRatio = 1.22
+    const frameHeight = Math.max(140, Math.min(availableFrameHeight, availableFrameWidth / aspectRatio))
+
+    previewFrame.style.height = `${Math.round(frameHeight)}px`
+  }
+
+  function showObjectAtIndex(index) {
+    currentObjectIndex = (index + objectAssets.length) % objectAssets.length
+    const asset = objectAssets[currentObjectIndex]
+    objectName.textContent = asset.name
+    objectDesc.textContent = asset.description || ""
+    spawnObjectAsset(asset)
+    syncInspectorLayout()
+    resizePreviewRenderer()
+  }
+
+  function stepObject(direction) {
+    showObjectAtIndex(currentObjectIndex + direction)
+  }
+
+  const handleKeyDown = (event) => {
     if (event.code === "ArrowLeft") {
       event.preventDefault()
-      currentObjectIndex = (currentObjectIndex - 1 + objectAssets.length) % objectAssets.length
-      const asset = objectAssets[currentObjectIndex]
-      objectName.textContent = asset.name
-      objectDesc.textContent = asset.description || ""
-      spawnObjectAsset(asset)
+      stepObject(-1)
     } else if (event.code === "ArrowRight") {
       event.preventDefault()
-      currentObjectIndex = (currentObjectIndex + 1) % objectAssets.length
-      const asset = objectAssets[currentObjectIndex]
-      objectName.textContent = asset.name
-      objectDesc.textContent = asset.description || ""
-      spawnObjectAsset(asset)
+      stepObject(1)
     }
-  })
+  }
+  window.addEventListener("keydown", handleKeyDown)
 
-  spawnObjectAsset(objectAssets[0])
+  prevButton.onclick = () => {
+    prevButton.blur()
+    stepObject(-1)
+  }
+  nextButton.onclick = () => {
+    nextButton.blur()
+    stepObject(1)
+  }
+
+  showObjectAtIndex(0)
 
   // ==================== RESIZE ====================
-  function onResize() {
-    renderer.setSize(window.innerWidth, window.innerHeight)
-    camera.aspect = window.innerWidth / window.innerHeight
+  function resizePreviewRenderer() {
+    const previewBounds = previewFrame.getBoundingClientRect()
+    const width = Math.max(1, Math.round(previewBounds.width))
+    const height = Math.max(1, Math.round(previewBounds.height))
+
+    previewRenderer.setSize(width, height, false)
+    camera.aspect = width / height
     camera.updateProjectionMatrix()
   }
+
+  function onResize() {
+    syncInspectorLayout()
+    resizePreviewRenderer()
+  }
   window.addEventListener("resize", onResize)
+  syncInspectorLayout()
+  resizePreviewRenderer()
 
   // ==================== ANIMATION LOOP ====================
   let animationId
   let lastTime = performance.now()
-  let frameCount = 0
 
   function animate() {
     animationId = requestAnimationFrame(animate)
     const currentTime = performance.now()
     const delta = Math.min((currentTime - lastTime) / 1000, 0.1)
-    frameCount++
-    if (currentTime - lastTime >= 1000) {
-      frameCount = 0
-    }
     lastTime = currentTime
 
     if (currentObject?.userData?.__pendingInspectorReframe && hasRenderableMesh(currentObject)) {
@@ -351,19 +549,21 @@ export function createInspector(renderer, onBack) {
     currentCameraPos.lerp(targetCameraPos, cameraEasing)
     camera.position.copy(currentCameraPos)
     camera.lookAt(objectCenter)
-    renderer.render(scene, camera)
+    previewRenderer.render(scene, camera)
   }
 
   animate()
 
   // ==================== CLEANUP ====================
   return function cleanup() {
-    const inspectorBackBtn = document.getElementById("inspectorBackButton")
-    if (inspectorBackBtn) inspectorBackBtn.remove()
     cancelAnimationFrame(animationId)
+    if (currentObject && typeof currentObject.userData?.cleanup === "function") {
+      currentObject.userData.cleanup()
+    }
     if (currentObject) scene.remove(currentObject)
-    if (currentLightingController) currentLightingController = null
     window.removeEventListener("resize", onResize)
+    window.removeEventListener("keydown", handleKeyDown)
+    previewRenderer.dispose()
     container.remove()
     scene.clear()
   }

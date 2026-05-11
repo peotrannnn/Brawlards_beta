@@ -1,5 +1,7 @@
 // ==================== CONTROL GUIDE UI ====================
 // A floating UI window for control instructions, styled exactly like Compune dialog but green and top-left
+import { UI_THEME } from './uiTheme.js'
+
 export class ControlGuideUI {
   constructor() {
     this.textElement = null
@@ -21,26 +23,26 @@ export class ControlGuideUI {
       left: 40px;
       max-width: 400px;
       padding: 0;
-      background: #002d1a;
-      border: 2px solid #00CC77;
+      background: ${UI_THEME.controlGuide.background};
+      border: 2px solid ${UI_THEME.controlGuide.border};
       border-radius: 0;
-      color: #00FFAA;
+      color: ${UI_THEME.controlGuide.text};
       font-size: 12px;
       line-height: 1.6;
       z-index: 9999;
       display: none;
       font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-      box-shadow: 0 0 20px rgba(0, 204, 119, 0.6), inset 0 0 10px rgba(0, 204, 119, 0.3);
+      box-shadow: ${UI_THEME.controlGuide.shadow};
       overflow: hidden;
       transition: opacity 0.8s ease-out;
     `
     const header = document.createElement('div')
     header.style.cssText = `
-      background: #00CC77;
-      color: #000;
+      background: ${UI_THEME.controlGuide.headerBackground};
+      color: ${UI_THEME.controlGuide.headerText};
       padding: 6px 12px;
       font-weight: bold;
-      border-bottom: 2px solid #00884d;
+      border-bottom: 2px solid ${UI_THEME.controlGuide.headerBorder};
       font-size: 11px;
       letter-spacing: 1px;
       text-transform: uppercase;
@@ -64,17 +66,17 @@ export class ControlGuideUI {
     progressBar.style.cssText = `
       width: 100%;
       height: 6px;
-      background: #003d26;
-      border-top: 1px solid #00CC77;
+      background: ${UI_THEME.controlGuide.progressBackground};
+      border-top: 1px solid ${UI_THEME.controlGuide.progressBorder};
       position: relative;
       overflow: hidden;
     `
     this.progressFill = document.createElement('div')
     this.progressFill.style.cssText = `
       height: 100%;
-      background: linear-gradient(90deg, #00CC77, #00FFAA);
+      background: ${UI_THEME.controlGuide.progressFill};
       width: 0%;
-      box-shadow: 0 0 15px rgba(0, 255, 170, 0.8);
+      box-shadow: ${UI_THEME.controlGuide.progressGlow};
       transition: width 0.1s linear;
     `
     progressBar.appendChild(this.progressFill)

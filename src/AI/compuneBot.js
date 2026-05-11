@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { createSweatEffect } from '../effects/particles/particle8.js'
+import { playSound12 } from '../sounds/sound12.js'
 
 // ==================== CONFIGURATION ====================
 const CONFIG = {
@@ -197,6 +198,7 @@ export class CompuneAI {
         } catch (err) {}
       }
       this.lastInputTime = currentTime
+      playSound12()
       this.nextPage()
     }
     window.addEventListener('keydown', this.keydownListener)

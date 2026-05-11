@@ -1,7 +1,7 @@
 export const GRAPHICS_QUALITY_PROFILES = {
   low: {
     key: 'low',
-    label: 'patater computer',
+    label: 'Patater computer 🥔',
     menuPixelRatioScale: 0.3,
     menuBlurPx: 0.8,
     menuFrameIntervalMs: 50,

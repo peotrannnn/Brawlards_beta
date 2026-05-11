@@ -18,6 +18,27 @@ function disconnectNode(node) {
   } catch {}
 }
 
+function connectNode(node, destination) {
+  if (!node || !destination || typeof node.connect !== 'function') return
+  try {
+    node.connect(destination)
+  } catch {}
+}
+
+function setStaticPathConnected(target, shouldConnect) {
+  if (!target?.staticGain || !target?.outputNode) return
+  if (shouldConnect) {
+    if (target.isStaticConnected) return
+    connectNode(target.staticGain, target.outputNode)
+    target.isStaticConnected = true
+    return
+  }
+
+  if (!target.isStaticConnected) return
+  disconnectNode(target.staticGain)
+  target.isStaticConnected = false
+}
+
 function createNoiseBuffer(audioContext, durationSec = 1.25) {
   const frameCount = Math.max(1, Math.floor(audioContext.sampleRate * durationSec))
   const buffer = audioContext.createBuffer(1, frameCount, audioContext.sampleRate)
@@ -59,26 +80,35 @@ function applyTargetState(target, intensity, immediate = false) {
   if (!target?.audioContext || target.audioContext.state === 'closed') return
 
   const now = target.audioContext.currentTime
+  const clampedIntensity = clamp(intensity, 0, 1)
   const previousIntensity = target.lastIntensity ?? SOUND_FILTER1_STATE.currentIntensity
-  const timeConstant = immediate ? 0.001 : (intensity > previousIntensity ? 0.03 : 0.08)
+  const timeConstant = immediate ? 0.001 : (clampedIntensity > previousIntensity ? 0.03 : 0.08)
   const isMusicTarget = target.key === 'music'
-  const muffleStrength = Math.pow(clamp(intensity, 0, 1), 0.62)
-  const targetMuffleStrength = isMusicTarget
-    ? clamp((muffleStrength * 0.9) + 0.02, 0, 1)
-    : clamp((muffleStrength * 0.82) + 0.01, 0, 1)
-  const staticOnset = clamp((intensity - 0.5) / 0.5, 0, 1)
+  const isBypassed = clampedIntensity <= 0.0005
+  const muffleStrength = isBypassed ? 0 : Math.pow(clampedIntensity, 0.54)
+  const targetMuffleStrength = isBypassed
+    ? 0
+    : (isMusicTarget
+      ? clamp((muffleStrength * 0.96) + 0.035, 0, 1)
+      : clamp((muffleStrength * 0.88) + 0.02, 0, 1))
+  const staticOnset = clamp((clampedIntensity - 0.5) / 0.5, 0, 1)
   const staticReveal = Math.pow(staticOnset, 2.35)
-  const cutoff = lerp(18000, isMusicTarget ? 780 : 1050, targetMuffleStrength)
-  const resonance = lerp(0.0001, isMusicTarget ? 1.25 : 1.1, targetMuffleStrength)
-  const highShelfGain = lerp(0, isMusicTarget ? -15 : -10, targetMuffleStrength)
-  const midDipGain = lerp(0, isMusicTarget ? -6.5 : -4.5, targetMuffleStrength)
-  const loudness = lerp(1, isMusicTarget ? 0.64 : 0.76, targetMuffleStrength)
-  const staticGain = lerp(0.000001, isMusicTarget ? 0.008 : 0.012, staticReveal) * Math.max(0.0001, target.inputNode?.gain?.value ?? 1)
+  const cutoff = lerp(18000, isMusicTarget ? 620 : 860, targetMuffleStrength)
+  const resonance = lerp(0.0001, isMusicTarget ? 1.38 : 1.2, targetMuffleStrength)
+  const highShelfGain = lerp(0, isMusicTarget ? -18 : -12.5, targetMuffleStrength)
+  const midDipGain = lerp(0, isMusicTarget ? -7.4 : -5.3, targetMuffleStrength)
+  const loudness = lerp(1, isMusicTarget ? 0.58 : 0.71, targetMuffleStrength)
+  const staticGain = isBypassed
+    ? 0
+    : lerp(0.000001, isMusicTarget ? 0.008 : 0.012, staticReveal) * Math.max(0.0001, target.inputNode?.gain?.value ?? 1)
   const staticHighpass = lerp(700, 980, targetMuffleStrength)
   const staticBandpass = lerp(1400, 1900, targetMuffleStrength)
   const staticBandQ = lerp(0.9, 1.7, staticReveal)
   const staticPresenceGain = lerp(0, 2.6, staticReveal)
   const staticLowpass = lerp(5600, 3900, targetMuffleStrength)
+  const shouldConnectStaticPath = !isBypassed && staticGain > 0.0000005
+
+  setStaticPathConnected(target, shouldConnectStaticPath)
 
   target.lowpass.frequency.cancelScheduledValues(now)
   target.lowpass.frequency.setTargetAtTime(cutoff, now, timeConstant)
@@ -103,7 +133,11 @@ function applyTargetState(target, intensity, immediate = false) {
   target.staticGain.gain.cancelScheduledValues(now)
   target.staticGain.gain.setTargetAtTime(staticGain, now, timeConstant)
 
-  target.lastIntensity = intensity
+  if (!shouldConnectStaticPath) {
+    target.staticGain.gain.setValueAtTime(0, now)
+  }
+
+  target.lastIntensity = clampedIntensity
 }
 
 export function registerSoundFilter1Target({ key, audioContext, inputNode, outputNode }) {
@@ -185,7 +219,6 @@ export function registerSoundFilter1Target({ key, audioContext, inputNode, outpu
   staticBandpass.connect(staticPresence)
   staticPresence.connect(staticLowpass)
   staticLowpass.connect(staticGain)
-  staticGain.connect(outputNode)
   staticSource.start()
 
   const target = {
@@ -204,6 +237,7 @@ export function registerSoundFilter1Target({ key, audioContext, inputNode, outpu
     staticPresence,
     staticLowpass,
     staticGain,
+    isStaticConnected: false,
     lastIntensity: SOUND_FILTER1_STATE.currentIntensity,
   }
 

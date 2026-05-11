@@ -6,6 +6,7 @@ import { createImpactRingEffect } from "../effects/particles/particle7.js"
 import { playSound1, primeSound1Audio } from "../sounds/sound1.js"
 import { computeSound4EquivalentFallHeight, playSound4 } from "../sounds/sound4.js"
 import { playSound5, primeSound5Audio } from "../sounds/sound5.js"
+import { playSound14 } from "../sounds/sound14.js"
 import { playSound7 } from "../sounds/sound7.js"
 import { playSound8 } from "../sounds/sound8.js"
 
@@ -60,6 +61,7 @@ const PLAYER_CONFIG = {
     uncollectedItemMarkerBobAmplitude: 0.05,
     uncollectedItemMarkerBobSpeed: 3.0,
     uncollectedItemMarkerYOffset: 0.22,
+    uncollectedItemMarkerLifetimeMs: 60_000,
     collectScanIntervalSec: 1 / 20,
     markerUpdateIntervalSec: 1 / 12,
     movementTingMinSpeed: 0.35,
@@ -461,6 +463,51 @@ export class PlayerMovementController {
         return this.carriedItems.some(carried => carried.entry === entry)
     }
 
+    _clearUncollectedItemMarker(entry) {
+        const ownerMesh = entry?.mesh
+        if (!ownerMesh || !this.particleManager?.clearItemArrowForOwner) return
+        this.particleManager.clearItemArrowForOwner(ownerMesh)
+    }
+
+    _resetUncollectedItemMarkerLifetime(entry) {
+        const userData = entry?.body?.userData
+        if (!userData) return
+        delete userData.uncollectedItemMarkerShownAt
+    }
+
+    _shouldShowUncollectedItemMarker(entry, now = Date.now()) {
+        if (!this._isItemEntry(entry)) return false
+
+        const body = entry?.body
+        const ownerMesh = entry?.mesh
+        if (!body || !ownerMesh) return false
+
+        body.userData = body.userData || {}
+        const userData = body.userData
+        const isCollectedItem = !!userData.isCollectedItem
+        const hasBeenCollectedOnce = !!userData.hasBeenCollectedOnce
+        const isCarriedItem = !!userData.isCarriedItem || !!ownerMesh.userData?._cachedCarriedFlag || !!ownerMesh.userData?.isCarriedItem
+
+        if (hasBeenCollectedOnce || isCollectedItem || isCarriedItem) {
+            this._resetUncollectedItemMarkerLifetime(entry)
+            return false
+        }
+
+        if (!Number.isFinite(userData.uncollectedItemMarkerShownAt)) {
+            userData.uncollectedItemMarkerShownAt = now
+        }
+
+        return (now - userData.uncollectedItemMarkerShownAt) < PLAYER_CONFIG.uncollectedItemMarkerLifetimeMs
+    }
+
+    _syncCarriedItemMarkers() {
+        if (!this.particleManager || this.carriedItems.length === 0) return
+
+        for (const carried of this.carriedItems) {
+            this._clearUncollectedItemMarker(carried?.entry)
+        }
+    }
+
     _getQuaternionYRowAbs(q) {
         const x = q?.x ?? 0
         const y = q?.y ?? 0
@@ -590,13 +637,24 @@ export class PlayerMovementController {
         body.velocity.z += (targetVelZ - body.velocity.z) * PLAYER_CONFIG.acceleration * PLAYER_CONFIG.fixedTimeStep
     }
 
-    _handleJump(body) {
+    _handleJump(body, mesh, cameraController) {
         if (!this.jumpPressed || !this.canJump) return;
 
         const gravity = Math.abs(body.world.gravity.y)
         const jumpSpeed = Math.sqrt(2 * gravity * PLAYER_CONFIG.jumpHeight)
 
+        const sourcePosition = this._tmpMovementSoundSource.set(body.position.x, body.position.y, body.position.z)
+        const listenerBase = cameraController?.camera?.position || this.cameraController?.camera?.position || this.camera?.position
+        const listenerPosition = listenerBase
+            ? this._tmpMovementSoundListener.copy(listenerBase)
+            : null
+
         body.velocity.y = jumpSpeed;
+        playSound14({
+            jumpSpeed,
+            sourcePosition,
+            listenerPosition,
+        })
         this.jumpPressed = false;
         this.canJump = false;
     }
@@ -1356,10 +1414,8 @@ export class PlayerMovementController {
         body.userData.hasBeenCollectedOnce = true
         body.userData.isCollectedItem = true
         this.carriedItems.push(carried)
-
-        if (this.particleManager && entry.mesh) {
-            this.particleManager.clearItemArrowForOwner(entry.mesh)
-        }
+        this._resetUncollectedItemMarkerLifetime(entry)
+        this._clearUncollectedItemMarker(entry)
 
         const targetPos = this._getStackTargetForIndex(this.carriedItems.length - 1, mesh, this.currentBody)
         this._setCarriedBodyLocked(carried, targetPos)
@@ -1543,14 +1599,17 @@ export class PlayerMovementController {
     _updateUncollectedItemMarkers() {
         if (!this.syncList || !this.particleManager) return
 
+        const now = Date.now()
+
         for (const entry of this.syncList) {
             if (!this._isItemEntry(entry)) continue
-
-            entry.body.userData = entry.body.userData || {}
-            const hasBeenCollectedOnce = !!entry.body.userData.hasBeenCollectedOnce
-            const isCollectedItem = !!entry.body.userData.isCollectedItem
-            const shouldShowMarker = !hasBeenCollectedOnce && !isCollectedItem
             const ownerMesh = entry.mesh
+            const shouldShowMarker = this._shouldShowUncollectedItemMarker(entry, now)
+
+            if (!shouldShowMarker) {
+                this._clearUncollectedItemMarker(entry)
+                continue
+            }
 
             const bodyHeight = this._getBodyApproxHeight(entry.body)
             const yOffset = (bodyHeight * 0.5) + PLAYER_CONFIG.uncollectedItemMarkerYOffset
@@ -1891,7 +1950,7 @@ export class PlayerMovementController {
         this._checkGrounded(body);
         this._updateLandingThudSound(body, mesh, cameraController)
         this._handleMovement(body);
-        this._handleJump(body);
+        this._handleJump(body, mesh, cameraController);
         this._updateMovementTingSound(body, mesh, cameraController, frameDelta)
         this._animateLegs(mesh, body);
         this._updateHeadRotation(mesh);
@@ -1921,6 +1980,7 @@ export class PlayerMovementController {
             this._markerUpdateAccumulator = 0
             this._updateUncollectedItemMarkers()
         }
+        this._syncCarriedItemMarkers()
 
         if (mesh.name === "Player") {
             this._updateOpacityBasedOnCameraDistance(mesh, cameraController);

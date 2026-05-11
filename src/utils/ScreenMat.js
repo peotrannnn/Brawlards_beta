@@ -127,6 +127,7 @@ function ensureStyles() {
     }
 
     .screen-mat-guy-layer {
+      inset: -3%;
       z-index: 1800;
       opacity: 0;
       --blur: 0px;
@@ -137,7 +138,21 @@ function ensureStyles() {
       --noise-alpha: 0;
       --dvx: 0px;
       --dvy: 0px;
+      --warp-x: 0px;
+      --warp-y: 0px;
+      --warp-scale-x: 1;
+      --warp-scale-y: 1;
+      --warp-skew-x: 0deg;
+      --warp-skew-y: 0deg;
       background: rgba(6, 8, 12, var(--veil));
+      overflow: hidden;
+      transform-origin: center center;
+      transform:
+        translate3d(var(--warp-x), var(--warp-y), 0)
+        scale(var(--warp-scale-x), var(--warp-scale-y))
+        skewX(var(--warp-skew-x))
+        skewY(var(--warp-skew-y));
+      will-change: transform, opacity, backdrop-filter, -webkit-backdrop-filter;
       backdrop-filter:
         blur(var(--blur))
         brightness(var(--brightness))
@@ -157,6 +172,7 @@ function ensureStyles() {
     .screen-mat-stun-layer.low-cost .screen-mat-stun-ghost,
     .screen-mat-stun-layer.low-cost.active {
       animation: none !important;
+      transform: none !important;
       backdrop-filter: none !important;
       -webkit-backdrop-filter: none !important;
       filter: none !important;
@@ -342,6 +358,8 @@ export class ScreenMat {
     this.loadingPreviewCamera = null
     this.loadingPreviewDummyWrapper = null
     this.loadingPreviewDummy = null
+    this.sceneDistortionTarget = null
+    this.sceneDistortionOriginalStyle = null
 
     this.stunRemainingMs = 0
     this.stunTotalDurationMs = 0
@@ -535,6 +553,87 @@ export class ScreenMat {
     this.whiteFlashLayer.style.opacity = clamped.toFixed(2)
   }
 
+  _restoreSceneDistortionTarget() {
+    if (!this.sceneDistortionTarget || !this.sceneDistortionOriginalStyle) return
+
+    this.sceneDistortionTarget.style.transform = this.sceneDistortionOriginalStyle.transform
+    this.sceneDistortionTarget.style.filter = this.sceneDistortionOriginalStyle.filter
+    this.sceneDistortionTarget.style.transformOrigin = this.sceneDistortionOriginalStyle.transformOrigin
+    this.sceneDistortionTarget.style.willChange = this.sceneDistortionOriginalStyle.willChange
+  }
+
+  _resolveSceneDistortionTarget() {
+    if (this.sceneDistortionTarget?.isConnected) return this.sceneDistortionTarget
+    if (typeof document === 'undefined') return null
+
+    let bestCanvas = null
+    let bestArea = 0
+
+    const canvases = document.querySelectorAll('canvas')
+    canvases.forEach((canvas) => {
+      if (!canvas?.isConnected) return
+      if (this.whiteFlashLayer?.contains(canvas)) return
+
+      const rect = canvas.getBoundingClientRect()
+      const area = Math.max(0, rect.width) * Math.max(0, rect.height)
+      if (area <= bestArea) return
+
+      bestArea = area
+      bestCanvas = canvas
+    })
+
+    if (bestCanvas !== this.sceneDistortionTarget) {
+      this._restoreSceneDistortionTarget()
+      this.sceneDistortionTarget = bestCanvas
+      this.sceneDistortionOriginalStyle = bestCanvas
+        ? {
+          transform: bestCanvas.style.transform || '',
+          filter: bestCanvas.style.filter || '',
+          transformOrigin: bestCanvas.style.transformOrigin || '',
+          willChange: bestCanvas.style.willChange || '',
+        }
+        : null
+    }
+
+    return this.sceneDistortionTarget
+  }
+
+  _applySceneDistortion(intensity, distortion = {}) {
+    const target = this._resolveSceneDistortionTarget()
+    if (!target) return
+
+    const clamped = clamp(intensity, 0, 1)
+    const distortionStrength = smoothstep(0.18, 1, clamped)
+    if (distortionStrength <= 0.0005) {
+      this._restoreSceneDistortionTarget()
+      return
+    }
+
+    const {
+      warpX = 0,
+      warpY = 0,
+      warpScaleX = 1,
+      warpScaleY = 1,
+      warpSkewX = 0,
+      warpSkewY = 0,
+    } = distortion
+
+    const translateX = warpX * 0.62 * distortionStrength
+    const translateY = warpY * 0.48 * distortionStrength
+    const scaleX = 1 + ((warpScaleX - 1) * 0.42 * distortionStrength) + (distortionStrength * 0.0028)
+    const scaleY = 1 + ((warpScaleY - 1) * 0.36 * distortionStrength) + (distortionStrength * 0.0018)
+    const skewX = warpSkewX * 0.22 * distortionStrength
+    const skewY = warpSkewY * 0.24 * distortionStrength
+    const blur = 0.015 + (distortionStrength * 0.18)
+    const brightness = 1 - (distortionStrength * 0.025)
+    const contrast = 1 + (distortionStrength * 0.04)
+
+    target.style.transformOrigin = 'center center'
+    target.style.willChange = 'transform, filter'
+    target.style.transform = `translate3d(${translateX.toFixed(2)}px, ${translateY.toFixed(2)}px, 0) scale(${scaleX.toFixed(4)}, ${scaleY.toFixed(4)}) skew(${skewX.toFixed(2)}deg, ${skewY.toFixed(2)}deg)`
+    target.style.filter = `blur(${blur.toFixed(2)}px) brightness(${brightness.toFixed(2)}) contrast(${contrast.toFixed(2)})`
+  }
+
   _resetStun() {
     this.stunActive = false
     this.stunRemainingMs = 0
@@ -566,18 +665,41 @@ export class ScreenMat {
       this.guyLayer.style.setProperty('--noise-alpha', '0')
       this.guyLayer.style.setProperty('--dvx', '0px')
       this.guyLayer.style.setProperty('--dvy', '0px')
+      this.guyLayer.style.setProperty('--warp-x', '0px')
+      this.guyLayer.style.setProperty('--warp-y', '0px')
+      this.guyLayer.style.setProperty('--warp-scale-x', '1')
+      this.guyLayer.style.setProperty('--warp-scale-y', '1')
+      this.guyLayer.style.setProperty('--warp-skew-x', '0deg')
+      this.guyLayer.style.setProperty('--warp-skew-y', '0deg')
+      this._applySceneDistortion(0)
       return
     }
 
     const drift = 0.18 + (clamped * 4.4)
     const dvx = Math.sin(this.runtimeMs * 0.027) * drift
     const dvy = Math.cos(this.runtimeMs * 0.019) * drift * 0.45
-    const blur = 0.12 + (clamped * 2.45)
-    const brightness = 1 - (clamped * 0.3)
-    const contrast = 1 + (clamped * 0.15)
-    const veil = 0.04 + (clamped * 0.42)
-    const ghostAlpha = 0.02 + (clamped * 0.22)
-    const noiseAlpha = 0.04 + (clamped * 0.26)
+    const warpBlend = Math.pow(clamped, 1.24)
+    const warpX = (
+      Math.sin(this.runtimeMs * 0.019)
+      + (Math.sin(this.runtimeMs * 0.043) * 0.35)
+    ) * (0.18 + (warpBlend * 3.2))
+    const warpY = (
+      Math.cos(this.runtimeMs * 0.015)
+      + (Math.sin(this.runtimeMs * 0.031) * 0.28)
+    ) * (0.08 + (warpBlend * 1.35))
+    const warpScaleX = 1 + (clamped * 0.012) + (((Math.sin(this.runtimeMs * 0.011) + 1) * 0.5) * clamped * 0.01)
+    const warpScaleY = 1 + (clamped * 0.007) + (((Math.cos(this.runtimeMs * 0.014) + 1) * 0.5) * clamped * 0.007)
+    const warpSkewX = (
+      Math.sin(this.runtimeMs * 0.013)
+      + (Math.sin(this.runtimeMs * 0.029) * 0.22)
+    ) * (0.05 + (clamped * 0.95))
+    const warpSkewY = Math.cos(this.runtimeMs * 0.012) * (0.018 + (clamped * 0.32))
+    const blur = 0.14 + (clamped * 2.5)
+    const brightness = 1 - (clamped * 0.26)
+    const contrast = 1 + (clamped * 0.14)
+    const veil = 0.05 + (clamped * 0.4)
+    const ghostAlpha = 0.025 + (clamped * 0.2)
+    const noiseAlpha = 0.05 + (clamped * 0.24)
 
     if (!this.lowCost) {
       this.guyLayer.style.setProperty('--blur', `${blur.toFixed(2)}px`)
@@ -590,6 +712,20 @@ export class ScreenMat {
     this.guyLayer.style.setProperty('--noise-alpha', noiseAlpha.toFixed(3))
     this.guyLayer.style.setProperty('--dvx', `${dvx.toFixed(2)}px`)
     this.guyLayer.style.setProperty('--dvy', `${dvy.toFixed(2)}px`)
+    this.guyLayer.style.setProperty('--warp-x', `${warpX.toFixed(2)}px`)
+    this.guyLayer.style.setProperty('--warp-y', `${warpY.toFixed(2)}px`)
+    this.guyLayer.style.setProperty('--warp-scale-x', warpScaleX.toFixed(4))
+    this.guyLayer.style.setProperty('--warp-scale-y', warpScaleY.toFixed(4))
+    this.guyLayer.style.setProperty('--warp-skew-x', `${warpSkewX.toFixed(2)}deg`)
+    this.guyLayer.style.setProperty('--warp-skew-y', `${warpSkewY.toFixed(2)}deg`)
+    this._applySceneDistortion(clamped, {
+      warpX,
+      warpY,
+      warpScaleX,
+      warpScaleY,
+      warpSkewX,
+      warpSkewY,
+    })
     this.guyLayer.style.opacity = Math.min(1, clamped * 1.08).toFixed(2)
   }
 
@@ -856,6 +992,7 @@ export class ScreenMat {
 
   dispose() {
     this._disposeLoadingIndicator()
+    this._applySceneDistortion(0)
 
     if (this.bloodLayer && this.bloodLayer.parentElement) {
       this.bloodLayer.parentElement.removeChild(this.bloodLayer)
@@ -880,5 +1017,7 @@ export class ScreenMat {
     this.ghostLayer = null
     this.overlay = null
     this.whiteFlashLayer = null
+    this.sceneDistortionTarget = null
+    this.sceneDistortionOriginalStyle = null
   }
 }

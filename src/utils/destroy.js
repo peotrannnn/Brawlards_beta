@@ -350,6 +350,11 @@ export class DestroySystem {
           if (typeof window !== 'undefined' && window.uiManager) window.uiManager.updateHPBar(player.hp, player.maxHP);
           if (player.hp <= 0) {
             player.hp = 0;
+            if (player.body) {
+              player.body.userData = player.body.userData || {};
+              player.body.userData.deathCause = 'guy';
+              player.body.userData.killedByGuy = true;
+            }
             if (typeof window !== 'undefined' && window.uiManager) window.uiManager.updateHPBar(player.hp, player.maxHP);
             this.destroyCharacter(player);
           }
@@ -359,6 +364,11 @@ export class DestroySystem {
 
     // 2. Guy Auto-Despawn
     for (const guy of guys) {
+      if (guy?.body?.userData?.isSection3AmbientGuy || guy?.mesh?.userData?.isSection3AmbientGuy) {
+        this.guyTimers.delete(guy)
+        continue
+      }
+
       const guyLargeTrigger = guy.mesh?.children.find(c => c.name === 'TriggerZone_Large');
       if (!guyLargeTrigger) continue;
       const guyPos = this._tmpGuyPos;
@@ -413,6 +423,10 @@ export class DestroySystem {
         if (typeof window !== 'undefined' && window.uiManager) window.uiManager.updateHPBar(player.hp, player.maxHP);
         if (player.hp <= 0) {
           player.hp = 0;
+          if (player.body) {
+            player.body.userData = player.body.userData || {};
+            player.body.userData.deathCause = 'ball8';
+          }
           if (typeof window !== 'undefined' && window.uiManager) window.uiManager.updateHPBar(player.hp, player.maxHP);
           this.destroyCharacter(player);
         }
@@ -453,6 +467,10 @@ export class DestroySystem {
           if (typeof window !== 'undefined' && window.uiManager) window.uiManager.updateHPBar(player.hp, player.maxHP);
           if (player.hp <= 0) {
             player.hp = 0;
+            if (player.body) {
+              player.body.userData = player.body.userData || {};
+              player.body.userData.deathCause = 'bowling';
+            }
             if (typeof window !== 'undefined' && window.uiManager) window.uiManager.updateHPBar(player.hp, player.maxHP);
             this.destroyCharacter(player);
           }

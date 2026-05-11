@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { playSound13 } from '../sounds/sound13.js'
 
 const BOWLING_AI_CONFIG = {
   baseMaxSpeed: 0.9,          // Slow movement speed
@@ -59,6 +60,8 @@ export class BowlingAI {
     this.lastVerticalSpeed = 0
     this.lastLandingShockwaveTime = -Infinity
     this.aggroDelayRemaining = BOWLING_AI_CONFIG.aggroDelay
+    this._tmpJumpSoundSource = new THREE.Vector3()
+    this._tmpJumpSoundListener = new THREE.Vector3()
 
     this.touchPadding = 0.08
     if (!this.body.userData) this.body.userData = {}
@@ -256,7 +259,7 @@ export class BowlingAI {
     return horizontalDistSq <= touchDist * touchDist && Math.abs(dy) <= verticalTolerance
   }
 
-  _launchJump(verticalSpeed, forwardDir = null, forwardSpeed = 0) {
+  _launchJump(verticalSpeed, forwardDir = null, forwardSpeed = 0, listenerBase = null) {
     // Use deterministic launch velocity so jump apex is consistent each time.
     this.body.velocity.y = verticalSpeed
 
@@ -265,11 +268,26 @@ export class BowlingAI {
       this.body.velocity.z = forwardDir.z * forwardSpeed
     }
 
+    const sourcePosition = this._tmpJumpSoundSource.set(
+      this.body.position.x,
+      this.body.position.y,
+      this.body.position.z
+    )
+    const listenerPosition = listenerBase
+      ? this._tmpJumpSoundListener.copy(listenerBase)
+      : null
+
+    playSound13({
+      intensity: THREE.MathUtils.clamp(verticalSpeed / Math.max(0.001, this.jumpPower), 0.55, 1),
+      sourcePosition,
+      listenerPosition,
+    })
+
     this.justJumped = true
     this._stabilizeMotion()
   }
 
-  _updateJump(delta, targetEntry, targetDistance) {
+  _updateJump(delta, targetEntry, targetDistance, listenerBase = null) {
     const vy = this.body.velocity.y
 
     if (vy < -0.1) {
@@ -298,7 +316,7 @@ export class BowlingAI {
       }
 
       const pounceVerticalSpeed = Math.max(this.jumpPower, BOWLING_AI_CONFIG.pounceUpPower)
-      this._launchJump(pounceVerticalSpeed, pounceDir, BOWLING_AI_CONFIG.pounceForwardPower)
+      this._launchJump(pounceVerticalSpeed, pounceDir, BOWLING_AI_CONFIG.pounceForwardPower, listenerBase)
       this.isPounceActive = true
       this.pounceTargetEntry = targetEntry
       this.pounceCooldown = this._randomPounceCooldown()
@@ -307,7 +325,7 @@ export class BowlingAI {
     }
 
     if (this.jumpCooldown <= 0 && this.isGrounded) {
-      this._launchJump(this.jumpPower)
+      this._launchJump(this.jumpPower, null, 0, listenerBase)
       this.isPounceActive = false
       this.pounceTargetEntry = null
       this.jumpCooldown = this._randomJumpCooldown()
@@ -336,7 +354,7 @@ export class BowlingAI {
     this.body.velocity.z += toTarget.z * boost * delta
   }
 
-  update(delta, syncList, selfEntry) {
+  update(delta, syncList, selfEntry, cameraController = null) {
     this.lastVerticalSpeed = this.body.velocity.y
 
     if (!this._updateAggroDelay(delta)) {
@@ -346,7 +364,8 @@ export class BowlingAI {
 
     const { target, distance } = this._findNearestTarget(syncList, selfEntry)
     this.isAngry = !!target
-    this._updateJump(delta, target, distance)
+    const listenerBase = cameraController?.camera?.position || null
+    this._updateJump(delta, target, distance, listenerBase)
     this._applyPounceAirBoost(delta)
 
     this.airborneForLanding = !this.isGrounded || this.body.velocity.y < -0.25

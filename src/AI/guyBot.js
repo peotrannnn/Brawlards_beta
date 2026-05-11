@@ -16,6 +16,14 @@ const GUY_AI_CONFIG = {
 }
 
 export class GuyAI {
+    _getForcedPhase() {
+        const bodyPhase = this.body?.userData?.guyForcedPhase;
+        const meshPhase = this.mesh?.userData?.guyForcedPhase;
+        const value = Number.isFinite(bodyPhase) ? bodyPhase : meshPhase;
+        if (!Number.isFinite(value)) return null;
+        return Math.max(1, Math.min(6, Math.round(value)));
+    }
+
     resetState() {
         // Reset tất cả trạng thái về mặc định
         this.visionRange = this.mesh.userData.visionRange || GUY_AI_CONFIG.visionRange;
@@ -97,7 +105,8 @@ export class GuyAI {
 
   update(delta, syncList) {
         this.timeAlive += delta;
-        const phase = Math.min(6, Math.floor(this.timeAlive / 10) + 1);
+      const forcedPhase = this._getForcedPhase();
+      const phase = forcedPhase ?? Math.min(6, Math.floor(this.timeAlive / 10) + 1);
         // Check if phase changed and trigger event
         if (phase !== this.currentPhase) {
             const oldPhase = this.currentPhase;

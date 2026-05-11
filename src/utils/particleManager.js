@@ -140,7 +140,9 @@ export class ParticleManager {
 
     this.itemArrowEffects.forEach((effect, owner) => {
       effect.update(delta)
-      if (effect.finished || !owner || !owner.parent) {
+      const ownerUserData = owner?.userData || null
+      const ownerBecameCarried = ownerUserData?._cachedCarriedFlag === true || ownerUserData?.isCarriedItem === true
+      if (effect.finished || !owner || !owner.parent || ownerBecameCarried) {
         if (typeof effect.dispose === 'function') effect.dispose()
         this.itemArrowEffects.delete(owner)
       }

@@ -25,6 +25,37 @@ function inferSpawnCategory(prefab, body) {
   return 'gameObject'
 }
 
+function cacheSpawnBaseDamping(body) {
+  if (!body) return
+
+  body.userData = body.userData || {}
+  if (typeof body.userData.spawnBaseLinearDamping !== 'number') {
+    body.userData.spawnBaseLinearDamping = body.linearDamping
+  }
+  if (typeof body.userData.spawnBaseAngularDamping !== 'number') {
+    body.userData.spawnBaseAngularDamping = body.angularDamping
+  }
+}
+
+function resetBodyPersistentState(body) {
+  if (!body) return
+
+  body.userData = body.userData || {}
+  cacheSpawnBaseDamping(body)
+
+  const baseLinear = body.userData.spawnBaseLinearDamping
+  const baseAngular = body.userData.spawnBaseAngularDamping
+
+  body.linearDamping = baseLinear
+  body.angularDamping = baseAngular
+  body.userData.section2WaterBaseLinearDamping = baseLinear
+  body.userData.section2WaterBaseAngularDamping = baseAngular
+  body.userData.section2WaterEffect = 0
+  body.userData.isSection2WaterAffected = false
+  body.userData.section2WaterRecoveryTime = 0
+  body.userData.section2BubbleTrailTimer = 0
+}
+
 export function randomPositionAboveTable(height = 5, baseY = 0) {
   const shrinkFactor = 0.9
   const halfW = (TABLE_WIDTH / 2) * shrinkFactor
@@ -48,7 +79,8 @@ export function spawnObject({
 }) {
   // --- Only allow one instance for certain types ---
   const uniqueTypes = ['Bowling Ball', 'Guy', 'Dude', 'Player'];
-  if (uniqueTypes.includes(prefab.name) && Array.isArray(syncList)) {
+  const allowMultipleInstances = prefab?.allowMultipleInstances === true;
+  if (uniqueTypes.includes(prefab.name) && !allowMultipleInstances && Array.isArray(syncList)) {
     for (let i = syncList.length - 1; i >= 0; i--) {
       const entry = syncList[i];
       if (entry && entry.name === prefab.name) {
@@ -107,6 +139,7 @@ export function spawnObject({
       entry.body.velocity.set(0, 0, 0);
       entry.body.angularVelocity.set(0, 0, 0);
       entry.body.quaternion.set(0, 0, 0, 1);
+      resetBodyPersistentState(entry.body)
       
       // Reset trạng thái va chạm
       if (entry.spawnCategory === 'item' || entry.type === 'dynamic' || entry.name === 'Baby Oil') {
@@ -148,6 +181,7 @@ export function spawnObject({
       body.position.copy(position);
       body.name = prefab.name || mesh.name;
       body.userData = body.userData || {};
+      cacheSpawnBaseDamping(body)
       body.userData.spawnCategory = inferSpawnCategory(prefab, body);
       body.userData.floorGuardLastSafePosition = null;
       delete body.userData.floorGuardLastGroundY;
@@ -179,6 +213,10 @@ export function spawnObject({
       entry.maxHP = 100;
       entry._isWalking = false;
       entry._lastDamageTime = 0;
+      if (entry.body?.userData) {
+        delete entry.body.userData.deathCause;
+        delete entry.body.userData.killedByGuy;
+      }
       if (entry.mesh) {
         entry.mesh.traverse(child => {
           if (child.userData && child.userData.isLeg) child.rotation.x = 0;
@@ -188,6 +226,19 @@ export function spawnObject({
     if ((entry.name === 'Guy' || entry.name === 'Dude') && entry.bot) {
       if (typeof entry.bot.resetState === 'function') entry.bot.resetState();
       if ('phase' in entry.bot) entry.bot.phase = 0;
+    }
+    if (entry.name === 'Guy') {
+      if (entry.userData) {
+        delete entry.userData.isSection3AmbientGuy;
+      }
+      if (entry.mesh?.userData) {
+        delete entry.mesh.userData.isSection3AmbientGuy;
+        delete entry.mesh.userData.guyForcedPhase;
+      }
+      if (entry.body?.userData) {
+        delete entry.body.userData.isSection3AmbientGuy;
+        delete entry.body.userData.guyForcedPhase;
+      }
     }
   }
 
