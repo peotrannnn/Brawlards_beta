@@ -38,6 +38,7 @@ const WISDOM_MESSAGE_BY_DETAIL = {
   guy: 'Guy will overwrite your perception of reality. Don’t let it touch you.',
   ball8: 'A lone Ball 8 is harmless. A pack of five is not.',
   bowling: 'Do not approach the Bowling Ball. Anything it touches is obliterated.',
+  fan: 'The fan blades are very sharp.',
   eye: 'The Eye sees all.',
   elevator_guide_lost: 'You escaped the simulation… but at the cost of your most loyal companion. Was it worth it?',
   elevator_clean: 'You left the simulation untouched, free of guilt… but was that truly the end?',

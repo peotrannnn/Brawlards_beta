@@ -59,6 +59,7 @@ import { primeSound9Audio } from "../sounds/sound9.js"
 import { primeSound12Audio } from "../sounds/sound12.js"
 import { primeSound13Audio } from "../sounds/sound13.js"
 import { primeSound14Audio } from "../sounds/sound14.js"
+import { primePipeSoundAudio } from "../sounds/pipeSound.js"
 import { getGraphicsQualityProfile } from "./graphicsQuality.js"
 import { settingsManager } from "./SettingsManager.js"
 
@@ -1552,6 +1553,7 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
     primeSound12Audio()
     primeSound13Audio()
     primeSound14Audio()
+    primePipeSoundAudio()
 
     if (gameplayMode) {
       if (e.code === "Escape") {

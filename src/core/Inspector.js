@@ -11,6 +11,7 @@ import { getEyeAsset } from "../assets/objects/eye.js"
 import { getDoor0Asset, getDoor1Asset, getDoor2Asset } from "../assets/objects/DoorFactory.js"
 import { getElevatorDoorAsset } from "../assets/objects/ElevatorDoor.js"
 import { getVendingMachineAsset } from "../assets/objects/VendingMachine.js"
+import { getCeilingFanAsset } from "../assets/objects/CeilingFan.js"
 import { getCartonBoxAsset } from "../assets/objects/CartonBox.js"
 import { getChestAsset } from "../assets/objects/Chest.js"
 import { getFunHouseAsset, getHouseAsset } from "../assets/objects/House.js"
@@ -184,6 +185,7 @@ export function createInspector(onBack) {
     getDoor2Asset(),
     getElevatorDoorAsset(),
     getVendingMachineAsset(),
+    getCeilingFanAsset(),
     getCartonBoxAsset(),
     getChestAsset(),
     getHouseAsset(),

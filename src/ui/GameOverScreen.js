@@ -17,6 +17,13 @@ export class GameOverScreen {
     this._init()
   }
 
+  _returnToMenu() {
+    this.destroy()
+    if (this.onReturn) {
+      this.onReturn()
+    }
+  }
+
   // ==================== UI CONSTRUCTION ====================
   _init() {
     this.container = document.createElement('div')
@@ -43,120 +50,190 @@ export class GameOverScreen {
     menuBox.style.background = UI_THEME.terminal.darkBg
     menuBox.style.border = `2px solid ${UI_THEME.terminal.borderBlue}`
     menuBox.style.borderRadius = '0'
-    menuBox.style.width = '432px'
+    menuBox.style.width = 'min(92vw, 360px)'
     menuBox.style.maxWidth = '92vw'
-    menuBox.style.boxShadow = UI_THEME.terminal.panelShadow
+    menuBox.style.boxShadow = UI_THEME.play.panelShadow
     menuBox.style.overflow = 'hidden'
     menuBox.style.display = 'flex'
     menuBox.style.flexDirection = 'column'
     menuBox.style.alignItems = 'stretch'
 
     const titleBar = document.createElement('div')
-    titleBar.textContent = 'DREAM RESULTS'
     titleBar.style.background = UI_THEME.terminal.accentBlue
-    titleBar.style.color = UI_THEME.common.white
-    titleBar.style.padding = '12px 20px'
-    titleBar.style.fontWeight = 'bold'
+    titleBar.style.position = 'relative'
+    titleBar.style.display = 'flex'
+    titleBar.style.alignItems = 'stretch'
+    titleBar.style.minHeight = UI_THEME.windowChrome.titleBarHeight
     titleBar.style.borderBottom = `2px solid ${UI_THEME.terminal.borderBlue}`
-    titleBar.style.fontSize = '14px'
-    titleBar.style.letterSpacing = '1px'
-    titleBar.style.fontFamily = "'Consolas', 'Monaco', 'Courier New', monospace"
-    titleBar.style.textAlign = 'center'
-    titleBar.style.textShadow = UI_THEME.terminal.textShadow
+
+    const titleLabel = document.createElement('div')
+    titleLabel.textContent = 'DREAM RESULTS'
+    titleLabel.style.color = UI_THEME.common.white
+    titleLabel.style.display = 'flex'
+    titleLabel.style.alignItems = 'center'
+    titleLabel.style.justifyContent = 'center'
+    titleLabel.style.minHeight = UI_THEME.windowChrome.titleBarHeight
+    titleLabel.style.padding = `0 ${UI_THEME.windowChrome.titleRightPadding} 0 ${UI_THEME.windowChrome.titleLeftPadding}`
+    titleLabel.style.fontWeight = 'bold'
+    titleLabel.style.fontSize = UI_THEME.windowChrome.titleFontSize
+    titleLabel.style.letterSpacing = '1px'
+    titleLabel.style.textTransform = 'uppercase'
+    titleLabel.style.fontFamily = "'Consolas', 'Monaco', 'Courier New', monospace"
+    titleLabel.style.textAlign = 'center'
+    titleLabel.style.textShadow = UI_THEME.terminal.textShadow
+    titleBar.appendChild(titleLabel)
+
+    const closeButton = document.createElement('button')
+    closeButton.type = 'button'
+    closeButton.textContent = 'X'
+    closeButton.setAttribute('aria-label', 'Return to menu')
+    closeButton.style.position = 'absolute'
+    closeButton.style.top = '0'
+    closeButton.style.right = '0'
+    closeButton.style.display = 'flex'
+    closeButton.style.alignItems = 'center'
+    closeButton.style.justifyContent = 'center'
+    closeButton.style.width = UI_THEME.windowChrome.closeWidth
+    closeButton.style.minWidth = UI_THEME.windowChrome.closeWidth
+    closeButton.style.height = '100%'
+    closeButton.style.border = 'none'
+    closeButton.style.borderLeft = `2px solid ${UI_THEME.windowChrome.closeBorder}`
+    closeButton.style.background = UI_THEME.windowChrome.closeBackground
+    closeButton.style.color = UI_THEME.windowChrome.closeText
+    closeButton.style.boxShadow = UI_THEME.windowChrome.closeShadow
+    closeButton.style.fontFamily = "'Consolas', 'Monaco', 'Courier New', monospace"
+    closeButton.style.fontSize = UI_THEME.windowChrome.closeFontSize
+    closeButton.style.fontWeight = 'bold'
+    closeButton.style.lineHeight = '1'
+    closeButton.style.cursor = 'pointer'
+    closeButton.style.textShadow = UI_THEME.terminal.textShadow
+    closeButton.style.transition = 'box-shadow 0.2s ease, filter 0.2s ease'
+    closeButton.onmouseover = () => {
+      closeButton.style.boxShadow = UI_THEME.windowChrome.closeHoverShadow
+      closeButton.style.filter = `brightness(${UI_THEME.windowChrome.closeHoverBrightness})`
+    }
+    closeButton.onmouseout = () => {
+      closeButton.style.boxShadow = UI_THEME.windowChrome.closeShadow
+      closeButton.style.filter = 'none'
+    }
+    closeButton.onclick = (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      this._returnToMenu()
+    }
+    titleBar.appendChild(closeButton)
 
     const contentArea = document.createElement('div')
-    contentArea.style.padding = '24px 20px 20px 20px'
+    contentArea.style.padding = '16px'
     contentArea.style.display = 'flex'
     contentArea.style.flexDirection = 'column'
-    contentArea.style.gap = '16px'
+    contentArea.style.gap = '10px'
+
+    const summaryCard = document.createElement('div')
+    summaryCard.style.display = 'flex'
+    summaryCard.style.flexDirection = 'column'
+    summaryCard.style.gap = '8px'
+    summaryCard.style.padding = '12px 14px'
+    summaryCard.style.background = UI_THEME.play.rowBackground
+    summaryCard.style.border = `1px solid ${UI_THEME.play.rowBorder}`
+    summaryCard.style.boxShadow = `inset 0 0 10px ${UI_THEME.play.rowInsetGlow}`
+
+    const sectionLabel = document.createElement('div')
+    sectionLabel.textContent = 'SCENE'
+    sectionLabel.style.fontSize = '10px'
+    sectionLabel.style.letterSpacing = '0.18em'
+    sectionLabel.style.color = UI_THEME.gameOver.levelMuted
+    sectionLabel.style.textAlign = 'left'
+    summaryCard.appendChild(sectionLabel)
 
     const levelItem = document.createElement('div')
     levelItem.textContent = this.sceneName
     levelItem.style.padding = '0'
-    levelItem.style.textAlign = 'center'
+    levelItem.style.textAlign = 'left'
     levelItem.style.fontSize = '11px'
     levelItem.style.fontFamily = "'Consolas', 'Monaco', 'Courier New', monospace"
-    levelItem.style.fontWeight = 'normal'
+    levelItem.style.fontWeight = 'bold'
     levelItem.style.backgroundColor = UI_THEME.common.transparent
     levelItem.style.color = UI_THEME.gameOver.levelMuted
-    levelItem.style.letterSpacing = '0.5px'
-    levelItem.style.whiteSpace = 'nowrap'
-    levelItem.style.overflowX = 'auto'
-    contentArea.appendChild(levelItem)
+    levelItem.style.letterSpacing = '0.08em'
+    levelItem.style.whiteSpace = 'normal'
+    levelItem.style.overflowWrap = 'anywhere'
+    summaryCard.appendChild(levelItem)
+
+    contentArea.appendChild(summaryCard)
+
+    const statusCard = document.createElement('div')
+    statusCard.style.display = 'flex'
+    statusCard.style.flexDirection = 'column'
+    statusCard.style.gap = '8px'
+    statusCard.style.padding = '14px 16px'
+    statusCard.style.background = UI_THEME.common.transparent
+    statusCard.style.border = `1px solid ${UI_THEME.terminal.borderBlue}`
+    statusCard.style.boxShadow = UI_THEME.terminal.compactShadow
+
+    const statusLabel = document.createElement('div')
+    statusLabel.textContent = 'STATUS'
+    statusLabel.style.fontSize = '10px'
+    statusLabel.style.letterSpacing = '0.18em'
+    statusLabel.style.color = UI_THEME.gameOver.levelMuted
+    statusLabel.style.textAlign = 'center'
+    statusCard.appendChild(statusLabel)
 
     this.statusElement = document.createElement('div')
-    this.statusElement.style.padding = '8px 0'
+    this.statusElement.style.padding = '0'
     this.statusElement.style.textAlign = 'center'
-    this.statusElement.style.fontSize = '16px'
+    this.statusElement.style.fontSize = '15px'
     this.statusElement.style.fontFamily = "'Consolas', 'Monaco', 'Courier New', monospace"
     this.statusElement.style.fontWeight = 'bold'
     this.statusElement.style.backgroundColor = UI_THEME.common.transparent
-    this.statusElement.style.letterSpacing = '1px'
-    this.statusElement.style.whiteSpace = 'nowrap'
-    this.statusElement.style.lineHeight = '1.4'
-    contentArea.appendChild(this.statusElement)
+    this.statusElement.style.letterSpacing = '0.05em'
+    this.statusElement.style.whiteSpace = 'normal'
+    this.statusElement.style.overflowWrap = 'anywhere'
+    this.statusElement.style.lineHeight = '1.45'
+    statusCard.appendChild(this.statusElement)
+
+    contentArea.appendChild(statusCard)
+
+    const timeCard = document.createElement('div')
+    timeCard.style.display = 'flex'
+    timeCard.style.flexDirection = 'column'
+    timeCard.style.alignItems = 'center'
+    timeCard.style.gap = '6px'
+    timeCard.style.padding = '14px 16px 16px'
+    timeCard.style.background = UI_THEME.play.rowBackground
+    timeCard.style.border = `1px solid ${UI_THEME.play.rowBorder}`
+    timeCard.style.boxShadow = `inset 0 0 10px ${UI_THEME.play.rowInsetGlow}`
+
+    const timeLabel = document.createElement('div')
+    timeLabel.textContent = 'PLAY TIME'
+    timeLabel.style.fontSize = '10px'
+    timeLabel.style.letterSpacing = '0.22em'
+    timeLabel.style.color = UI_THEME.gameOver.levelMuted
+    timeLabel.style.textAlign = 'center'
+    timeCard.appendChild(timeLabel)
 
     this.timeElement = document.createElement('div')
-    this.timeElement.style.padding = '4px 0'
+    this.timeElement.style.padding = '0'
     this.timeElement.style.textAlign = 'center'
-    this.timeElement.style.fontSize = '12px'
+    this.timeElement.style.fontSize = '36px'
     this.timeElement.style.fontFamily = "'Consolas', 'Monaco', 'Courier New', monospace"
+    this.timeElement.style.fontWeight = 'bold'
     this.timeElement.style.backgroundColor = UI_THEME.common.transparent
     this.timeElement.style.color = UI_THEME.gameOver.timeText
-    this.timeElement.style.letterSpacing = '0.5px'
+    this.timeElement.style.letterSpacing = '0.08em'
     this.timeElement.style.whiteSpace = 'nowrap'
-    contentArea.appendChild(this.timeElement)
+    this.timeElement.style.lineHeight = '1'
+    timeCard.appendChild(this.timeElement)
+
+    contentArea.appendChild(timeCard)
 
     menuBox.appendChild(titleBar)
     menuBox.appendChild(contentArea)
 
-    const backItem = document.createElement('div')
-    backItem.textContent = 'BACK TO MENU'
-    backItem.style.padding = '14px 20px'
-    backItem.style.textAlign = 'center'
-    backItem.style.fontSize = '14px'
-    backItem.style.fontFamily = "'Consolas', 'Monaco', 'Courier New', monospace"
-    backItem.style.fontWeight = 'normal'
-    backItem.style.cursor = 'pointer'
-    backItem.style.userSelect = 'none'
-    backItem.style.borderTop = `1px solid ${UI_THEME.terminal.borderBlue}`
-    backItem.style.transition = 'all 0.2s ease'
-    backItem.style.backgroundColor = UI_THEME.common.transparent
-    backItem.style.color = UI_THEME.gameOver.backText
-    backItem.style.letterSpacing = '0.5px'
-    backItem.style.whiteSpace = 'nowrap'
-    
-    backItem.onmouseenter = () => {
-      backItem.style.backgroundColor = UI_THEME.terminal.accentBlue
-      backItem.style.color = UI_THEME.common.white
-      backItem.style.fontWeight = 'bold'
-      backItem.style.paddingLeft = '28px'
-      backItem.style.paddingRight = '28px'
-      backItem.style.boxShadow = UI_THEME.terminal.selectedInsetShadow
-    }
-    
-    backItem.onmouseleave = () => {
-      backItem.style.backgroundColor = UI_THEME.common.transparent
-      backItem.style.color = UI_THEME.gameOver.backText
-      backItem.style.fontWeight = 'normal'
-      backItem.style.paddingLeft = '20px'
-      backItem.style.paddingRight = '20px'
-      backItem.style.boxShadow = 'none'
-    }
-    
-    backItem.onclick = () => {
-      this.destroy()
-      if (this.onReturn) {
-        this.onReturn()
-      }
-    }
-    
-    menuBox.appendChild(backItem)
-
     const progressBar = document.createElement('div')
     progressBar.style.cssText = `
       width: 100%;
-      height: 6px;
+      height: 5px;
       background: ${UI_THEME.gameOver.progressBackground};
       border-top: 1px solid ${UI_THEME.terminal.borderBlue};
       position: relative;
@@ -222,10 +299,7 @@ export class GameOverScreen {
     this.progressFill.style.width = (progress * 100) + '%'
     
     if (this.autoReturnTimer >= this.autoReturnDelay) {
-      this.destroy()
-      if (this.onReturn) {
-        this.onReturn()
-      }
+      this._returnToMenu()
     }
   }
 
@@ -240,5 +314,6 @@ export class GameOverScreen {
     if (this.container && this.container.parentNode) {
       this.container.parentNode.removeChild(this.container)
     }
+    this.isVisible = false
   }
 }

@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { getBilliardTableAsset } from "../../objects/BilliardTable.js"
+import { getCeilingFanAsset } from "../../objects/CeilingFan.js"
 import { getElevatorDoorAsset } from "../../objects/ElevatorDoor.js"
 import { getVendingMachineAsset } from "../../objects/VendingMachine.js"
 import { getCartonBoxAsset } from "../../objects/CartonBox.js"
@@ -610,9 +611,10 @@ export function createSection1(rootGroup, lightingOverrides = {}) {
   root.add(wallRight)
 
   // Add billiard table
+  let billiardTable = null
   try {
     const tableAsset = getBilliardTableAsset()
-    const billiardTable = tableAsset.factory()
+    billiardTable = tableAsset.factory()
     
     billiardTable.position.set(0, 0, 0)
     
@@ -628,6 +630,17 @@ export function createSection1(rootGroup, lightingOverrides = {}) {
     placeholder.castShadow = true
     placeholder.receiveShadow = true
     root.add(placeholder)
+  }
+
+  let ceilingFan = null
+  try {
+    const ceilingFanAsset = getCeilingFanAsset()
+    ceilingFan = ceilingFanAsset.factory()
+    ceilingFan.position.set(0, ROOM_CONFIG.height, 0)
+    ceilingFan.name = 'Section 1 Ceiling Fan'
+    root.add(ceilingFan)
+  } catch (error) {
+    console.error('Failed to load ceiling fan:', error)
   }
 
   let vendingMachine = null
@@ -811,21 +824,27 @@ export function createSection1(rootGroup, lightingOverrides = {}) {
   }
 
   // Add table physics shapes
-  const billiardTable = root.children.find(c => c.name === "Billiard Table")
-  if (billiardTable && billiardTable.userData && billiardTable.userData.physics) {
-    billiardTable.userData.physics.shapes.forEach(shape => {
+  const sceneBilliardTable = billiardTable || root.children.find(c => c.name === "Billiard Table")
+  if (sceneBilliardTable && sceneBilliardTable.userData && sceneBilliardTable.userData.physics) {
+    sceneBilliardTable.userData.physics.shapes.forEach(shape => {
       const newShape = { ...shape }
       newShape.material = 'table'
       if (newShape.offset) {
         newShape.offset = [
-          newShape.offset[0] + billiardTable.position.x,
-          newShape.offset[1] + billiardTable.position.y,
-          newShape.offset[2] + billiardTable.position.z
+          newShape.offset[0] + sceneBilliardTable.position.x,
+          newShape.offset[1] + sceneBilliardTable.position.y,
+          newShape.offset[2] + sceneBilliardTable.position.z
         ]
       }
       root.userData.physics.shapes.push(newShape)
     })
   }
+
+  root.userData.section1CeilingFan = ceilingFan || null
+  root.userData.section1BilliardTable = sceneBilliardTable || null
+  root.userData.section1BilliardTableTopY = sceneBilliardTable?.userData?.tableDimensions?.topY != null
+    ? sceneBilliardTable.position.y + sceneBilliardTable.userData.tableDimensions.topY
+    : 4.5
 
   // Store tile information
   root.userData.tileInfo = {

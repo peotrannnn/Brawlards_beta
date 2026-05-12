@@ -1365,6 +1365,7 @@ export class PlayerMovementController {
 
         body.type = CANNON.Body.KINEMATIC
         body.collisionResponse = false
+        body.collisionFilterGroup = 0
         body.collisionFilterMask = 0
         body.velocity.set(0, 0, 0)
         body.angularVelocity.set(0, 0, 0)
@@ -1406,6 +1407,7 @@ export class PlayerMovementController {
             state: 'collecting',
             originalType: body.type,
             originalCollisionResponse: body.collisionResponse,
+            originalCollisionFilterGroup: body.collisionFilterGroup,
             originalCollisionFilterMask: body.collisionFilterMask,
             originalAngularDamping: body.angularDamping,
             originalQuaternion: new CANNON.Quaternion(body.quaternion.x, body.quaternion.y, body.quaternion.z, body.quaternion.w)
@@ -1490,6 +1492,7 @@ export class PlayerMovementController {
 
                 body.type = CANNON.Body.KINEMATIC
                 body.collisionResponse = false
+                body.collisionFilterGroup = 0
                 body.collisionFilterMask = 0
                 body.velocity.set(0, 0, 0)
                 body.angularVelocity.set(0, 0, 0)
@@ -1642,6 +1645,7 @@ export class PlayerMovementController {
         body.userData.isCollectedItem = false
         body.type = carried.originalType ?? CANNON.Body.DYNAMIC
         body.collisionResponse = carried.originalCollisionResponse ?? true
+        body.collisionFilterGroup = carried.originalCollisionFilterGroup ?? COLLISION_GROUPS.ITEM
         body.collisionFilterMask = carried.originalCollisionFilterMask ?? COLLISION_MASKS.ITEM
         body.velocity.set(0, 0, 0)
         body.angularVelocity.set(0, 0, 0)
