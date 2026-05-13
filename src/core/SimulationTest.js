@@ -474,6 +474,16 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
       currentSceneManager = new Scene1Manager(currentSceneGroup, destroySystem, scene)
 
       const sceneMusicCallbacks = {
+                onChaseStart: () => {
+                  // Tắt nhạc hiện tại ngay lập tức, phát nhạc chase theme ngay
+                  void musicPlayer.requestSilence({ immediate: true })
+                  void musicPlayer.requestChasing({ immediate: true })
+                },
+                onChaseEnd: () => {
+                  // Fade out chase theme từ từ, sau đó quay lại section 3 theme với delay như mặc định
+                  void musicPlayer.requestSilence({ fadeOutSec: 1.35 })
+                  void musicPlayer.returnToSection3({ immediate: false })
+                },
         onSectionChange: (sectionId, musicOptions = {}) => {
           if (!currentSceneManager) return
           void musicPlayer.requestSection(sectionId, musicOptions)

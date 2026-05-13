@@ -269,6 +269,9 @@ export class Scene1Manager {
     this.section3GuySpawningDisabled = false
     
     this.hookedGuyAIs = new Set()
+
+    // --- Chase theme state for section 3 ---
+    this.isChaseThemeActive = false
     
     this.sunLight = null
     this.baseSunIntensity = SCENE1_CONFIG.baseSunIntensity
@@ -4709,14 +4712,16 @@ export class Scene1Manager {
 
     this._pruneSection3GuyEntries(syncList)
 
-    if (this.activeSectionId !== 'section3') {
-      this._queueDespawnAllSection3Guys(false)
-      this.section3GuySpawnCooldown = 0
-      return
-    }
 
-    if (this.section3SacrificeState) {
-      this._queueDespawnAllSection3Guys(true)
+
+    // Nếu rời khỏi section3 hoặc sacrifice, dừng chase theme nếu đang phát
+    if (this.activeSectionId !== 'section3' || this.section3SacrificeState) {
+      if (this.isChaseThemeActive) {
+        this.isChaseThemeActive = false;
+        this.musicCallbacks?.onChaseEnd?.();
+      }
+      this._queueDespawnAllSection3Guys(this.section3SacrificeState)
+      this.section3GuySpawnCooldown = 0
       return
     }
 
@@ -4728,8 +4733,20 @@ export class Scene1Manager {
       }
     }
 
+
     if (this.section3GuySpawningDisabled) return
-    if (this.section3PedestalScore < SCENE1_CONFIG.section3GuySpawnScoreThreshold) return
+
+
+    // Nếu chưa từng kích hoạt chase theme và đủ điểm, thì bật chase theme
+    if (!this.isChaseThemeActive && this.section3PedestalScore >= SCENE1_CONFIG.section3GuySpawnScoreThreshold) {
+      this.isChaseThemeActive = true;
+      this.musicCallbacks?.onChaseStart?.();
+    }
+    // Nếu đã kích hoạt chase theme thì giữ nguyên, không tắt dù điểm có tụt xuống dưới ngưỡng
+    if (!this.isChaseThemeActive) {
+      // Nếu chưa đủ điểm và chưa từng kích hoạt chase theme thì không spawn guy
+      return;
+    }
 
     const activeGuyCount = this.section3GuyEntries.size
     if (activeGuyCount >= SCENE1_CONFIG.section3GuyMaxCount) return

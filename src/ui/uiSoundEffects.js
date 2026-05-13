@@ -120,6 +120,20 @@ export function initUISoundEffects() {
   primeSound11Audio()
   primeSound15Audio()
 
+  // Ensure AudioContext is resumed on first user gesture (fixes Chrome autoplay policy)
+  const resumeAllAudioContexts = () => {
+    try {
+      if (window.resumeSharedSfxAudio) window.resumeSharedSfxAudio()
+      if (window.musicPlayer && typeof window.musicPlayer.unlock === 'function') window.musicPlayer.unlock()
+    } catch {}
+    window.removeEventListener('pointerdown', resumeAllAudioContexts, true)
+    window.removeEventListener('keydown', resumeAllAudioContexts, true)
+    window.removeEventListener('click', resumeAllAudioContexts, true)
+  }
+  window.addEventListener('pointerdown', resumeAllAudioContexts, true)
+  window.addEventListener('keydown', resumeAllAudioContexts, true)
+  window.addEventListener('click', resumeAllAudioContexts, true)
+
   document.addEventListener('pointerover', handlePointerOver, true)
   document.addEventListener('pointerout', handlePointerOut, true)
   document.addEventListener('click', handleClick, true)

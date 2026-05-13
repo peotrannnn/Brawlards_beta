@@ -15,12 +15,12 @@ const MUSIC_GROUPS = {
     '9jackjack8-dream-pool-ambient-dreamcore-486226.mp3',
     'tim_kulig_free_music-transgressions-435310.mp3',
     'wanderingarc-whispers-moonless-mountain-01-relaxing-ambient-music-255568.mp3',
+    'drmseq-dreamy-pads-with-simple-retro-beat-323033.mp3',
   ],
   section1: [
     'mezhdunami-mezhdunami-little-world-141275.mp3',
-    'mezhdunami-mezhdunami-eventide-1201.mp3',
+    '9jackjack8-dream-pool-ambient-dreamcore-486226.mp3',
     'papulina-waiting-room-for-no-one-485626.mp3',
-    'tim_kulig_free_music-light-dreams-435308.mp3',
     'wanderingarc-the-calling-moonless-mountain-03-relaxing-ambient-music-255570.mp3',
   ],
   section2: [
@@ -34,10 +34,17 @@ const MUSIC_GROUPS = {
     'tim_kulig_free_music-bounce-my-checks-slow-diamond-speaker-435313.mp3',
     'tim_kulig_free_music-cold-robot-slower-435312.mp3',
     'tim_kulig_free_music-intentions-270706.mp3',
+    'daljit_kundi-voices-from-within-akira-yamaoka-gathering-mix-392840.mp3',
+    'kuzu420-nowhere-chilling-dark-vibe-ambient-music-265672.mp3',
+  ],
+  chasing: [
+    'daljit_kundi-matter-is-energy-akira-yamaoka-unreasonable-mix-392839.mp3',
+    'syncraftianofficial-syncraftian-creeper-355353.mp3',
   ],
   guy: [
     'tim_kulig_free_music-lake-like-glass-270701.mp3',
   ],
+
 }
 
 const MUSIC_TRACK_URLS = Object.fromEntries(
@@ -68,6 +75,33 @@ function stopNode(node) {
 }
 
 export class MusicPlayer {
+    /**
+     * Request Chasing theme music (for section3 chase event)
+     * @param {Object} options
+     */
+    async requestChasing(options = {}) {
+      await this.requestGroup('chasing', {
+        immediate: options.immediate ?? true,
+        fadeOutSec: options.fadeOutSec,
+        delayMs: options.delayMs,
+        delayRangeMs: options.delayRangeMs,
+        forceRestart: options.forceRestart ?? true,
+      })
+    }
+
+    /**
+     * Return to section3 music (after chase ends)
+     * @param {Object} options
+     */
+    async returnToSection3(options = {}) {
+      await this.requestGroup('section3', {
+        immediate: options.immediate ?? true,
+        fadeOutSec: options.fadeOutSec,
+        delayMs: options.delayMs,
+        delayRangeMs: options.delayRangeMs,
+        forceRestart: options.forceRestart ?? true,
+      })
+    }
   constructor() {
     this.audioContext = null
     this.masterGainNode = null
