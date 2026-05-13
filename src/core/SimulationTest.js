@@ -485,8 +485,10 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
                   void musicPlayer.returnToSection3({ immediate: false })
                 },
         onSectionChange: (sectionId, musicOptions = {}) => {
-          if (!currentSceneManager) return
-          void musicPlayer.requestSection(sectionId, musicOptions)
+          if (!currentSceneManager) return;
+          // Always silence previous music before switching section to avoid overlap
+          void musicPlayer.requestSilence({ immediate: true });
+          void musicPlayer.requestSection(sectionId, musicOptions);
         },
         onGuySpawned: () => {
           void musicPlayer.requestGuy({ immediate: true })
