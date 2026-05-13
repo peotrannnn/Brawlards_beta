@@ -28,7 +28,7 @@ import { createSweatEffect } from '../effects/particles/particle8.js'
 import { applySection2UnderwaterFog } from '../assets/scenes/sections/section1_2.js'
 import { ScreenMat } from '../utils/ScreenMat.js'
 import { playSound3 } from '../sounds/sound3.js'
-import { playPipeSound } from '../sounds/pipeSound.js'
+import { playPipeSound, primePipeSoundAudio } from '../sounds/pipeSound.js'
 import { setSound6FlickerState, stopSound6Flicker } from '../sounds/sound6.js'
 import { resetSoundFilter1, updateSoundFilter1 } from '../sounds/soundfilter1.js'
 import { getLightStickOffAsset } from '../assets/items/lightStickOff.js'
@@ -214,13 +214,15 @@ const SECTION1_CEILING_FAN_CONFIG = {
   toggleMaxSec: 20,
   fallGravity: 18,
   maxFallSpeed: 32,
+  scoreTrigger: 7,
   ball7CameraLockDurationSec: 2,
   ball7DropDelaySec: 5,
   cameraBlendSec: 0.6,
   cameraReleaseBlendSec: 0.6,
   impactGraceSec: 0.18,
   impactArmTravel: 0.7,
-  landingTolerance: 0.45
+  landingTolerance: 0.45,
+  landingSettleSpeed: 1.2
 }
 
 export class Scene1Manager {
@@ -318,6 +320,12 @@ export class Scene1Manager {
     this.turnOffSection1CeilingAfterFlicker = false
     this.section1CeilingFanState = null
     this.section1CeilingFanEntryBox = new THREE.Box3()
+    this._tmpSection1CeilingFanPlayerBox = new THREE.Box3()
+    this._tmpSection1CeilingFanPlayerPos = new THREE.Vector3()
+    this._tmpSection1CeilingFanShapePos = new THREE.Vector3()
+    this._tmpSection1CeilingFanLocalPlayerPos = new THREE.Vector3()
+    this._tmpSection1CeilingFanShapeQuat = new THREE.Quaternion()
+    this._tmpSection1CeilingFanShapeQuatInverse = new THREE.Quaternion()
     
     // Ball spawning system for scene 1
     this.playerSpawned = false
@@ -3554,6 +3562,7 @@ export class Scene1Manager {
       attachedRotor: fanRoot.userData.rotorAssembly || null,
       fallingRotor: null,
       fallingRotorEntry: null,
+      baseEntry: null,
       rotorLocalBounds: fanRoot.userData.rotorLocalBounds || { minY: -1.5, maxY: 0 },
       tableTopY: typeof section1Group.userData.section1BilliardTableTopY === 'number'
         ? section1Group.userData.section1BilliardTableTopY
@@ -3574,6 +3583,7 @@ export class Scene1Manager {
       cameraLockRemaining: 0,
       cameraLocked: false,
       hasKilledPlayer: false,
+      pendingPlayerKillEntry: null,
       pendingPlayerKillBody: null,
       pendingLanding: false,
       pendingPipeImpact: null,
@@ -3582,14 +3592,50 @@ export class Scene1Manager {
       spinQuaternion: new CANNON.Quaternion(),
       dropStartY: 0,
       impactGraceRemaining: 0,
+      supportRayFrom: new CANNON.Vec3(),
+      supportRayTo: new CANNON.Vec3(),
+      supportRayResult: new CANNON.RaycastResult(),
+      baseCollisionFilterGroup: null,
+      baseCollisionFilterMask: null,
+      baseCollisionResponse: null,
       touchedEntries: new Set(),
       partBoxes: []
+    }
+
+    if (Array.isArray(this.syncList)) {
+      state.baseEntry = this.syncList.find((entry) => entry?.mesh === fanRoot || entry?.name === fanRoot.name) || null
+      if (state.baseEntry?.body) {
+        state.baseCollisionFilterGroup = state.baseEntry.body.collisionFilterGroup
+        state.baseCollisionFilterMask = state.baseEntry.body.collisionFilterMask
+        state.baseCollisionResponse = state.baseEntry.body.collisionResponse
+      }
     }
 
     fanRoot.userData.setRotorVisible?.(true)
     fanRoot.userData.setSpinAngle?.(0)
     this.section1CeilingFanState = state
     return state
+  }
+
+  _setSection1CeilingFanBaseCollisionEnabled(state, enabled) {
+    const baseBody = state?.baseEntry?.body || null
+    if (!baseBody) return
+
+    if (enabled) {
+      if (typeof state.baseCollisionFilterGroup === 'number') {
+        baseBody.collisionFilterGroup = state.baseCollisionFilterGroup
+      }
+      if (typeof state.baseCollisionFilterMask === 'number') {
+        baseBody.collisionFilterMask = state.baseCollisionFilterMask
+      }
+      baseBody.collisionResponse = state.baseCollisionResponse ?? true
+    } else {
+      baseBody.collisionFilterMask = 0
+      baseBody.collisionResponse = false
+    }
+
+    baseBody.aabbNeedsUpdate = true
+    if (typeof baseBody.wakeUp === 'function') baseBody.wakeUp()
   }
 
   _resetSection1CeilingFanState() {
@@ -3602,6 +3648,7 @@ export class Scene1Manager {
     }
 
     this._removeSection1CeilingFanRotorEntry(this.section1CeilingFanState)
+    this._setSection1CeilingFanBaseCollisionEnabled(this.section1CeilingFanState, true)
 
     fanRoot?.userData?.setRotorVisible?.(true)
     fanRoot?.userData?.setSpinAngle?.(0)
@@ -3645,6 +3692,8 @@ export class Scene1Manager {
     const state = this._getSection1CeilingFanState()
     if (!state || state.isFalling || state.hasLanded || state.ball7EventActive) return
 
+    primePipeSoundAudio()
+
     state.ball7EventActive = true
     state.dropDelayRemaining = SECTION1_CEILING_FAN_CONFIG.ball7DropDelaySec
     state.cameraLockRemaining = SECTION1_CEILING_FAN_CONFIG.ball7CameraLockDurationSec
@@ -3660,11 +3709,133 @@ export class Scene1Manager {
     }
   }
 
+  _isSection1CeilingFanPlayerEntry(entry) {
+    return !!entry?.body && entry?.name === 'Player'
+  }
+
+  debugForceSection1CeilingFanDrop() {
+    const state = this._getSection1CeilingFanState()
+    if (!state || state.isFalling || state.hasLanded) return false
+
+    const cameraController = this._lastWarmupCamera?.userData?.cameraController || null
+    if (state.cameraLocked && cameraController?.clearCinematicFocus) {
+      cameraController.clearCinematicFocus({ blendDuration: SECTION1_CEILING_FAN_CONFIG.cameraReleaseBlendSec })
+      state.cameraLocked = false
+    }
+
+    state.ball7EventActive = false
+    state.dropDelayRemaining = 0
+    state.cameraLockRemaining = 0
+    this._triggerSection1CeilingFanDrop()
+    return !!this.section1CeilingFanState?.isFalling
+  }
+
+  _findSection1CeilingFanTouchedPlayer(state, syncList) {
+    const rotorBody = state?.fallingRotorEntry?.body || null
+    if (!rotorBody || !Array.isArray(syncList)) return null
+
+    const playerEntry = this._getSection1CeilingFanLivePlayerEntry(syncList)
+    if (!playerEntry?.body) return null
+
+    const playerBody = playerEntry.body
+    const playerRadius = Math.max(
+      0.26,
+      playerBody.shapes?.find((shape) => shape instanceof CANNON.Sphere)?.radius || playerBody.boundingRadius || 0.3
+    )
+    this._tmpSection1CeilingFanPlayerPos.set(playerBody.position.x, playerBody.position.y, playerBody.position.z)
+
+    const shapes = rotorBody.shapes || []
+    for (let index = 0; index < shapes.length; index += 1) {
+      const shape = shapes[index]
+      const shapeOffset = rotorBody.shapeOffsets?.[index] || new CANNON.Vec3(0, 0, 0)
+      const shapeOrientation = rotorBody.shapeOrientations?.[index] || new CANNON.Quaternion(0, 0, 0, 1)
+      if (this._doesSection1CeilingFanShapeTouchPlayer(rotorBody, shape, shapeOffset, shapeOrientation, this._tmpSection1CeilingFanPlayerPos, playerRadius)) {
+        return playerEntry
+      }
+    }
+
+    return null
+  }
+
+  _doesSection1CeilingFanShapeTouchPlayer(rotorBody, shape, shapeOffset, shapeOrientation, playerPosition, playerRadius) {
+    if (!rotorBody || !shape || !playerPosition) return false
+
+    const shapeWorldQuaternion = this._tmpSection1CeilingFanShapeQuat.set(
+      rotorBody.quaternion.x,
+      rotorBody.quaternion.y,
+      rotorBody.quaternion.z,
+      rotorBody.quaternion.w,
+    )
+    const shapeWorldPosition = this._tmpSection1CeilingFanShapePos
+      .set(shapeOffset.x, shapeOffset.y, shapeOffset.z)
+      .applyQuaternion(shapeWorldQuaternion)
+    shapeWorldPosition.x += rotorBody.position.x
+    shapeWorldPosition.y += rotorBody.position.y
+    shapeWorldPosition.z += rotorBody.position.z
+
+    shapeWorldQuaternion.multiply(this._tmpSection1CeilingFanShapeQuatInverse.set(
+      shapeOrientation.x,
+      shapeOrientation.y,
+      shapeOrientation.z,
+      shapeOrientation.w,
+    ))
+
+    if (shape instanceof CANNON.Sphere) {
+      const totalRadius = (shape.radius || 0) + playerRadius
+      return shapeWorldPosition.distanceToSquared(playerPosition) <= totalRadius * totalRadius
+    }
+
+    const localPlayerPosition = this._tmpSection1CeilingFanLocalPlayerPos
+      .copy(playerPosition)
+      .sub(shapeWorldPosition)
+      .applyQuaternion(this._tmpSection1CeilingFanShapeQuatInverse.copy(shapeWorldQuaternion).invert())
+
+    if (shape instanceof CANNON.Box) {
+      const halfExtents = shape.halfExtents
+      return (
+        Math.abs(localPlayerPosition.x) <= Math.abs(halfExtents.x) + playerRadius &&
+        Math.abs(localPlayerPosition.y) <= Math.abs(halfExtents.y) + playerRadius &&
+        Math.abs(localPlayerPosition.z) <= Math.abs(halfExtents.z) + playerRadius
+      )
+    }
+
+    if (shape instanceof CANNON.Cylinder) {
+      const radius = Math.max(shape.radiusTop || 0, shape.radiusBottom || 0) + playerRadius
+      const halfHeight = ((shape.height || shape.length || 0) * 0.5) + playerRadius
+      return (
+        ((localPlayerPosition.x * localPlayerPosition.x) + (localPlayerPosition.z * localPlayerPosition.z)) <= radius * radius &&
+        Math.abs(localPlayerPosition.y) <= halfHeight
+      )
+    }
+
+    return false
+  }
+
+  _getSection1CeilingFanLivePlayerEntry(syncList = this.syncList) {
+    if (!Array.isArray(syncList)) return null
+    return syncList.find((entry) => this._isSection1CeilingFanPlayerEntry(entry)) || null
+  }
+
+  _getSection1CeilingFanPlayerEntryForBody(body, syncList = this.syncList) {
+    if (!body || !Array.isArray(syncList)) return null
+
+    const exactEntry = syncList.find((entry) => entry?.body === body) || null
+    if (this._isSection1CeilingFanPlayerEntry(exactEntry)) return exactEntry
+
+    if (body.name === 'Player') {
+      return this._getSection1CeilingFanLivePlayerEntry(syncList)
+    }
+
+    return null
+  }
+
   _triggerSection1CeilingFanDrop() {
     const state = this._getSection1CeilingFanState()
     if (!state || state.isFalling || state.hasLanded) return
 
     if (!this.world || !this.physicsMaterials || !Array.isArray(this.syncList)) return
+
+    primePipeSoundAudio()
 
     const createRotorClone = state.root.userData?.createRotorClone
     if (typeof createRotorClone !== 'function') return
@@ -3681,6 +3852,8 @@ export class Scene1Manager {
     const rotorBody = createPhysicsBodyFromUserData(rotorClone, rotorClone.userData, this.physicsMaterials)
     if (!rotorBody) return
 
+    this._setSection1CeilingFanBaseCollisionEnabled(state, false)
+
     rotorBody.position.set(rotorClone.position.x, rotorClone.position.y, rotorClone.position.z)
     rotorBody.quaternion.setFromEuler(0, state.spinAngle, 0, 'XYZ')
     rotorBody.collisionFilterGroup = COLLISION_GROUPS.HAZARD
@@ -3693,34 +3866,49 @@ export class Scene1Manager {
     rotorClone.userData.spawnCategory = 'gameObject'
 
     rotorBody.addEventListener('collide', (event) => {
-      if (!this.section1CeilingFanState || this.section1CeilingFanState !== state || !state.isFalling) return
-      if (rotorBody.userData?.section1CeilingFanHazardActive !== true) return
-      if (state.impactGraceRemaining > 0) return
+      if (!this.section1CeilingFanState || this.section1CeilingFanState !== state || !state.isFalling) return;
+      if (rotorBody.userData?.section1CeilingFanHazardActive !== true) return;
+      if (state.impactGraceRemaining > 0) return;
 
-      const fallenDistance = state.dropStartY - rotorBody.position.y
-      if (fallenDistance < SECTION1_CEILING_FAN_CONFIG.impactArmTravel) return
+      const fallenDistance = state.dropStartY - rotorBody.position.y;
+      if (fallenDistance < SECTION1_CEILING_FAN_CONFIG.impactArmTravel) return;
 
-      const otherBody = event.contact?.bi === rotorBody ? event.contact?.bj : event.contact?.bi
-      if (!otherBody) return
+      const otherBody = event.contact?.bi === rotorBody ? event.contact?.bj : event.contact?.bi;
+      if (!otherBody) return;
 
-      const otherUserData = otherBody.userData || {}
-      const isDisabledCollisionBody = otherBody.collisionFilterGroup === 0 || otherBody.collisionFilterMask === 0
-      if (isDisabledCollisionBody || otherUserData.isCarriedItem === true || otherUserData.carriedByPlayer === true) return
+      const otherUserData = otherBody.userData || {};
 
-      if (otherBody.name === 'Player') {
-        if (state.hasKilledPlayer || state.pendingLanding) return
-        state.pendingPipeImpact = 'player'
-        state.pendingLanding = false
-        state.pendingPlayerKillBody = otherBody
-        return
+      const isDisabledCollisionBody = otherBody.collisionFilterGroup === 0 || otherBody.collisionFilterMask === 0;
+      if (isDisabledCollisionBody) return;
+
+      // 1. Play pipe sound on first collision with any object (except disabled)
+      if (!state.hasPlayedPipeImpact) {
+        state.hasPlayedPipeImpact = true;
+        this._playSection1CeilingFanPipeImpact(state, 'table');
       }
 
-      if (state.pendingLanding) return
+      // 2. Kill player if overlap (regardless of what object was hit)
+      const playerEntry = this._findSection1CeilingFanTouchedPlayer(state, this.syncList);
+      if (playerEntry?.body) {
+        if (state.hasKilledPlayer) return;
+        state.pendingPlayerKillEntry = playerEntry;
+        state.pendingPlayerKillBody = playerEntry.body;
+        return;
+      }
 
-      state.pendingPipeImpact = state.pendingPipeImpact || 'table'
-      state.pendingPlayerKillBody = null
-      state.pendingLanding = true
-    })
+      // 3. Only freeze rotor if hit ground/rail/static (never on player/item/ball)
+      if (state.pendingPlayerKillBody) return;
+      if (state.hasLanded) return;
+
+      const isGroundBody = otherBody.type === CANNON.Body.STATIC
+        || otherBody.collisionFilterGroup === COLLISION_GROUPS.STATIC
+        || otherBody.collisionFilterGroup === COLLISION_GROUPS.RAIL;
+      if (!isGroundBody) return;
+
+      // Freeze rotor on first valid ground/rail/static collision
+      state.hasLanded = true;
+      this._freezeSection1CeilingFanAtCurrentPosition(state);
+    });
 
     state.sectionGroup.add(rotorClone)
     this.world.addBody(rotorBody)
@@ -3741,28 +3929,31 @@ export class Scene1Manager {
     state.fallingRotorEntry = rotorEntry
     state.isFalling = true
     state.hasLanded = false
+    state.hasPlayedPipeImpact = false
     state.ball7EventActive = false
+    state.dropDelayRemaining = 0
+    state.cameraLockRemaining = 0
     state.fallSpeed = 0
     state.spinTargetSpeed = state.spinSpeed
     state.hasKilledPlayer = false
+    state.pendingPlayerKillEntry = null
     state.pendingPlayerKillBody = null
     state.pendingLanding = false
     state.pendingPipeImpact = null
     state.dropStartY = rotorBody.position.y
     state.impactGraceRemaining = SECTION1_CEILING_FAN_CONFIG.impactGraceSec
     state.touchedEntries.clear()
-    state.partBoxes = (rotorClone.userData?.rotorKillMeshes || []).map(() => new THREE.Box3())
+    state.partBoxes = []
   }
 
   _playSection1CeilingFanPipeImpact(state, impactType = 'table') {
     const rotorBody = state?.fallingRotorEntry?.body || null
     const sourcePosition = rotorBody?.position || state?.fallingRotorEntry?.mesh?.position || null
-    const listenerPosition = this._lastWarmupCamera?.position || null
     const intensity = impactType === 'player' ? 1 : 0.94
 
     playPipeSound({
       sourcePosition,
-      listenerPosition,
+      listenerPosition: null,
       intensity,
     })
   }
@@ -3798,6 +3989,7 @@ export class Scene1Manager {
     state.spinSpeed = 0
     state.ball7EventActive = false
     state.hasKilledPlayer = false
+    state.pendingPlayerKillEntry = null
     state.pendingPlayerKillBody = null
     state.pendingLanding = false
     state.pendingPipeImpact = null
@@ -3805,7 +3997,8 @@ export class Scene1Manager {
   }
 
   _destroyEntryWithSection1CeilingFan(entry) {
-    if (!entry || entry.name !== 'Player') return
+    const entryName = entry?.name || entry?.body?.name || entry?.mesh?.name || null
+    if (!entry || entryName !== 'Player') return
 
     if (entry.body) {
       entry.body.userData = entry.body.userData || {}
@@ -3823,33 +4016,22 @@ export class Scene1Manager {
   }
 
   _handleSection1CeilingFanHits(state, syncList) {
-    if (!state) return
-
-    if (state.pendingLanding) {
-      this._playSection1CeilingFanPipeImpact(state, state.pendingPipeImpact || 'table')
-      this._freezeSection1CeilingFanAtCurrentPosition(state)
-      return
-    }
+    if (!state) return;
 
     if (state.pendingPlayerKillBody) {
-      const playerEntry = Array.isArray(syncList)
-        ? syncList.find(entry => entry?.body === state.pendingPlayerKillBody && entry.name === 'Player')
-        : null
+      const playerEntry = state.pendingPlayerKillEntry || this._getSection1CeilingFanPlayerEntryForBody(state.pendingPlayerKillBody, syncList);
 
-      const impactType = state.pendingPipeImpact || 'player'
-      state.pendingPlayerKillBody = null
-      state.pendingPipeImpact = null
+      state.pendingPlayerKillEntry = null;
+      state.pendingPlayerKillBody = null;
       if (state.hasKilledPlayer || !playerEntry) {
-        return
+        // Continue falling until a separate landing collision happens.
+      } else {
+        state.hasKilledPlayer = true;
+        this._destroyEntryWithSection1CeilingFan(playerEntry);
+        return;
       }
-
-      state.hasKilledPlayer = true
-      this._playSection1CeilingFanPipeImpact(state, impactType)
-      if (playerEntry) {
-        this._destroyEntryWithSection1CeilingFan(playerEntry)
-      }
-      return
     }
+    // No landing sound here anymore; handled in collision callback.
   }
 
   _syncSection1CeilingFanFrozenBody(state) {
@@ -3879,14 +4061,24 @@ export class Scene1Manager {
 
       if (state.cameraLockRemaining > 0) {
         state.cameraLockRemaining = Math.max(0, state.cameraLockRemaining - delta)
-        if (state.cameraLockRemaining <= 0 && state.cameraLocked) {
-          const cameraController = this._lastWarmupCamera?.userData?.cameraController || null
-          cameraController?.clearCinematicFocus?.({ blendDuration: SECTION1_CEILING_FAN_CONFIG.cameraReleaseBlendSec })
-          state.cameraLocked = false
+      }
+
+      if (state.cameraLockRemaining <= 0 && state.cameraLocked) {
+        const cameraController = this._lastWarmupCamera?.userData?.cameraController || null
+        if (cameraController?.clearCinematicFocus) {
+          cameraController.clearCinematicFocus({ blendDuration: SECTION1_CEILING_FAN_CONFIG.cameraReleaseBlendSec })
         }
+        state.cameraLocked = false
       }
 
       if (state.dropDelayRemaining <= 0) {
+        const cameraController = this._lastWarmupCamera?.userData?.cameraController || null
+        if (state.cameraLocked && cameraController?.clearCinematicFocus) {
+          cameraController.clearCinematicFocus({ blendDuration: SECTION1_CEILING_FAN_CONFIG.cameraReleaseBlendSec })
+          state.cameraLocked = false
+        }
+
+        state.ball7EventActive = false
         this._triggerSection1CeilingFanDrop()
       }
     }
@@ -3942,6 +4134,14 @@ export class Scene1Manager {
     fallingRotorBody.quaternion.copy(state.spinQuaternion)
     fallingRotorBody.aabbNeedsUpdate = true
     fallingRotor.quaternion.copy(fallingRotorBody.quaternion)
+
+    if (!state.hasKilledPlayer && !state.pendingPlayerKillBody) {
+      const touchedPlayerEntry = this._findSection1CeilingFanTouchedPlayer(state, syncList)
+      if (touchedPlayerEntry?.body) {
+        state.pendingPlayerKillEntry = touchedPlayerEntry
+        state.pendingPlayerKillBody = touchedPlayerEntry.body
+      }
+    }
 
     this._handleSection1CeilingFanHits(state, syncList)
   }
@@ -4081,10 +4281,6 @@ export class Scene1Manager {
       return
     }
 
-    if (ballNumber === 7 && !this._simulationMode) {
-      this._startSection1CeilingFanBall7Event()
-    }
-
     const expectedBall = this.destroySequence[this.nextExpectedBallIndex]
     
     if (ballNumber === expectedBall) {
@@ -4092,6 +4288,10 @@ export class Scene1Manager {
       this.currentScore++
       this.nextExpectedBallIndex++
       this._handleOrderedBallReward(ballNumber)
+
+      if (this.currentScore === SECTION1_CEILING_FAN_CONFIG.scoreTrigger && !this._simulationMode) {
+        this._startSection1CeilingFanBall7Event()
+      }
       
       // ✨ NEW: If ball 7 destroyed, trigger comprehensive flickering effect
       if (ballNumber === 7) {

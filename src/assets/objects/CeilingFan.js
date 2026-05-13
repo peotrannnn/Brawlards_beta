@@ -12,8 +12,9 @@ const CEILING_FAN_CONFIG = {
   hubRadius: 0.085 * CEILING_FAN_SCALE,
   plateHeight: 0.06 * CEILING_FAN_SCALE,
   plateRadius: 0.32 * CEILING_FAN_SCALE,
-  capHeight: 0.08 * CEILING_FAN_SCALE,
+  capHeight: 0.1 * CEILING_FAN_SCALE,
   capRadius: 0.11 * CEILING_FAN_SCALE,
+  capTopLift: 0.025 * CEILING_FAN_SCALE,
   bladeLength: 0.94 * CEILING_FAN_SCALE,
   bladeWidth: 0.22 * CEILING_FAN_SCALE,
   bladeThickness: 0.03 * CEILING_FAN_SCALE,
@@ -29,7 +30,7 @@ const CEILING_FAN_LAYOUT = {
   rodCenterY: -(CEILING_FAN_CONFIG.canopyHeight + (CEILING_FAN_CONFIG.rodLength * 0.5)),
   hubCenterY: -(CEILING_FAN_CONFIG.canopyHeight + CEILING_FAN_CONFIG.rodLength + (CEILING_FAN_CONFIG.hubHeight * 0.5)),
   plateCenterY: -(CEILING_FAN_CONFIG.canopyHeight + CEILING_FAN_CONFIG.rodLength + CEILING_FAN_CONFIG.hubHeight + (CEILING_FAN_CONFIG.plateHeight * 0.5)),
-  capCenterY: -(CEILING_FAN_CONFIG.canopyHeight + CEILING_FAN_CONFIG.rodLength + CEILING_FAN_CONFIG.hubHeight + (CEILING_FAN_CONFIG.capHeight * 0.5))
+  capCenterY: -(CEILING_FAN_CONFIG.canopyHeight + CEILING_FAN_CONFIG.rodLength + CEILING_FAN_CONFIG.hubHeight + (CEILING_FAN_CONFIG.capHeight * 0.5) - CEILING_FAN_CONFIG.capTopLift)
 }
 
 const ceilingFanRotorPhysicsDef = {

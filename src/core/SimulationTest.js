@@ -1,3 +1,40 @@
+// --- GLOBAL CLEANUP FOR UI AND STATE ---
+function cleanupAllUIAndState() {
+  try {
+    if (window.uiManager && typeof window.uiManager.dispose === 'function') window.uiManager.dispose();
+  } catch {}
+  try {
+    if (typeof controlGuideUI !== 'undefined' && controlGuideUI && typeof controlGuideUI.cleanup === 'function') controlGuideUI.cleanup();
+  } catch {}
+  try {
+    if (typeof compuneAIControllers !== 'undefined') compuneAIControllers?.forEach(compuneAI => compuneAI.cleanup?.());
+    compuneAIControllers?.clear?.();
+  } catch {}
+  try {
+    if (typeof guideAIControllers !== 'undefined') guideAIControllers?.forEach(guideAI => guideAI.dispose?.());
+    guideAIControllers?.clear?.();
+  } catch {}
+  try {
+    if (typeof bowlingAIControllers !== 'undefined') bowlingAIControllers?.forEach(ai => ai.dispose?.());
+    bowlingAIControllers?.clear?.();
+  } catch {}
+  try {
+    if (typeof pauseMenuScreen !== 'undefined' && pauseMenuScreen && typeof pauseMenuScreen.destroy === 'function') pauseMenuScreen.destroy();
+  } catch {}
+  try {
+    if (typeof gameOverScreen !== 'undefined' && gameOverScreen && typeof gameOverScreen.destroy === 'function') gameOverScreen.destroy();
+  } catch {}
+  try {
+    if (typeof settingsMenuScreen !== 'undefined' && settingsMenuScreen && typeof settingsMenuScreen.destroy === 'function') settingsMenuScreen.destroy();
+  } catch {}
+  try {
+    if (typeof deathWisdomOverlay !== 'undefined' && deathWisdomOverlay && typeof deathWisdomOverlay.hide === 'function') deathWisdomOverlay.hide();
+  } catch {}
+  // Remove any stray overlays
+  if (typeof document !== 'undefined') {
+    document.querySelectorAll('.settings-screen-overlay, .pause-menu-overlay, .gameover-screen-overlay, .control-guide-ui, .compune-dialog-ui, .death-wisdom-overlay').forEach(el => el.remove());
+  }
+}
 // --- PRELOAD & COMPILE SCREEN MAT (hiệu ứng chuyển cảnh) ---
 let screenMatMesh = null;
 if (typeof createScreenMatMesh === 'function') {
@@ -326,8 +363,9 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
       backButton.style.transform = 'scale(1)'
     }
     backButton.onclick = () => {
-      if (cleanupFn) cleanupFn()
-      onBack()
+      if (cleanupFn) cleanupFn();
+      cleanupAllUIAndState();
+      onBack();
     }
     document.body.appendChild(backButton)
   }
@@ -479,6 +517,12 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
           gameOverScreen.completionTime = completionTime
           gameOverScreen.reason = reason
           gameOverScreen.show()
+          // Ensure all UI is cleaned up after game over
+          cleanupAllUIAndState();
+          // --- Ensure cleanup on window unload (safety net) ---
+          if (typeof window !== 'undefined') {
+            window.addEventListener('beforeunload', cleanupAllUIAndState);
+          }
         })
         // Ensure main game elevator logic is NOT in simulation mode
         if (typeof currentSceneManager.setSimulationMode === 'function') {
@@ -1573,6 +1617,10 @@ export function startSimulationTest(renderer, onBack, gameplayMode = false, scen
     if (e.code === "KeyR" && !possessed) startSpawning()
     if (e.code === "KeyL" && !gameplayMode && !e.repeat && currentSceneManager && typeof currentSceneManager.startElevatorCountdown === 'function') {
       currentSceneManager.startElevatorCountdown()
+    }
+    if (e.code === "KeyF" && !gameplayMode && !e.repeat && currentSceneManager && typeof currentSceneManager.debugForceSection1CeilingFanDrop === 'function') {
+      currentSceneManager.debugForceSection1CeilingFanDrop()
+      e.preventDefault()
     }
     if (e.code === "KeyP" && !gameplayMode) CollisionManager.cycleVisibilityMode()
     if (e.code === "Escape" && !gameplayMode) {

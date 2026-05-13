@@ -1625,7 +1625,7 @@ export class PlayerMovementController {
         }
     }
 
-    _dropCarriedItem(mesh, withImpulse = true, withCooldown = false) {
+    _dropCarriedItem(mesh, withImpulse = true, withCooldown = false, allowUnsafeFallback = false) {
         if (!mesh || this.carriedItems.length === 0) return false
 
         const carried = this.carriedItems[0]
@@ -1633,10 +1633,14 @@ export class PlayerMovementController {
         if (!body) return false
 
         const forward = this._getDropReleaseDirection()
-        const dropPos = this._findSafeDropPosition(mesh, carried, forward)
+        let dropPos = this._findSafeDropPosition(mesh, carried, forward)
         if (!dropPos) {
-            this.uiManager?.showCenterActionHint?.('Space blocked', PLAYER_CONFIG.dropBlockedHintMs)
-            return false
+            if (!allowUnsafeFallback) {
+                this.uiManager?.showCenterActionHint?.('Space blocked', PLAYER_CONFIG.dropBlockedHintMs)
+                return false
+            }
+
+            dropPos = new THREE.Vector3(body.position.x, body.position.y, body.position.z)
         }
 
         this.carriedItems.shift()
@@ -1695,7 +1699,9 @@ export class PlayerMovementController {
 
     dropAllCarriedItems(withImpulse = false) {
         while (this.carriedItems.length > 0 && this.currentMesh) {
-            this._dropCarriedItem(this.currentMesh, withImpulse)
+            if (!this._dropCarriedItem(this.currentMesh, withImpulse, false, true)) {
+                break
+            }
         }
         this.dropItemQueued = false
     }

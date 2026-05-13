@@ -308,9 +308,7 @@ export function createPhysicsBodyFromUserData(mesh, userData, materials) {
 // =======================================================
 
 function resolveMaterial(name, materials) {
-  console.log("resolving material name:", name)
   if (!name) return null
-  console.log("CONTACT_CONFIG.materials.BALL", CONTACT_CONFIG.materials.BALL)
 
   if (name === CONTACT_CONFIG.materials.BALL) return materials.ball
   if (name === CONTACT_CONFIG.materials.PLAYER) return materials.player

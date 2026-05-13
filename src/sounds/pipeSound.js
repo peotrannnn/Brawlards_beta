@@ -24,6 +24,42 @@ class PipeSoundPlayer {
     this._bufferContext = null
   }
 
+  _playResolved(playback, buffer, { sourcePosition = null, listenerPosition = null, intensity = 1 } = {}) {
+    if (!playback || !buffer) return
+
+    const { audioContext, destination } = playback
+    if (!audioContext || audioContext.state !== 'running') return
+
+    const distanceGain = calculateDistanceGain(sourcePosition, listenerPosition, PIPE_SOUND_CONFIG)
+    if (distanceGain <= 0.015) return
+
+    const now = audioContext.currentTime + 0.001
+    const normalizedIntensity = clamp(intensity, 0.2, 1.35)
+
+    const source = audioContext.createBufferSource()
+    source.buffer = buffer
+    source.playbackRate.setValueAtTime(randomSpread(PIPE_SOUND_CONFIG.pitchJitter), now)
+
+    const gain = audioContext.createGain()
+    gain.gain.setValueAtTime(
+      distanceGain * normalizedIntensity * randomSpread(PIPE_SOUND_CONFIG.gainJitter),
+      now
+    )
+
+    source.connect(gain)
+    gain.connect(destination)
+
+    source.start(now)
+    source.onended = () => {
+      try {
+        source.disconnect()
+      } catch {}
+      try {
+        gain.disconnect()
+      } catch {}
+    }
+  }
+
   prime() {
     const audioContext = primeSharedSfxAudio()
     if (!audioContext) return
@@ -66,38 +102,22 @@ class PipeSoundPlayer {
 
     const { audioContext, destination } = playback
     if (!this._buffer || this._bufferContext !== audioContext) {
-      void this._ensureBuffer(audioContext)
+      void this._ensureBuffer(audioContext).then((buffer) => {
+        if (!buffer) return
+        this._playResolved({ audioContext, destination }, buffer, {
+          sourcePosition,
+          listenerPosition,
+          intensity,
+        })
+      })
       return
     }
 
-    const distanceGain = calculateDistanceGain(sourcePosition, listenerPosition, PIPE_SOUND_CONFIG)
-    if (distanceGain <= 0.015) return
-
-    const now = audioContext.currentTime + 0.001
-    const normalizedIntensity = clamp(intensity, 0.2, 1.35)
-
-    const source = audioContext.createBufferSource()
-    source.buffer = this._buffer
-    source.playbackRate.setValueAtTime(randomSpread(PIPE_SOUND_CONFIG.pitchJitter), now)
-
-    const gain = audioContext.createGain()
-    gain.gain.setValueAtTime(
-      distanceGain * normalizedIntensity * randomSpread(PIPE_SOUND_CONFIG.gainJitter),
-      now
-    )
-
-    source.connect(gain)
-    gain.connect(destination)
-
-    source.start(now)
-    source.onended = () => {
-      try {
-        source.disconnect()
-      } catch {}
-      try {
-        gain.disconnect()
-      } catch {}
-    }
+    this._playResolved(playback, this._buffer, {
+      sourcePosition,
+      listenerPosition,
+      intensity,
+    })
   }
 }
 
